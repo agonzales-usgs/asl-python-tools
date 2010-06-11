@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import asl
+
 import base64
 import gzip
 import httplib
@@ -204,7 +206,7 @@ class Baler(object):
             return record
 
 
-if __name__ == '__main__':
+def main():
     try:
         option_list = []
         option_list.append(optparse.make_option("-v", dest="verbosity", action="count", help="specify multiple times to increase verbosity"))
@@ -216,3 +218,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print "Keyboard Interrupt [^C]"
 
+if __name__ == '__main__':
+    main()

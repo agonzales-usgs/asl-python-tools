@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import asl
+
 import asyncore
 import calendar
 import os
@@ -341,7 +343,12 @@ class Main(Class):
             self.context['read']  = ReadThread(self.context['write'].queue, self.context['log'].queue)
             self.context['liss']  = LissThread(self.context['read'].queue, self.context['log'].queue)
 
-            self.context['write'].set_target_dir("/opt/data/archive")
+            if os.environ.has_key('ARCHIVE_DIRECTORY'):
+                archive_path = os.environ['ARCHIVE_DIRECTORY']
+            if not os.path.isdir(archive_path):
+                archive_path = '/opt/data/archive'
+
+            self.context['write'].set_target_dir(archive_path)
 
             self.context['write'].start()
             self.context['read'].start()
@@ -379,7 +386,7 @@ class Main(Class):
         self.halt(True)
 #/*}}}*/
 
-if __name__ == '__main__':
+def main():
     running = False
     if os.path.exists('/tmp/archive.pid'):
         tpid = open('/tmp/archive.pid', 'r').read(32).strip()
@@ -390,7 +397,6 @@ if __name__ == '__main__':
                 if re.search('archive[.]py', exe):
                     print "archive.py process [%s] already running" % tpid
                     running = True
-
     if not running:
         pid = os.getpid()
         fh = open('/tmp/archive.pid', 'w+')
@@ -400,4 +406,6 @@ if __name__ == '__main__':
         main = Main()
         main.start()
         
+if __name__ == '__main__':
+    main()
 

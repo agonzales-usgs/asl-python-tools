@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import asl
+
 import pygtk
 pygtk.require('2.0')
 import gtk
@@ -8,6 +10,7 @@ class Q330_Code:
     def __init__(self):
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("Q330 Authorization Code")
+        self.window.set_icon(asl.new_icon('code'))
 
         self.code_postfix = "C"
 
@@ -240,8 +243,10 @@ class Q330_Code:
             else:
                 self.button_copy_selection.set_sensitive(False)
 
-
-if __name__ == "__main__":
+def main():
     app = Q330_Code()
     gtk.main()
+
+if __name__ == "__main__":
+    main()
 

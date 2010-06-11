@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import asl
+
 import glob
 import inspect
 import optparse
@@ -488,6 +490,7 @@ class CalsUI:
     def __init__(self):
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("Calibrations")
+        self.window.set_icon(asl.new_icon('caldump'))
 
 # ===== Widget Creation ============================================
         self.vbox_main = gtk.VBox()
@@ -790,7 +793,7 @@ class CalsUI:
 #/*}}}*/
 
 # === main /*{{{*/
-if __name__ == "__main__":
+def main():
     reader = None
     try:
         option_list = []
@@ -835,4 +838,7 @@ if __name__ == "__main__":
         print "Keyboard Interrupt [^C]"
 
 # /*}}}*/
+
+if __name__ == "__main__":
+    main()
 

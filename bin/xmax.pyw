@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import asl
+
 import glob
 import os
 import re
@@ -22,10 +24,12 @@ from jtk.file.utils import dir_from_file_path
 from jtk.gtk.utils import select_file
 from jtk.gtk.utils import select_directory
 
+
 class XmaxGui:
     def __init__(self):
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("XMAX")
+        self.window.set_icon(asl.new_icon('xmax'))
 
         self.os_type = 'UNIX'
         if os.name in ('nt','win32','win64'):
@@ -40,6 +44,8 @@ class XmaxGui:
         self.xmax_directory = ''
         if os.environ.has_key('XMAX_DIRECTORY'):
             self.xmax_directory = os.environ['XMAX_DIRECTORY']
+        if not os.path.exists(self.xmax_directory):
+            self.xmax_directory = os.path.abspath("%s/utils/xmax" % asl.path)
         if not os.path.exists(self.xmax_directory):
             self.xmax_directory = '/opt/xmax'
         if not os.path.exists(self.xmax_directory):
@@ -648,7 +654,10 @@ class XmaxGui:
         print "Command:", ' '.join(arguments)
         os.popen(' '.join(arguments))
 
-if __name__ == "__main__":
+def main():
     app = XmaxGui()
     gtk.main()
+
+if __name__ == "__main__":
+    main()
 

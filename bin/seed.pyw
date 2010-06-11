@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import asl
+
 import calendar
 import glob
 import optparse
@@ -110,6 +112,7 @@ class SeedGui(Class):
 # ===== GUI Build-up ========================================
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("SEED Re-Packager")
+        self.window.set_icon(asl.new_icon('seed'))
 
         self.treestore_files         = gtk.TreeStore(gobject.TYPE_STRING)
         self.treestore_channels      = gtk.TreeStore(gobject.TYPE_STRING, gobject.TYPE_STRING,
@@ -2198,11 +2201,14 @@ class WriteThread(Thread):
             self._log("_run() Exception: %s" % str(e), 'err')
 #/*}}}*/
         
-if __name__ == "__main__":
+def main():
     try:
         app = SeedGui()
         gtk.main()
     except KeyboardInterrupt:
         if app:
             app.halt_all_threads()
+
+if __name__ == "__main__":
+    main()
 

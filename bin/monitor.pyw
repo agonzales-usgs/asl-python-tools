@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import asl
+
 import base64
 import calendar
 import hashlib
@@ -20,6 +22,9 @@ import pygtk
 pygtk.require('2.0')
 import gobject
 import gtk
+
+from jtk.Logger import Logger
+from jtk.gtk.Calendar import Calendar
 
 #gtk.gdk.threads_init()
 gobject.threads_init()
@@ -477,7 +482,7 @@ def check(check_queue, master_queue):
 # === Archive Function /*{{{*/
 def archive(archive_queue, master_queue, data, timestamp, directory):
     master_queue.put('ARCHIVE_DONE')
-    archive_queue.get()
+    #archive_queue.get()
 #/*}}}*/
 
 # === Viewer Class  /*{{{*/
@@ -800,242 +805,38 @@ class LISSDatabase(object):
 # === LISSPath Class /*{{{*/
 class LISSPath(object):
     def __init__(self):
-        self.path = { 'prefix'      : "",
-                      'sep'         : "/",
-                      'home_var'    : "HOME",
-                      'file_python' : "python",
+        self.path = { 'file_python' : "python",
                       'file_pythonw': "python" }
-        if os.name == 'nt':
-            self.path['sep'] = "\\"
-            self.path['prefix'] = "C:"
-            self.path['home_var'] = "HOMEPATH"
+        if os.name in ('nt', 'win32', 'win64'):
             self.path['file_python']  = "python.exe"
             self.path['file_pythonw'] = "pythonw.exe"
 
-        self.path['home_dir']  = os.environ[self.path['home_var']]
-        self.path['home_path'] = "%(prefix)s%(sep)s%(home_dir)s" % self.path
-
-        self.path['liss_dir'] = ".liss_monitor"
-        if os.name == 'nt':
-            self.path['liss_dir'] = "Application Data\\LISS Monitor"
-
       # Directories
-        self.path['path_liss']     = "%(home_path)s%(sep)s%(liss_dir)s" % self.path
-        self.path['path_data']     = "%(path_liss)s%(sep)sdata" % self.path
-        self.path['path_icon']     = "%(path_liss)s%(sep)sicons" % self.path
+        self.path['path_liss']     = os.path.abspath("%s/utils/liss_monitor" % asl.path)
+        self.path['path_data']     = os.path.abspath("%(path_liss)s/sdata" % self.path)
+        self.path['path_icon']     = os.path.abspath("%(path_liss)s/sicons" % self.path)
       # Config & Archive
-        self.path['file_config']   = "%(path_liss)s%(sep)slissmon.cfg" % self.path
-        self.path['file_history']  = "%(path_data)s%(sep)shistory.db" % self.path
+        self.path['file_config']   = os.path.abspath("%(path_liss)s/slissmon.cfg" % self.path)
+        self.path['file_history']  = os.path.abspath("%(path_data)s/shistory.db" % self.path)
       # Icons
-        self.path['icon_about']    = "%(path_icon)s%(sep)sabout.ico" % self.path
-        self.path['icon_archive']  = "%(path_icon)s%(sep)sarchive.ico" % self.path
-        self.path['icon_cancel']   = "%(path_icon)s%(sep)scancel.ico" % self.path
-        self.path['icon_check']    = "%(path_icon)s%(sep)scheck.ico" % self.path
-        self.path['icon_checking'] = "%(path_icon)s%(sep)schecking.ico" % self.path
-        self.path['icon_clear']    = "%(path_icon)s%(sep)sclear.ico" % self.path
-        self.path['icon_default']  = "%(path_icon)s%(sep)sdefault.ico" % self.path
-        self.path['icon_history']  = "%(path_icon)s%(sep)shistory.ico" % self.path
-        self.path['icon_gliss']    = "%(path_icon)s%(sep)sgliss.ico" % self.path
-        self.path['icon_quit']     = "%(path_icon)s%(sep)squit.ico" % self.path
-        self.path['icon_save']     = "%(path_icon)s%(sep)ssave.ico" % self.path
-        self.path['icon_view']     = "%(path_icon)s%(sep)sview.ico" % self.path
-        self.path['icon_warn']     = "%(path_icon)s%(sep)swarn.ico" % self.path
+        self.path['icon_about']    = os.path.abspath("%(path_icon)s/sabout.ico" % self.path)
+        self.path['icon_archive']  = os.path.abspath("%(path_icon)s/sarchive.ico" % self.path)
+        self.path['icon_cancel']   = os.path.abspath("%(path_icon)s/scancel.ico" % self.path)
+        self.path['icon_check']    = os.path.abspath("%(path_icon)s/scheck.ico" % self.path)
+        self.path['icon_checking'] = os.path.abspath("%(path_icon)s/schecking.ico" % self.path)
+        self.path['icon_clear']    = os.path.abspath("%(path_icon)s/sclear.ico" % self.path)
+        self.path['icon_default']  = os.path.abspath("%(path_icon)s/sdefault.ico" % self.path)
+        self.path['icon_history']  = os.path.abspath("%(path_icon)s/shistory.ico" % self.path)
+        self.path['icon_gliss']    = os.path.abspath("%(path_icon)s/sgliss.ico" % self.path)
+        self.path['icon_quit']     = os.path.abspath("%(path_icon)s/squit.ico" % self.path)
+        self.path['icon_save']     = os.path.abspath("%(path_icon)s/ssave.ico" % self.path)
+        self.path['icon_view']     = os.path.abspath("%(path_icon)s/sview.ico" % self.path)
+        self.path['icon_warn']     = os.path.abspath("%(path_icon)s/swarn.ico" % self.path)
 
     def get(self, key):
         if self.path.has_key(key):
             return self.path[key]
         return ""
-#/*}}}*/
-
-# === JCalendar Class /*{{{*/
-class JCalendar(object):
-    def __init__(self):
-        self.completion_callback = None
-        self.completion_data = None
-        self.time_high = True
-        self.granularity = "day"
-        self.granules = { 'day'    : 4 ,
-                          'hour'   : 3 ,
-                          'minute' : 2 ,
-                          'second' : 1 } 
-        times = time.gmtime()
-        self.timestamp = { 'year'   : times[0] ,
-                           'month'  : times[1] ,
-                           'day'    : times[2] ,
-                           'hour'   : times[3] ,
-                           'minute' : times[4] ,
-                           'second' : times[5] }
-
-    def create_window(self):
-        self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
-        self.vbox_date_time = gtk.VBox()
-        self.hbox_time = gtk.HBox()
-        self.vbox_hour = gtk.VBox()
-        self.vbox_minute = gtk.VBox()
-        self.vbox_second = gtk.VBox()
-
-        self.label_hour = gtk.Label()
-        self.label_minute = gtk.Label()
-        self.label_second = gtk.Label()
-        self.spinbutton_hour = gtk.SpinButton()
-        self.spinbutton_minute = gtk.SpinButton()
-        self.spinbutton_second = gtk.SpinButton()
-        self.button_select = gtk.Button()
-        self.button_close = gtk.Button()
-
-        self.calendar = gtk.Calendar()
-        self.push_time()
-
-        self.window.add( self.vbox_date_time )
-        self.vbox_date_time.add( self.calendar )
-        self.vbox_date_time.add( self.hbox_time )
-        self.hbox_time.add( self.vbox_hour )
-        self.hbox_time.add( self.vbox_minute )
-        self.hbox_time.add( self.vbox_second )
-
-        self.label_hour.set_text("Hour")
-        self.label_minute.set_text("Minute")
-        self.label_second.set_text("Second")
-
-        self.vbox_hour.add( self.label_hour )
-        self.vbox_hour.add( self.spinbutton_hour )
-        self.vbox_minute.add( self.label_minute )
-        self.vbox_minute.add( self.spinbutton_minute )
-        self.vbox_second.add( self.label_second )
-        self.vbox_second.add( self.spinbutton_second )
-
-        self.spinbutton_hour.set_range(0,23)
-        self.spinbutton_minute.set_range(0,59)
-        self.spinbutton_second.set_range(0,59)
-
-        self.spinbutton_hour.set_increments(1,5)
-        self.spinbutton_minute.set_increments(1,5)
-        self.spinbutton_second.set_increments(1,5)
-
-        # Setup our signals
-        self.window.connect( "destroy_event", self.callback_complete, None )
-        self.window.connect( "delete_event", self.callback_complete, None )
-
-        self.calendar.connect( "day-selected", self.callback_update_time, None )
-        self.calendar.connect( "day-selected-double-click", self.callback_update_time, None )
-        self.calendar.connect( "month-changed", self.callback_update_time, None )
-        self.calendar.connect( "next-month", self.callback_update_time, None )
-        self.calendar.connect( "prev-month", self.callback_update_time, None )
-        self.calendar.connect( "next-year", self.callback_update_time, None )
-        self.calendar.connect( "prev-year", self.callback_update_time, None )
-        self.spinbutton_hour.connect( "changed", self.callback_update_time, None )
-        self.spinbutton_minute.connect( "changed", self.callback_update_time, None )
-        self.spinbutton_second.connect( "changed", self.callback_update_time, None )
-
-        # Show our contents
-        self.window.show_all()
-
-    def set_granularity(self, granule):
-        if self.granules.has_key(granule):
-            self.granularity = granule
-
-    def get_granularity(self):
-        return self.granularity
-
-    def get_granule(self, granule):
-        if self.granules.has_key(granule):
-            return self.granules[granule]
-        return 0
-
-    def current_granule(self):
-        if self.granules.has_key(self.granularity):
-            return self.granules[self.granularity]
-        return 0
-
-    def set_default_high(self, high=True):
-        self.time_high = high
-
-    def get_default_high(self):
-        return self.time_high
-        
-    def delete_window(self):
-        self.window = None
-
-    def callback_update_time(self, widget, data=None):
-        if not self.calendar:
-            return
-        (year, month, day) = self.calendar.get_date()
-        self.timestamp['year']   = year
-        self.timestamp['month']  = month + 1
-        self.timestamp['day']    = day
-        if self.current_granule() <= self.get_granule('hour'):
-            self.timestamp['hour'] = self.spinbutton_hour.get_value()
-        elif self.time_high:
-            self.timestamp['hour'] = 23
-        else:
-            self.timestamp['hour'] = 0
-
-        if self.current_granule() <= self.get_granule('minute'):
-            self.timestamp['minute'] = self.spinbutton_minute.get_value()
-        elif self.time_high:
-            self.timestamp['minute'] = 59
-        else:
-            self.timestamp['minute'] = 0
-
-        if self.current_granule() <= self.get_granule('second'):
-            self.timestamp['second'] = self.spinbutton_second.get_value()
-        elif self.time_high:
-            self.timestamp['second'] = 59
-        else:
-            self.timestamp['second'] = 0
-            
-    def callback_complete(self, widget=None, event=None, data=None):
-        self.completion_callback( self.completion_data )
-        self.delete_window()
-
-    def set_callback(self, callback, data=None):
-        self.completion_callback = callback
-        self.completion_data = data
-
-    def push_time(self):
-        #print "%(year)04d/%(month)02d/%(day)02d" % self.timestamp
-        self.calendar.select_month(self.timestamp['month'] - 1, self.timestamp['year'])
-        self.calendar.select_day(self.timestamp['day'])
-        if self.current_granule() <= self.get_granule('hour'):
-            self.spinbutton_hour.set_value(self.timestamp['hour'])
-        if self.current_granule() <= self.get_granule('minute'):
-            self.spinbutton_minute.set_value(self.timestamp['minute'])
-        if self.current_granule() <= self.get_granule('second'):
-            self.spinbutton_second.set_value(self.timestamp['second'])
-
-    def prompt(self):
-        self.create_window()
-
-    def get_date(self):
-        date_str = "%(year)04d/%(month)02d/%(day)02d %(hour)02d:%(minute)02d:%(second)02d" % self.timestamp
-        date = time.strptime(date_str,"%Y/%m/%d %H:%M:%S")
-        return date
-
-    def set_date(self, date):
-        self.timestamp['year']   = date[0]
-        self.timestamp['month']  = date[1]
-        self.timestamp['day']    = date[2]
-        if self.current_granule() <= self.get_granule('hour'):
-            self.timestamp['hour']   = date[3]
-        elif self.time_high:
-            self.timestamp['hour'] = 23
-        else:
-            self.timestamp['hour'] = 0
-
-        if self.current_granule() <= self.get_granule('minute'):
-            self.timestamp['minute'] = date[4]
-        elif self.time_high:
-            self.timestamp['minute'] = 59
-        else:
-            self.timestamp['minute'] = 0
-
-        if self.current_granule() <= self.get_granule('second'):
-            self.timestamp['second'] = date[5]
-        elif self.time_high:
-            self.timestamp['second'] = 59
-        else:
-            self.timestamp['second'] = 0
-        self.push_time()
 #/*}}}*/
 
 # === History Class  /*{{{*/
@@ -1164,12 +965,12 @@ class History(object):
         self.treeviewcol_duration.set_cell_data_func(self.crtext_duration, self.cdf_format_float, None)
 
 # ===== Signal Bindings =========================================================
-        self.calendar_start = JCalendar()
+        self.calendar_start = Calendar()
         self.calendar_start.set_callback( self.callback_populate_time, (self.calendar_start, self.entry_start) )
         self.calendar_start.set_granularity('day')
         self.calendar_start.set_default_high( False )
 
-        self.calendar_end = JCalendar()
+        self.calendar_end = Calendar()
         self.calendar_end.set_callback( self.callback_populate_time, (self.calendar_end, self.entry_end) )
         self.calendar_end.set_granularity('day')
         self.calendar_end.set_default_high( True )
@@ -1363,160 +1164,6 @@ class History(object):
         return False
 #/*}}}*/
 
-# === Logger Class /*{{{*/
-class Logger(object):
-    def __init__(self, directory='.', prefix='', postfix='', extension='log', note='', yday=False):
-        self.log_to_file   = True
-        self.log_to_screen = False
-        self.log_fh        = None
-        self.note_first    = True
-        self.log_debug     = False
-        self.yday          = yday
-
-        self._note         = note
-        self._file_name    = ''
-        self._file_set     = False
-
-        self.categories = {
-            'dbg'     : 'DEBUG',
-            'debug'   : 'DEBUG',
-            'err'     : 'ERROR',
-            'error'   : 'ERROR',
-            'info'    : 'INFO',
-            'default' : 'INFO',
-            'warn'    : 'WARNING',
-            'warning' : 'WARNING',
-        }
-
-        if directory == '':
-            directory = '.'
-        self.log_context = {
-            'directory' : directory,
-            'prefix'    : prefix,
-            'postfix'   : postfix,
-            'extension' : extension,
-            'date'      : '',
-        }
-
-# ===== The Log Routine =============================================
-    def log(self, string, cat_key="default"):
-        category = "UNKNOWN"
-        screen_fh = sys.stdout
-        if self.categories.has_key(cat_key):
-            category = self.categories[cat_key]
-
-        if category == "ERROR":
-            screen_fh = sys.stderr
-        elif (category == "DEBUG") and (not self.log_debug):
-            return
-
-        if self.yday:
-            timestamp_text = time.strftime("%Y,%j-%H:%M:%S", time.gmtime())
-            file_date = timestamp_text[0:4] + '_' + timestamp_text[5:8]
-        else:
-            timestamp_text = time.strftime("%Y/%m/%d-%H:%M:%S", time.gmtime())
-            file_date = timestamp_text[0:4] + timestamp_text[5:7] + timestamp_text[8:10]
-
-        text = ""
-        if self.note_first:
-            if self._note:
-                text = "[%s: %s] %s>" % (self._note, timestamp_text, category)
-            else:
-                text = "[%s] %s>" % (timestamp_text, category)
-        else:
-            text = "[%s: %s] %s>" % (category, timestamp_text, self._note)
-        text += " %s\n" % string.strip('\n')
-
-        if self.log_to_file:
-            self._prepare_log(file_date)
-            if self.log_fh:
-                self.log_fh.write( text )
-                self.log_fh.flush()
-        if self.log_to_screen:
-            screen_fh.write( text )
-            screen_fh.flush()
-
-# ===== Settings Mutators ===================
-    def set_log_to_file(self, enabled):
-        self.log_to_file = enabled
-
-    def set_log_to_screen(self, enabled):
-        self.log_to_screen = enabled
-
-    def set_log_debug(self, enabled):
-        self.log_debug = enabled
-
-    def set_log_path(self, path=''):
-        self.log_context['directory'] = path
-
-    def set_log_file(self, name=''):
-        if name == '':
-            self._file_set  = False
-        else:
-            self._file_set  = True
-            self._file_name = name
-
-    def set_log_note(self, note=''):
-        self._note = note
-        
-    def set_note_first(self, enabled):
-        self.note_first = enabled
-
-
-# ===== Settings Accessors ==================
-    def get_log_to_file(self):
-        return self.log_to_file
-
-    def get_log_to_screen(self):
-        return self.log_to_screen
-
-    def get_log_debug(self):
-        return self.log_debug
-
-    def get_log_path(self):
-        return self.log_context['directory']
-
-    def get_log_file(self):
-        if self._file_set:
-            return self._file_name
-        return None
-
-    def get_log_note(self):
-        return self._note
-
-    def get_note_first(self):
-        return self.note_first
-
-
-# ===== Internal Methods =============================================
-    def _open_log(self):
-        if not self._file_set:
-            if not os.path.exists(self.log_context['directory']):
-                os.makedirs(self.log_context['directory'])
-            elif not os.path.isdir(self.log_context['directory']):
-                raise IOError("Path '%(directory)s' exists, but is not a directory." % self.log_context)
-            if self.log_context['extension']:
-                self._file_name = "%(directory)s/%(prefix)s%(date)s%(postfix)s.%(extension)s" % self.log_context
-            else:
-                self._file_name = "%(directory)s/%(prefix)s%(date)s%(postfix)s" % self.log_context
-        if os.path.exists(self._file_name) and (not os.path.isfile(self._file_name)):
-            raise IOError("Path '%s' exists, but is not a regular file." % self._file_name)
-        self.log_fh = open( self._file_name, 'a' )
-
-    def _close_log(self):
-        if self.log_fh:
-            self.log_fh.close()
-        self.log_fh = None
-
-    def _prepare_log(self, file_date):
-        if (file_date == self.log_context['date']) and self.log_fh:
-            return
-        else:
-            self.log_context['date'] = file_date
-            self._close_log()
-            self._open_log()
-#/*}}}*/
-
 def st_cmp(arr1, arr2):
     val1 = arr1[4]
     val2 = arr2[4]
@@ -1524,7 +1171,9 @@ def st_cmp(arr1, arr2):
         return cmp(arr1[0]+arr1[1], arr2[0]+arr2[1])
     return cmp(val2, val1)
 
-if __name__ == "__main__":
+def main():
     app = Monitor()
     gtk.main()
 
+if __name__ == "__main__":
+    main()
