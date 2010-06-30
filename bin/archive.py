@@ -343,6 +343,7 @@ class Main(Class):
             self.context['read']  = ReadThread(self.context['write'].queue, self.context['log'].queue)
             self.context['liss']  = LissThread(self.context['read'].queue, self.context['log'].queue)
 
+            archive_path = ''
             if os.environ.has_key('ARCHIVE_DIRECTORY'):
                 archive_path = os.environ['ARCHIVE_DIRECTORY']
             if not os.path.isdir(archive_path):

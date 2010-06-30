@@ -4,7 +4,7 @@ try:
     import getpass  # to get user's password
     import optparse # command line argument parsing
     import os
-    import pexpect  # expect lib
+    import platform
     import pty      # bypass pexpect when it can't help us
     import re       # regular expressions for password verification
     import select   # wait (select) on file descriptors
@@ -13,7 +13,8 @@ try:
     import sys
     import time
 
-    from jtk.Logger import Logger
+    import pexpect  # expect lib
+    from Logger import Logger
 except Exception, e:
     print "Exception: " + e.__str__()
     import time
@@ -52,9 +53,31 @@ class Crypt:
         self.logger.set_log_note("Crypt")
         self.logger.set_log_to_file(False)
 
+        try:
+            home_directory = os.path.abspath(os.environ['HOME'])
+        except:
+            home_directory = os.path.abspath(os.environ['USERPROFILE'])
+        asl_path_file = os.path.abspath(home_directory + '/.asl_utilities_path')
+        if not os.path.isfile(asl_path_file):
+            raise Exception("Crypt: Could not locate ASL Utilities directory")
+        fh = open(asl_path_file, 'r')
+        path = fh.readline().strip()
+        if not os.path.exists(path):
+            raise Exception("ASL Utilities directory '%s' does not exist" % path)
+        if not os.path.isdir(path):
+            raise Exception("path '%s' exists, but is not a directory" % path)
+
+        if platform.system() == 'Linux':
+            self.executable = os.path.abspath(path + '/utils/aescrypt/aescrypt.linux')
+        elif platform.system() == 'FreeBSD':
+            self.executable = os.path.abspath(path + '/utils/aescrypt/aescrypt.bsd')
+        else:
+            self.executable = os.path.abspath(path + '/utils/aescrypt/aescrypt.exe')
+        if not os.path.exists(self.executable):
+            raise Exception("Unable to locate aescrypt executable")
 
     def build_actions(self):
-        self.action = self.shell + " \"aescrypt"
+        self.action = self.shell + " \"%s" % self.executable
         if self.mode == DECRYPT:
             self.action += " -d"
         else:
@@ -98,8 +121,6 @@ class Crypt:
     def crypt_data(self, data_unprocessed='', src_file=None, dst_file=None):
         data_processed = ""
         page_size      = 512
-        #executable     = './aescrypt'
-        executable     = os.popen('which aescrypt').read().strip()
 
         src_dst = SD_NEITHER
         if src_file is not None:
@@ -107,7 +128,7 @@ class Crypt:
         if dst_file is not None:
             src_dst |= SD_TO_FILE
 
-        arg_list = [executable]
+        arg_list = [self.executable]
         arg_list.append("-k")
         arg_list.append("-")
         # direction
@@ -129,7 +150,7 @@ class Crypt:
 
         #print "Command:", ' '.join(arg_list)
 
-        child = subprocess.Popen(arg_list, 0, executable, subprocess.PIPE, subprocess.PIPE, subprocess.PIPE)
+        child = subprocess.Popen(arg_list, 0, self.executable, subprocess.PIPE, subprocess.PIPE, subprocess.PIPE)
 
         aes_stdin = child.stdin.fileno()
         aes_stdout = child.stdout.fileno()

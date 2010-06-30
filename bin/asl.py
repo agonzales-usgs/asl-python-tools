@@ -44,7 +44,7 @@ if not os.path.exists(path):
     print "ASL Utilities directory '%s' does not exist" % path
     sys.exit(1)
 if not os.path.isdir(path):
-    print "path '%s' exists, but is not a direcotry" % path
+    print "path '%s' exists, but is not a directory" % path
     sys.exit(1)
 
 python_path = os.path.abspath(path + '/lib/python')

@@ -1,5 +1,10 @@
 #!/usr/bin/env python
-import asl
+try: 
+    import asl
+    ASL=True
+except: 
+    """This is just for flash, not essential"""
+    ASL=False
 
 import asyncore
 import base64
@@ -764,7 +769,8 @@ class PipeUI:
     def __init__(self, local=True, log=False, verbosity=0):
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("Multi-Pipe")
-        self.window.set_icon(asl.new_icon('upipe'))
+        if ASL:
+            self.window.set_icon(asl.new_icon('upipe'))
 
 # ===== Widget Creation ===========================================
         self.vbox_main    = gtk.VBox()
@@ -853,7 +859,8 @@ class PipeUI:
             self.dialog = gtk.Dialog(title="Select Tunneling Server", 
                                      buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
                                               gtk.STOCK_OK,     gtk.RESPONSE_ACCEPT))
-            self.dialog.set_icon(asl.new_icon('upipe'))
+            if ASL:
+                self.dialog.set_icon(asl.new_icon('upipe'))
             dialog_hbox = gtk.HBox()
             dialog_label = gtk.Label('Host:Port')
             dialog_entry_host  = gtk.Entry()
