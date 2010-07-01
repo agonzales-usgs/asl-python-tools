@@ -1,9 +1,9 @@
 import Queue
 
 class Class(object):
-    def __init__(self):
+    def __init__(self, log_queue=None):
         object.__init__(self)
-        self.log_queue = None
+        self.log_queue = log_queue
 
     def _log(self, log_str, category='default', note=None):
         if self.log_queue:

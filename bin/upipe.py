@@ -179,13 +179,9 @@ class PipeBase(asyncore.dispatcher):
 
     def queue_packet(self, packet, address=None):
         self.log("Queueing Packet: %s %s" % (str(packet), str(address)), 4)
-        if (not len(self._buffers)) and (not len(self._write_buffer)):
-            if not packet:
-                packet = ''
-            self._write_buffer = packet
-            self._write_address = address
-        else:
-            self._buffers.append((packet, address))
+        if not packet:
+            packet = ''
+        self._buffers.append((packet, address))
 
     # Check that there is data queued for writing
     # (Overrides the method in asyncore.dispatcher)
