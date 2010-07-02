@@ -38,6 +38,63 @@ class Notifier(asyncore.dispatcher):
         return False
 #/*}}}*/
 
+# === Status Class /*{{{*/
+class Status(asyncore.dispatcher):
+    def __init__(self, master, log_queue=None):
+        asyncore.dispatcher.__init__(self)
+        self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.bind(('', 4000))
+        self._buffers = []
+        self._write_buffer = ''
+        self._write_address = None
+        self._master = master
+        self._regex_status = re.compile('^\[(.*)\]<(.*)>$')
+
+    def handle_read(self):
+        try:
+            packet,address = self.recvfrom(4096)
+        except socket.error:
+            time.sleep(1.0)
+            return
+        if not packet:
+            return 0
+        match = self._regex_status.search(packet)
+        if match:
+            id,message = match.groups()
+        else:
+            id = '0'
+            message = packet
+
+        if message == 'STATUS':
+            self._buffers.append(('[%s]<ACTIVE>' % id, address))
+        if message == 'LAST-PACKET':
+            self._buffers.append(('[%s]<%d>' % (id,self._master._last_packet_received), address))
+        return len(packet)
+
+    def handle_write(self):
+        bytes_written = 0
+        if (self._write_address is None) or (not len(self._write_buffer)):
+            if len(self._buffers):
+                self._write_buffer,self._write_address = self._buffers.pop(0)
+            else:
+                self._write_buffer = ''
+                self._write_address = None
+        if (self._write_address is not None) and len(self._write_buffer):
+            bytes_written = self.sendto(self._write_buffer, self._write_address)
+        self._write_buffer = self._write_buffer[bytes_written:]
+
+    def readable(self):
+        return True
+
+    def writable(self):
+        if len(self._buffers):
+            return True
+        if len(self._write_buffer) and self._write_address is not None:
+            return True
+        return False
+
+#/*}}}*/
+
 # === LissReader Class /*{{{*/
 class LissReader(asyncore.dispatcher):
     def __init__(self, master):
@@ -57,6 +114,7 @@ class LissReader(asyncore.dispatcher):
             time.sleep(1.0)
             return
         self._master.queue_packet(packet)
+        self._master._last_packet_received = calendar.timegm(time.gmtime())
         if not packet:
             return 0
         return len(packet)
@@ -71,14 +129,14 @@ class LissReader(asyncore.dispatcher):
 # === LissThread Class /*{{{*/
 class LissThread(Thread):
     def __init__(self, read_queue, log_queue=None):
-        Thread.__init__(self, queue_max=1024)
+        Thread.__init__(self, queue_max=1024, log_queue=log_queue)
         self.daemon = True
         self.read_queue = read_queue
-        self.log_queue = log_queue
         self.socket = None
         self.address = ('127.0.0.1', 4000)
         self.buffer = None
         self.address_changed = False
+        self._last_packet_received = 0
 
     def set_address(self, address):
         if self.address != address:
@@ -110,6 +168,7 @@ class LissThread(Thread):
     def run(self):
         self.running = True
         self.notifier = Notifier()
+        self.status = Status(self)
         while self.running:
             if self.socket == None:
                 self.socket = LissReader(self)
@@ -124,6 +183,7 @@ class LissThread(Thread):
             map = {
                 self.notifier.socket : self.notifier,
                 self.socket.socket   : self.socket,
+                self.status.socket   : self.status,
             }
             #asyncore.loop(timeout=30.0, use_poll=False, map=map, count=1)
             asyncore.loop(timeout=5.0, use_poll=False, map=map, count=1)
@@ -148,9 +208,8 @@ class LissThread(Thread):
 # === ReadThread Class /*{{{*/
 class ReadThread(Thread):
     def __init__(self, write_queue, log_queue=None):
-        Thread.__init__(self)
+        Thread.__init__(self, log_queue=log_queue)
         self.write_queue = write_queue
-        self.log_queue = log_queue
         self.buffer = None
 
     def _run(self, message, data):
@@ -255,8 +314,7 @@ class ReadThread(Thread):
 # === WriteThread Class /*{{{*/
 class WriteThread(Thread):
     def __init__(self, log_queue=None):
-        Thread.__init__(self, queue_max=1024)
-        self.log_queue = log_queue
+        Thread.__init__(self, queue_max=1024, log_queue=log_queue)
         self.file_handles = {}
         self.target_dir = ''
 
@@ -398,6 +456,7 @@ def main():
                 if re.search('archive[.]py', exe):
                     print "archive.py process [%s] already running" % tpid
                     running = True
+
     if not running:
         pid = os.getpid()
         fh = open('/tmp/archive.pid', 'w+')
