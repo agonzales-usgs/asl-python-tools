@@ -67,8 +67,12 @@ class Status(asyncore.dispatcher):
 
         if message == 'STATUS':
             self._buffers.append(('[%s]<ACTIVE>' % id, address))
-        if message == 'LAST-PACKET':
+        elif message == 'LAST-PACKET':
             self._buffers.append(('[%s]<%d>' % (id,self._master._last_packet_received), address))
+        elif message == 'PID':
+            self._buffers.append(('[%s]<%d>' % (id,getpid()), address))
+        else:
+            self._buffers.append(('[-1]<UNRECOGNIZED>', address))
         return len(packet)
 
     def handle_write(self):
@@ -437,13 +441,43 @@ class Main(Class):
         thread_list = ['liss', 'read', 'write', 'log']
         for key in thread_list:
             if check_alive(self.context, key):
-                self.context[key].halt_now()
+                if now:
+                    self.context[key].halt_now()
+                else:
+                    self.context[key].halt()
                 self.context[key].join()
         self.context['running'] = False
 
     def halt_now(self, signal=None, frame=None):
         self.halt(True)
 #/*}}}*/
+
+def kill_proc(tpid):
+    if find_proc(tpid):
+        print "archive.py process [%s] found" % tpid
+        print "sending SIGTERM to archive.py process [%s]" % tpid
+        os.kill(int(tpid), 15)
+        count = 60
+        while 1:
+            if not find_proc(tpid):
+                print "archive.py process [%s] has died" % tpid
+                break
+            count -= 1
+            if count <= 0:
+                print "sending SIGKILL to archive.py process [%s]" % tpid
+                os.kill(int(tpid), 9)
+                break
+                time.sleep(1.0)
+
+def find_proc(tpid):
+    tpid = str(tpid)
+    proc = os.popen('ps ax -o pid,args | grep %s' % tpid)
+    for line in proc.readlines():
+        pid,exe = line.strip().split(' ', 1)
+        if tpid == pid:
+            if re.search('archive[.]py', exe):
+                return True
+    return False
 
 def main():
     running = False
@@ -453,19 +487,29 @@ def main():
         for line in proc.readlines():
             pid,exe = line.strip().split(' ', 1)
             if tpid == pid:
+                restart_path = '/opt/var/archive/restart/%s' % tpid
                 if re.search('archive[.]py', exe):
+                    if os.path.exists(restart_path):
+                        if os.path.isfile(restart_path):
+                            os.remove(restart_path)
+                            kill_proc(tpid)
+                            continue
+                        else:
+                            print "invalid type for restart file %s" % restart_path
                     print "archive.py process [%s] already running" % tpid
                     running = True
 
     if not running:
         pid = os.getpid()
+        print "starting new archive.py process [%d]" % pid
         fh = open('/tmp/archive.pid', 'w+')
         fh.write('%s\n' % str(pid))
         fh.close()
 
         main = Main()
         main.start()
-        
+
 if __name__ == '__main__':
     main()
+        
 

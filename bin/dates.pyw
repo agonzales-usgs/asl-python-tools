@@ -246,12 +246,12 @@ class Dates:
         month = int(m)
         day   = int(d)
         jday  = int(j)
-        self.adjustment_day  = gtk.Adjustment(value=year, lower=1, upper=self.month_days(year, month), step_incr=1, page_incr=5)
-        self.adjustment_jday = gtk.Adjustment(value=year, lower=1, upper=self.year_days(year),         step_incr=1, page_incr=5)
+        #self.adjustment_day  = gtk.Adjustment(value=year, lower=1, upper=self.month_days(year, month), step_incr=1, page_incr=5)
+        #self.adjustment_jday = gtk.Adjustment(value=year, lower=1, upper=self.year_days(year),         step_incr=1, page_incr=5)
 
         # updated spinbox adjustments
-        self.spinbutton_day.set_adjustment(self.adjustment_day)
-        self.spinbutton_jday.set_adjustment(self.adjustment_jday)
+        #self.spinbutton_day.set_adjustment(self.adjustment_day)
+        #self.spinbutton_jday.set_adjustment(self.adjustment_jday)
 
         # update date values
         self.spinbutton_year.set_value(year)
@@ -319,18 +319,14 @@ class DateIcon:
             self.menu.set_title("Dates")
 
             self.image_today = gtk.Image()
-            self.image_today.set_from_pixbuf(asl.new_icon('arrow_down'))
+            self.image_today.set_from_pixbuf(asl.new_icon('arrow_down').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+            self.menuitem_today = gtk.ImageMenuItem("Today", "Today")
+            self.menuitem_today.set_image(self.image_today)
 
             self.image_quit = gtk.Image()
-            self.image_quit.set_from_pixbuf(asl.new_icon('stop'))
-
-            self.menuitem_today = gtk.ImageMenuItem("Today", "Today")
+            self.image_quit.set_from_pixbuf(asl.new_icon('stop').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
             self.menuitem_quit  = gtk.ImageMenuItem("Quit", "Quit")
-
-            self.menuitem_today.set_image(self.image_today)
             self.menuitem_quit.set_image(self.image_quit)
-
-            #self.menuitem_today = 
 
             self.menuitem_today.connect("activate", self.callback_today, None)
             self.menuitem_quit.connect( "activate", self.callback_quit,  None)

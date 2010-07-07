@@ -37,10 +37,11 @@ class Monitor(object):
         self.link = "http://aslwww.cr.usgs.gov/cgi-bin/LISSstat7.pl"
 
         self.status_icon = gtk.StatusIcon()
-        self.status_icon.set_from_file( self.path.get('icon_default') )
+        self.status_icon.set_from_pixbuf(asl.new_icon('circle_blue'))
         self.status_icon.set_visible(True)
         self.status_icon.connect( "popup-menu", self.callback_menu, None )
         self.status_icon.connect( "activate", self.callback_activate, None )
+
 
         self.menu = gtk.Menu()
         self.menu.set_title("LISS Monitor")
@@ -53,13 +54,13 @@ class Monitor(object):
         self.image_history = gtk.Image()
         self.image_quit    = gtk.Image()
 
-        self.image_default.set_from_file( self.path.get('icon_default') )
-        self.image_check.set_from_file( self.path.get('icon_check') )
-        self.image_cancel.set_from_file( self.path.get('icon_cancel') )
-        self.image_view.set_from_file( self.path.get('icon_view') )
-        self.image_clear.set_from_file( self.path.get('icon_clear') )
-        self.image_history.set_from_file( self.path.get('icon_history') )
-        self.image_quit.set_from_file( self.path.get('icon_quit') )
+        self.image_default.set_from_pixbuf(asl.new_icon('circle_blue').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.image_check.set_from_pixbuf(asl.new_icon('add').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.image_cancel.set_from_pixbuf(asl.new_icon('cancel').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.image_view.set_from_pixbuf(asl.new_icon('notepad').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.image_clear.set_from_pixbuf(asl.new_icon('accept').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.image_history.set_from_pixbuf(asl.new_icon('events').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.image_quit.set_from_pixbuf(asl.new_icon('exit').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
 
         self.menuitem_check = gtk.ImageMenuItem("Check Now", "Check")
         self.menuitem_cancel = gtk.ImageMenuItem("Cancel Check", "Cancel")
@@ -103,7 +104,7 @@ class Monitor(object):
         self.menuitem_cancel.show()
         self.menuitem_view.show()
         self.menuitem_clear.show()
-        self.menuitem_history.show()
+        #self.menuitem_history.show() # Re-Enable once history viewer is implemented
         self.menuitem_quit.show()
 
         self.viewer = Viewer(self)
@@ -237,16 +238,16 @@ class Monitor(object):
 
     def update_status_icon(self):
         if self.checking:
-            self.status_icon.set_from_file( self.path.get('icon_checking') )
+            self.status_icon.set_from_pixbuf(asl.new_icon('circle_green'))
             self.status_icon.set_blinking(True)
         elif self.archiving:
-            self.status_icon.set_from_file( self.path.get('icon_archive') )
+            self.status_icon.set_from_pixbuf(asl.new_icon('circle_orange'))
             self.status_icon.set_blinking(True)
         elif self.warning:
-            self.status_icon.set_from_file( self.path.get('icon_warn') )
+            self.status_icon.set_from_pixbuf(asl.new_icon('circle_red'))
             self.status_icon.set_blinking(True)
         else:
-            self.status_icon.set_from_file( self.path.get('icon_default') )
+            self.status_icon.set_from_pixbuf(asl.new_icon('circle_blue'))
             self.status_icon.set_blinking(False)
 
     def update_stations(self):
@@ -293,7 +294,7 @@ class Monitor(object):
         if len(restored_stations):
             self.warn_label_list_up.configure(text=str_sep.join(sorted(restored_stations)))
         self.warn_window.deiconify()
-        self.status_icon.set_from_file( self.path.get('icon_warn') )
+        self.status_icon.set_from_pixbuf(asl.new_icon('circle_red'))
 
     def current_time(self):
         return time.mktime(time.gmtime())
@@ -351,7 +352,7 @@ class Core(threading.Thread):
             if request == 'STOP':
                 self.running = False
             elif request == 'CHECK_DONE':
-                self.gui.data_time = data[0]
+                self.gui.data_time = data[0] + ' UTC'
                 self.gui.data      = data[1]
                 self.check_queue.put('THANKS')
                 self.check_process.join()
@@ -414,66 +415,30 @@ def check(check_queue, master_queue):
         uri = "liss-test-data.html"
         reader = open(uri, 'r')
     else:
-        uri = "http://aslwww.cr.usgs.gov/cgi-bin/LISSstat7.pl"
-        #uri = "http://136.177.121.191:13031/liss_stat/liss_stat.html"
+        uri = "http://wwwasl/uptime/upgrade/telmon.txt"
+        #uri = "http://aslwww.cr.usgs.gov/cgi-bin/LISSstat7.pl"
         reader = urllib.urlopen( uri )
-    xml = string.join(reader.readlines())
+    lines = reader.readlines()
     reader.close()
-
-    # one serious regex
-    # 0) Network
-    # 1) Station
-    # 2) Channel
-    # 3) Timestamp
-    # 4) --garbage
-    # 5) Delay
-    # 6) Units
-    # 7) --garbage
-    # 8) Channel
-    # 9) Timestamp
-    # 10) Delay
-
-    regex = re.compile( \
-        '<\s*?[Tt][Rr][^>]*?>.*?' + \
-        '<\s*?[Tt][Dd][^>]*?>(.*?)<\/[Tt][Dd]>.*?' + \
-        '<\s*?[Tt][Dd][^>]*?>(.*?)<\/[Tt][Dd]>.*?' + \
-        '<\s*?[Tt][Dd][^>]*?>(.*?)<\/[Tt][Dd]>.*?' + \
-        '<\s*?[Tt][Dd][^>]*?>(.*?)<\/[Tt][Dd]>.*?' + \
-        '<\s*?[Tt][Dd][^>]*?>'  + \
-            '[^<>]*?(<\s*?[^Tt]?[^>]*?>)*?' + \
-            '([0-9.]+)'         + \
-            '\s*?([a-zA-Z]*?)'     + \
-            '(<\s*?[^Tt]?[^>]*?>)*?'    + \
-            '<\/[Tt][Dd]>.*?'   + \
-        '<\s*?[Tt][Dd][^>]*?>(.*?)<\/[Tt][Dd]>.*?' + \
-        '<\s*?[Tt][Dd][^>]*?>(.*?)<\/[Tt][Dd]>.*?' + \
-        '<\s*?[Tt][Dd][^>]*?>(.*?)<\/[Tt][Dd]>.*?' + \
-        '<\/[Tt][Rr]>', re.S)
-
-    regex_timestamp = re.compile('As Of[:] (\d+\/\d+\/\d+ \(\d+,\d+\) \d+[:]\d+)', re.S)
-    regex_no_files  = re.compile('no files found')
-    
-    # find the problem stations
-    matches = regex.findall(xml)
     results = []
-    for match in matches:
-        n,s,c,t,_,d,u,_,_,_,_ = match
-        if regex_no_files.search(t):
-            d = float(123456789.0)
-            t = 'No Files Found'
-        elif u[0:6] == 'minute':
-            d = float(d) / 60.0
-        else:
-            d = float(d)
-        results.append((n,s,c,t,d))
 
-    match = regex_timestamp.search(xml)
-    timestamp = ''
-    if match:
-        print "FOUND TIME!!"
-        timestamp = match.group(1)
-    else:
-        print "BAD TIME REGEX!!"
+    # find the problem stations
+    for line in lines:
+        print line
+        print tuple(map(lambda s:s.strip(), line.split(',')))
+        s,n,l,c,t,d = tuple(map(lambda s:s.strip(), line.split(',')))
+        results.append((n,s,l,c,t,d))
+
+    results = sorted(results, st_cmp)
+    timestamp = results[-1][4]
+    delay = results[-1][5]
+    print "time was:     ", timestamp
+    if delay > 0:
+        try:
+            timestamp = time.strftime('%Y %j %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(timestamp, '%Y %j %H:%M:%S')) + (int(delay) * 60))))
+        except:
+            pass
+    print "time adjusted:", timestamp
 
     master_queue.put(('CHECK_DONE', (timestamp, sorted(results, st_cmp))))
     check_queue.get()
@@ -495,6 +460,7 @@ class Viewer(object):
 
       # Widget Data 
         self.data_outages = gtk.TreeStore( gobject.TYPE_STRING , # Station Name
+                                           gobject.TYPE_STRING , # Channel Name
                                            gobject.TYPE_STRING , # Downtime
                                            gobject.TYPE_STRING , # Outage Start Timestamp
                                            gobject.TYPE_BOOLEAN) # Checkbutton
@@ -503,8 +469,7 @@ class Viewer(object):
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("LISS Status Monitor - Viewer")
 
-        #self.pixbuf_window_icon = gtk.gdk.pixbuf_new_from_file(self.master.path.get('icon_default'))
-        #self.window.set_icon_list([self.pixbuf_window_icon])
+        self.window.set_icon(asl.new_icon('notepad'))
 
         self.vbox_main    = gtk.VBox()
         self.hbox_time    = gtk.HBox()
@@ -515,6 +480,7 @@ class Viewer(object):
         self.treeview              = gtk.TreeView()
         self.label_time            = gtk.Label()
         self.treeviewcol_station   = gtk.TreeViewColumn( "Station" )
+        self.treeviewcol_channel   = gtk.TreeViewColumn( "Channel" )
         self.treeviewcol_delay     = gtk.TreeViewColumn( "Delay (Hours)" )
         self.treeviewcol_timestamp = gtk.TreeViewColumn( "Outage Timestamp" )
         self.treeviewcol_viewed    = gtk.TreeViewColumn( "Viewed" )
@@ -538,6 +504,7 @@ class Viewer(object):
         self.hbox_close.pack_start(self.label_close, padding=1)
 
         self.crtext_station   = gtk.CellRendererText()
+        self.crtext_channel   = gtk.CellRendererText()
         self.crtext_delay     = gtk.CellRendererText()
         self.crtext_timestamp = gtk.CellRendererText()
         self.crtoggle_viewed  = gtk.CellRendererToggle()
@@ -558,6 +525,7 @@ class Viewer(object):
 
         self.scrollwindow.add(self.treeview)
         self.treeview.append_column(self.treeviewcol_station)
+        self.treeview.append_column(self.treeviewcol_channel)
         self.treeview.append_column(self.treeviewcol_delay)
         self.treeview.append_column(self.treeviewcol_timestamp)
         self.treeview.append_column(self.treeviewcol_viewed)
@@ -568,14 +536,17 @@ class Viewer(object):
         self.treeviewcol_station.pack_start(self.crtext_station, True)
         self.treeviewcol_station.add_attribute(self.crtext_station, 'text', 0)
         self.treeviewcol_station.set_cell_data_func(self.crtext_station, self.cdf_format_station, None)
+        self.treeviewcol_channel.pack_start(self.crtext_channel, True)
+        self.treeviewcol_channel.add_attribute(self.crtext_channel, 'text', 1)
+        self.treeviewcol_channel.set_cell_data_func(self.crtext_channel, self.cdf_format_channel, None)
         self.treeviewcol_delay.pack_start(self.crtext_delay, True)
-        self.treeviewcol_delay.add_attribute(self.crtext_delay, 'text', 1)
+        self.treeviewcol_delay.add_attribute(self.crtext_delay, 'text', 2)
         self.treeviewcol_delay.set_cell_data_func(self.crtext_delay, self.cdf_format_delay, None)
         self.treeviewcol_timestamp.pack_start(self.crtext_timestamp, True)
-        self.treeviewcol_timestamp.add_attribute(self.crtext_timestamp, 'text', 2)
+        self.treeviewcol_timestamp.add_attribute(self.crtext_timestamp, 'text', 3)
         self.treeviewcol_timestamp.set_cell_data_func(self.crtext_timestamp, self.cdf_format_timestamp, None)
         self.treeviewcol_viewed.pack_start(self.crtoggle_viewed, True)
-        self.treeviewcol_viewed.add_attribute(self.crtoggle_viewed, 'radio', 3)
+        self.treeviewcol_viewed.add_attribute(self.crtoggle_viewed, 'radio', 4)
         self.treeviewcol_viewed.set_cell_data_func(self.crtoggle_viewed, self.cdf_format_viewed, None)
 
         model = self.treeview.get_selection()
@@ -597,15 +568,23 @@ class Viewer(object):
 
 # ===== Cell Data Methods ============================================
     def cdf_format_station(self, column, cell, model, iter, data=None):
-        delay = float(model.get_value(iter, 1))
+        delay = float(model.get_value(iter, 2))
         station = model.get_value(iter, 0)
         if delay > 1.0:
             cell.set_property("foreground", "#bb0000")
         else:
             cell.set_property("foreground", "#00bb00")
 
+    def cdf_format_channel(self, column, cell, model, iter, data=None):
+        delay = float(model.get_value(iter, 2))
+        station = model.get_value(iter, 1)
+        if delay > 1.0:
+            cell.set_property("foreground", "#bb0000")
+        else:
+            cell.set_property("foreground", "#00bb00")
+
     def cdf_format_delay(self, column, cell, model, iter, data=None):
-        delay = float(model.get_value(iter, 1))
+        delay = float(model.get_value(iter, 2))
         if delay > (7.0 * 24.0):
             cell.set_property("background", "#cc0000")
         elif delay > 24.0:
@@ -616,8 +595,8 @@ class Viewer(object):
             cell.set_property("background", "#ffffff")
 
     def cdf_format_timestamp(self, column, cell, model, iter, data=None):
-        delay = float(model.get_value(iter, 1))
-        timestamp = model.get_value(iter, 2)
+        delay = float(model.get_value(iter, 2))
+        timestamp = model.get_value(iter, 3)
         if delay > (7.0 * 24.0):
             cell.set_property("background", "#cc0000")
         elif delay > 24.0:
@@ -628,7 +607,7 @@ class Viewer(object):
             cell.set_property("background", "#ffffff")
 
     def cdf_format_viewed(self, column, cell, model, iter, data=None):
-        cell.set_active(model.get_value(iter, 3))
+        cell.set_active(model.get_value(iter, 4))
 
 # ===== Callback Methods =============================================
     def callback_close(self, widget, event, data=None):
@@ -649,11 +628,11 @@ class Viewer(object):
 
     def callback_toggled(self, renderer, path, params=None):
         iter = self.data_outages.iter_nth_child(None, int(path))
-        value = self.data_outages.get_value(iter, 3)
+        value = self.data_outages.get_value(iter, 4)
         if value:
-            self.data_outages.set_value(iter, 3, False)
+            self.data_outages.set_value(iter, 4, False)
         else:
-            self.data_outages.set_value(iter, 3, True)
+            self.data_outages.set_value(iter, 4, True)
 
 # ===== General Methods ==============================================
     def show(self):
@@ -676,11 +655,16 @@ class Viewer(object):
     def set_data(self, data):
         if data:
             self.data_outages.clear()
-            for (n,s,c,t,d) in data:
+            for (n,s,l,c,t,d) in data:
                 name = "%s_%s" % (n,s)
-                delay = "%0.2f" % d
+                if not l:
+                    channel = c
+                else:
+                    channel = "%s-%s" % (l,c)
+                #delay = "%s (%0.2f)" % (d, int(d)/60.0)
+                delay = "%0.2f" % (int(d)/60.0,)
                 timestamp = t
-                self.data_outages.append(None, [name, delay, timestamp, False])
+                self.data_outages.append(None, [name, channel, delay, timestamp, False])
 
     def set_time(self, time):
         print "setting time"
@@ -818,20 +802,6 @@ class LISSPath(object):
       # Config & Archive
         self.path['file_config']   = os.path.abspath("%(path_liss)s/slissmon.cfg" % self.path)
         self.path['file_history']  = os.path.abspath("%(path_data)s/shistory.db" % self.path)
-      # Icons
-        self.path['icon_about']    = os.path.abspath("%(path_icon)s/sabout.ico" % self.path)
-        self.path['icon_archive']  = os.path.abspath("%(path_icon)s/sarchive.ico" % self.path)
-        self.path['icon_cancel']   = os.path.abspath("%(path_icon)s/scancel.ico" % self.path)
-        self.path['icon_check']    = os.path.abspath("%(path_icon)s/scheck.ico" % self.path)
-        self.path['icon_checking'] = os.path.abspath("%(path_icon)s/schecking.ico" % self.path)
-        self.path['icon_clear']    = os.path.abspath("%(path_icon)s/sclear.ico" % self.path)
-        self.path['icon_default']  = os.path.abspath("%(path_icon)s/sdefault.ico" % self.path)
-        self.path['icon_history']  = os.path.abspath("%(path_icon)s/shistory.ico" % self.path)
-        self.path['icon_gliss']    = os.path.abspath("%(path_icon)s/sgliss.ico" % self.path)
-        self.path['icon_quit']     = os.path.abspath("%(path_icon)s/squit.ico" % self.path)
-        self.path['icon_save']     = os.path.abspath("%(path_icon)s/ssave.ico" % self.path)
-        self.path['icon_view']     = os.path.abspath("%(path_icon)s/sview.ico" % self.path)
-        self.path['icon_warn']     = os.path.abspath("%(path_icon)s/swarn.ico" % self.path)
 
     def get(self, key):
         if self.path.has_key(key):
@@ -1165,11 +1135,11 @@ class History(object):
 #/*}}}*/
 
 def st_cmp(arr1, arr2):
-    val1 = arr1[4]
-    val2 = arr2[4]
+    val1 = calendar.timegm(time.strptime(arr1[4], '%Y %j %H:%M:%S'))
+    val2 = calendar.timegm(time.strptime(arr2[4], '%Y %j %H:%M:%S'))
     if val1 == val2:
-        return cmp(arr1[0]+arr1[1], arr2[0]+arr2[1])
-    return cmp(val2, val1)
+        return cmp(arr1[0]+arr1[1]+arr1[2]+arr1[3], arr2[0]+arr2[1]+arr2[2]+arr2[3])
+    return cmp(val1, val2)
 
 def main():
     app = Monitor()

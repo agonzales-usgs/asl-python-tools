@@ -28,10 +28,12 @@ class IPAddress:
         self.hbox_ip               = gtk.HBox()
         for i in range(4):
             self.ip_octets.append(gtk.SpinButton())
+            self.ip_octets[i].set_numeric(True)
         for i in range(3):
             self.ip_seperators.append(gtk.Label('.'))
         self.ip_seperators.append(gtk.Label('/'))
         self.ip_bits = gtk.SpinButton()
+        self.ip_bits.set_numeric(True)
 
         self.label_netmask         = gtk.Label('Netmask:')
         self.hbox_netmask          = gtk.HBox()
@@ -40,7 +42,7 @@ class IPAddress:
         for i in range(3):
             self.netmask_seperators.append(gtk.Label('.'))
 
-        self.label_network         = gtk.Label('Network:')
+        self.label_network         = gtk.Label('Network ID:')
         self.hbox_network          = gtk.HBox()
         self.label_network_disp    = gtk.Label('0.0.0.0')
                                    
@@ -50,7 +52,7 @@ class IPAddress:
                                    
         self.label_hosts           = gtk.Label('Host Range:')
         self.hbox_hosts            = gtk.HBox()
-        self.label_hosts_disp      = gtk.Label('0.0.0.0 - 0.0.0.0 (1 Host)')
+        self.label_hosts_disp      = gtk.Label('0.0.0.0 - 0.0.0.0 (1 Address)')
 
 # ===== Layout Configuration ======================================
         self.window.add( self.table_main )
@@ -102,11 +104,11 @@ class IPAddress:
         self.window.connect("destroy-event", self.callback_quit, None)
         self.window.connect("delete-event",  self.callback_quit, None)
 
-        self.ip_octets[0].connect("changed", self.callback_generate, None, 'ip-octet-0')
-        self.ip_octets[1].connect("changed", self.callback_generate, None, 'ip-octet-1')
-        self.ip_octets[2].connect("changed", self.callback_generate, None, 'ip-octet-2')
-        self.ip_octets[3].connect("changed", self.callback_generate, None, 'ip-octet-3')
-        self.ip_bits.connect("changed", self.callback_generate, None, 'ip-bits')
+        self.ip_octets[0].connect("value-changed", self.callback_generate, None, 'ip-octet-0')
+        self.ip_octets[1].connect("value-changed", self.callback_generate, None, 'ip-octet-1')
+        self.ip_octets[2].connect("value-changed", self.callback_generate, None, 'ip-octet-2')
+        self.ip_octets[3].connect("value-changed", self.callback_generate, None, 'ip-octet-3')
+        self.ip_bits.connect("value-changed", self.callback_generate, None, 'ip-bits')
 
         self.netmask_octets[0].connect("changed", self.callback_generate, None, 'netmask-octet-0')
         self.netmask_octets[1].connect("changed", self.callback_generate, None, 'netmask-octet-1')
@@ -129,6 +131,19 @@ class IPAddress:
         if event.state == gtk.gdk.MOD1_MASK:
             if event.keyval == ord('q'):
                 self.close_application(widget, event, data)
+        else:
+            if event.keyval == ord('.'):
+                if self.ip_octets[0].is_focus():
+                    self.ip_octets[1].grab_focus()
+                elif self.ip_octets[1].is_focus():
+                    self.ip_octets[2].grab_focus()
+                elif self.ip_octets[2].is_focus():
+                    self.ip_octets[3].grab_focus()
+                elif self.ip_octets[3].is_focus():
+                    self.ip_bits.grab_focus()
+            if event.keyval == ord('/'):
+                if self.ip_octets[3].is_focus():
+                    self.ip_bits.grab_focus()
 
     def callback_quit(self, widget, event, data=None):
         self.close_application(widget, event, data)
@@ -195,19 +210,37 @@ class IPAddress:
                     byte = 0
                 ip |= byte << ((3-i)*8)
             total_ips = (2 ** (32 - bits))
+            if total_ips < 3:
+                total_hosts = 0
+            else:
+                total_hosts = total_ips - 2
             network = ip & mask
             broadcast = network + total_ips - 1
             self.label_network_disp.set_text("%d.%d.%d.%d" % (split_ip(network)))
             self.label_broadcast_disp.set_text("%d.%d.%d.%d" % (split_ip(broadcast)))
             parts = []
-            #parts.extend(split_ip(network))
-            #parts.extend(split_ip(broadcast))
+
+            if total_hosts > 0:
+                sub = []
+                sub.extend(split_ip(network+1))
+                sub.extend(split_ip(broadcast-1))
+                parts.append("%d.%d.%d.%d - %d.%d.%d.%d" % tuple(sub))
+            else:
+                parts.append("N/A")
+
+            parts.append(total_hosts)
+            if total_hosts == 1:
+                parts.append('')
+            else:
+                parts.append('s')
+
             parts.append(total_ips)
             if total_ips == 1:
                 parts.append('')
             else:
-                parts.append('s')
-            self.label_hosts_disp.set_text("%d host%s" % tuple(parts))
+                parts.append('es')
+
+            self.label_hosts_disp.set_text("%s (%d Host%s/%d Address%s)" % tuple(parts))
         except Exception, e:
             print "Exception in generate_ip():", str(e)
         self.generating = False

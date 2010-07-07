@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 import asl
 
 import asyncore
@@ -192,11 +192,74 @@ class StatusThread(Thread):
             print "%s::run() caught an exception: %s" % (self.__class__.__name__,str(e))
 # /*}}}*/
 
+# === RestartThread Class /*{{{*/
+class RestartThread(Thread):
+    def __init__(self, master, log_queue=None):
+        Thread.__init__(self, queue_max=1024, log_queue=log_queue)
+        self.daemon = True
+        self._master = master
+        self._running = False
+
+    def _run(self, message, data):
+        print "got message %s" % message
+        if message == 'RESTART':
+            try:
+                if os.path.exists('/tmp/archive.pid'):
+                    tpid = open('/tmp/archive.pid', 'r').read(32).strip()
+                    if self._find_proc(tpid):
+                        print "archive.py process [%s] found" % tpid
+                        try:
+                            fh = open('/opt/var/archive/restart/%s' % tpid, 'w+')
+                            fh.write(tpid)
+                            fh.close()
+                        except:
+                            self._kill_proc()
+            except Exception, e:
+                print "%s::_run() caught exception: %s" % (self.__class__.__name__,str(e))
+
+    def _kill_proc(self, tpid):
+        if self._find_proc(tpid):
+            print "archive.py process [%s] found" % tpid
+            print "sending SIGTERM to archive.py process [%s]" % tpid
+            os.kill(int(tpid), 15)
+            count = 60
+            while 1:
+                if not self._find_proc(tpid):
+                    print "archive.py process [%s] has died" % tpid
+                    break
+                count -= 1
+                if count <= 0:
+                    print "sending SIGKILL to archive.py process [%s]" % tpid
+                    os.kill(int(tpid), 9)
+                    break
+                try:
+                   message,data = self.gueue.get(True, 1.0)
+                   print "received message %s while in process kill" % message
+                   if message == 'HALT':
+                       self.queue.put((message,data))
+                       return
+                except Queue.Empty:
+                    pass
+
+    def _find_proc(self, tpid):
+        tpid = str(tpid)
+        proc = os.popen('ps ax -o pid,args | grep %s' % tpid)
+        for line in proc.readlines():
+            pid,exe = line.strip().split(' ', 1)
+            if tpid == pid:
+                if re.search('archive[.]py', exe):
+                    return True
+        return False
+
+# /*}}}*/
+
 # === ArchiveIcon Class /*{{{*/
 class ArchiveIcon:
     def __init__(self):
+        signal.signal(signal.SIGTERM, self.halt_now)
+
         self.status_icon = gtk.StatusIcon()
-        self.status_icon.set_from_file('/opt/icons/box_inactive.png')
+        self.status_icon.set_from_pixbuf(asl.new_icon('box'))
         self.status_icon.set_visible(True)
         self.status_icon.connect( "popup-menu", self.callback_menu, None )
         self.status_icon.connect( "activate", self.callback_activate, None )
@@ -206,58 +269,75 @@ class ArchiveIcon:
         self.menu = gtk.Menu()
         self.menu.set_title("Archive Monitor")
 
+        self.menuitem_delay = gtk.MenuItem("Delay: 0 seconds")
+        self.menu.append(self.menuitem_delay)
+
         self.image_restart = gtk.Image()
-        self.image_restart.set_from_file('/opt/icons/restart.png')
+        self.image_restart.set_from_pixbuf(asl.new_icon('restart').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
         self.menuitem_restart = gtk.ImageMenuItem("Restart", "Restart")
         self.menuitem_restart.set_image(self.image_restart)
         self.menuitem_restart.connect("activate", self.callback_restart, None)
         self.menu.append(self.menuitem_restart)
 
+        self.image_exit = gtk.Image()
+        self.image_exit.set_from_pixbuf(asl.new_icon('stop').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.menuitem_exit = gtk.ImageMenuItem("Exit", "Exit")
+        self.menuitem_exit.set_image(self.image_exit)
+        self.menuitem_exit.connect("activate", self.callback_quit, None)
+        self.menu.append(self.menuitem_exit)
+
         self.menu.show()
+        self.menuitem_delay.show()
         self.menuitem_restart.show()
+        self.menuitem_exit.show()
 
         self.warn_delay = 60
-        self.last_activity = 0
 
         self.hbutton_update_time = gtk.Button()
         self.hbutton_update_time.connect('clicked', self.callback_update_time, None)
 
-        self.comm_thread   = CommThread(self)
-        self.status_thread = StatusThread(self)
+        self.comm_thread    = CommThread(self)
+        self.status_thread  = StatusThread(self)
+        self.restart_thread = RestartThread(self)
 
         #print "Starting Threads..."
         self.comm_thread.start()
         self.status_thread.start()
+        self.restart_thread.start()
 
 # ===== Callback Methods =============================================
     def callback_quit(self, widget, event, data=None):
-        self.close_application(widget, None, data)
+        self.close_application()
 
     def callback_restart(self, widget, event, data=None):
-        self.dates.today()
+        self.restart_thread.queue.put(('RESTART', None))
 
     def callback_menu(self, widget, button, activate_time, data=None):
-        self.menu.popup( None, None, None, button, activate_time, data )
+        self.menu.popup(None, None, None, button, activate_time, data)
 
     def callback_activate(self, widget, event, data=None):
-        self.window.toggle()
+        self.menu2.popup(None, None, None, button, calendar.timegm(time.gmtime()), data)
 
     def callback_update_time(self, widget, event, data=None):
         #print "%s::callback_update_time()" % self.__class__.__name__
         delay = calendar.timegm(time.gmtime()) - self.comm_thread.get_last_activity()
         print "delay is %d seconds" % delay
+        self.menuitem_delay.set_label("Delay: %d seconds" % delay)
         if delay >= self.warn_delay:
-            self.status_icon.set_from_file('/opt/icons/box_inactive.png')
+            self.status_icon.set_from_pixbuf(asl.new_icon('box'))
         else:
-            self.status_icon.set_from_file('/opt/icons/box_active.png')
+            self.status_icon.set_from_pixbuf(asl.new_icon('box_download'))
 
 # ===== Methods ======================================================
-    def close_application(self, widget, event, data=None):
+    def close_application(self):
         self.status_thread.halt_now()
         self.status_thread.join()
 
         self.comm_thread.halt_now()
         self.comm_thread.join()
+
+        self.restart_thread.halt_now()
+        self.restart_thread.join()
 
         gtk.main_quit()
         return False
@@ -269,6 +349,9 @@ class ArchiveIcon:
     def check_status(self):
         #print "%s::check_status()" % self.__class__.__name__
         self.comm_thread.check_status()
+
+    def halt_now(self):
+        self.close_application()
 #/*}}}*/
 
 if __name__ == "__main__":
@@ -277,3 +360,4 @@ if __name__ == "__main__":
         gtk.main()
     except KeyboardInterrupt:
         pass
+
