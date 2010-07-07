@@ -415,7 +415,7 @@ def check(check_queue, master_queue):
         uri = "liss-test-data.html"
         reader = open(uri, 'r')
     else:
-        uri = "http://wwwasl/uptime/upgrade/telmon.txt"
+        uri = "http://wwwasl.cr.usgs.gov/uptime/upgrade/telmon.txt"
         #uri = "http://aslwww.cr.usgs.gov/cgi-bin/LISSstat7.pl"
         reader = urllib.urlopen( uri )
     lines = reader.readlines()
