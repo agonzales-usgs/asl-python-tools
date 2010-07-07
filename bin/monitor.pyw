@@ -143,32 +143,32 @@ class Monitor(object):
     
     def callback_menu_selection(self, widget, event, data=None):
         self.menu_visible = False
-        print "menu selection data:", data
+        #print "menu selection data:", data
         if self.menu_callbacks.has_key(data):
             self.menu_callbacks[data](widget, event, data)
 
     def callback_check(self, widget, event, data=None):
-        print "check now"
+        #print "check now"
         self.core.check_now()
 
     def callback_cancel(self, widget, event, data=None):
-        print "cancel check"
+        #print "cancel check"
         self.core.cancel_check()
 
     def callback_view(self, widget, event, data=None):
-        print "viewer launched"
+        #print "viewer launched"
         if self.viewer.is_dead():
             self.new_viewer()
         self.viewer.show()
         self.callback_clear_warn(None, None, None)
 
     def callback_quit(self, widget, event, data=None):
-        print "exit program"
+        #print "exit program"
         self.core.stop()
         self.close_application(widget, event, data)
 
     def callback_menu(self, widget, button, activate_time, data=None):
-        print "toggle menu"
+        #print "toggle menu"
         if self.menu_visible:
             self.menu.popdown()
             self.menu_visible = False
@@ -177,54 +177,54 @@ class Monitor(object):
             self.menu_visible = True
 
     def callback_active(self, widget, event, data=None):
-        print "status icon active"
+        #print "status icon active"
         with self.lock_status:
             self.checking = True
             self.update_status_icon()
 
     def callback_inactive(self, widget, event, data=None):
-        print "status icon inactive"
+        #print "status icon inactive"
         with self.lock_status:
             self.checking = False
             self.update_status_icon()
 
     def callback_warn(self, widget, event, data=None):
-        print "status icon warning"
+        #print "status icon warning"
         with self.lock_status:
             self.warning = True
             self.update_status_icon()
 
     def callback_clear_warn(self, widget, event, data=None):
-        print "status icon no-warning"
+        #print "status icon no-warning"
         with self.lock_status:
             self.warning = False
             self.update_status_icon()
 
     def callback_archive(self, widget, event, data=None):
-        print "status icon archiving"
+        #print "status icon archiving"
         with self.lock_status:
             self.archiving = True
             self.update_status_icon()
 
     def callback_clear_archive(self, widget, event, data=None):
-        print "status icon not archiving"
+        #print "status icon not archiving"
         with self.lock_status:
             self.archiving = False
             self.update_status_icon()
 
     def callback_activate(self, wiget, event, data=None):
-        print "status icon activated"
+        #print "status icon activated"
         if self.viewer.is_dead():
             self.new_viewer()
         self.viewer.toggle()
 
     def callback_history(self, widget, event, data=None):
-        print "launching history viewer"
+        #print "launching history viewer"
         os.spawnvp( os.P_NOWAIT, self.path.get('file_pythonw'), 
                     [self.path.get('file_pythonw'), 'history.pyw'])
 
     def callback_status_update(self, widget, event, data=None):
-        print "LISS status has been updated"
+        #print "LISS status has been updated"
         self.update_stations()
 
     def new_viewer(self):
@@ -424,21 +424,21 @@ def check(check_queue, master_queue):
 
     # find the problem stations
     for line in lines:
-        print line
-        print tuple(map(lambda s:s.strip(), line.split(',')))
+        #print line
+        #print tuple(map(lambda s:s.strip(), line.split(',')))
         s,n,l,c,t,d = tuple(map(lambda s:s.strip(), line.split(',')))
         results.append((n,s,l,c,t,d))
 
     results = sorted(results, st_cmp)
     timestamp = results[-1][4]
     delay = results[-1][5]
-    print "time was:     ", timestamp
+    #print "time was:     ", timestamp
     if delay > 0:
         try:
             timestamp = time.strftime('%Y %j %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(timestamp, '%Y %j %H:%M:%S')) + (int(delay) * 60))))
         except:
             pass
-    print "time adjusted:", timestamp
+    #print "time adjusted:", timestamp
 
     master_queue.put(('CHECK_DONE', (timestamp, sorted(results, st_cmp))))
     check_queue.get()
@@ -667,7 +667,7 @@ class Viewer(object):
                 self.data_outages.append(None, [name, channel, delay, timestamp, False])
 
     def set_time(self, time):
-        print "setting time"
+        #print "setting time"
         if time:
             self.label_time.set_text(time)
 
@@ -967,7 +967,7 @@ class History(object):
         return model[active][0]
 
     def populate_networks(self):
-        print "Populating Station Network List"
+        #print "Populating Station Network List"
         list = self.history_database.get_station_networks()
         list.sort()
         list.insert(0,['All'])
@@ -1000,14 +1000,14 @@ class History(object):
 
 # ===== Callback Methods =============================================
     def callback_quit(self, widget, event, data=None):
-        print "Exit Program"
+        #print "Exit Program"
         self.close_application(widget, event, data)
 
     def callback_populate_stations(self, widget, data=None ):
-        print "Populating Station Name List"
+        #print "Populating Station Name List"
         self.data_stations.clear()
         network = self.get_active_text(self.combobox_network)
-        print "Selected network is", network
+        #print "Selected network is", network
         list = []
         if network == 'All' or network == 'Network': 
             st_list = self.history_database.get_stations()
@@ -1047,14 +1047,14 @@ class History(object):
             set = station.split('_')
             network = set[0]
             station = set[1]
-        print "[%s] Getting status list..." % time.strftime("%Y-%j %H:%M:%S")
+        #print "[%s] Getting status list..." % time.strftime("%Y-%j %H:%M:%S")
         results = self.history_database.get_status( network, station, date_start, date_end )
-        print "[%s] Calculating outages..." % time.strftime("%Y-%j %H:%M:%S")
+        #print "[%s] Calculating outages..." % time.strftime("%Y-%j %H:%M:%S")
         outages = self.get_outages( results )
-        print "[%s] Populating tree..." % time.strftime("%Y-%j %H:%M:%S")
+        #print "[%s] Populating tree..." % time.strftime("%Y-%j %H:%M:%S")
         for (timestamp, type, duration) in outages:
             self.data_outages.append( [timestamp, type, duration] )
-        print "[%s] All Done." % time.strftime("%Y-%j %H:%M:%S")
+        #print "[%s] All Done." % time.strftime("%Y-%j %H:%M:%S")
         #print "%d entries for %s_%s" % (len(results), network, station)
 
     def callback_show_calendar(self, widget, data):

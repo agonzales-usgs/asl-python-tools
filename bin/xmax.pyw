@@ -644,14 +644,14 @@ class XmaxGui:
         os.chdir(xmax_path)
         arguments = ["java", "-Xms512M", "-Xmx512M", "-jar", xmax_jar]
         arguments.extend(option_list)
-        print "argument list:", arguments
+        #print "argument list:", arguments
         process = subprocess.Popen(arguments)
         return process
 
     def run_unix(self, option_list):
         executable = '/usr/bin/xterm'
         arguments  = ['xterm', '-T', '\"XMAX\"', '-sl', '10240', '-e', "\"cd %s; java -Xms512M -Xmx512M -jar xmax.jar %s && read -p 'Press any key to continue...'\"" % (self.xmax_directory, ' '.join(option_list))]
-        print "Command:", ' '.join(arguments)
+        #print "Command:", ' '.join(arguments)
         os.popen(' '.join(arguments))
 
 def main():

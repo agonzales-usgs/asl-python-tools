@@ -156,7 +156,8 @@ class CommThread(Thread):
                 asyncore.loop(timeout=5.0, use_poll=False, map=map, count=1)
 
         except Exception, e:
-            print "%s::run() caught an exception: %s" % (self.__class__.__name__,str(e))
+            #print "%s::run() caught an exception: %s" % (self.__class__.__name__,str(e))
+            pass
 # /*}}}*/
 
 # === StatusThread Class /*{{{*/
@@ -189,7 +190,8 @@ class StatusThread(Thread):
                 except Queue.Empty:
                     pass
         except Exception, e:
-            print "%s::run() caught an exception: %s" % (self.__class__.__name__,str(e))
+            #print "%s::run() caught an exception: %s" % (self.__class__.__name__,str(e))
+            pass
 # /*}}}*/
 
 # === RestartThread Class /*{{{*/
@@ -201,13 +203,13 @@ class RestartThread(Thread):
         self._running = False
 
     def _run(self, message, data):
-        print "got message %s" % message
+        #print "got message %s" % message
         if message == 'RESTART':
             try:
                 if os.path.exists('/tmp/archive.pid'):
                     tpid = open('/tmp/archive.pid', 'r').read(32).strip()
                     if self._find_proc(tpid):
-                        print "archive.py process [%s] found" % tpid
+                        #print "archive.py process [%s] found" % tpid
                         try:
                             fh = open('/opt/var/archive/restart/%s' % tpid, 'w+')
                             fh.write(tpid)
@@ -215,26 +217,27 @@ class RestartThread(Thread):
                         except:
                             self._kill_proc()
             except Exception, e:
-                print "%s::_run() caught exception: %s" % (self.__class__.__name__,str(e))
+                #print "%s::_run() caught exception: %s" % (self.__class__.__name__,str(e))
+                pass
 
     def _kill_proc(self, tpid):
         if self._find_proc(tpid):
-            print "archive.py process [%s] found" % tpid
-            print "sending SIGTERM to archive.py process [%s]" % tpid
+            #print "archive.py process [%s] found" % tpid
+            #print "sending SIGTERM to archive.py process [%s]" % tpid
             os.kill(int(tpid), 15)
             count = 60
             while 1:
                 if not self._find_proc(tpid):
-                    print "archive.py process [%s] has died" % tpid
+                    #print "archive.py process [%s] has died" % tpid
                     break
                 count -= 1
                 if count <= 0:
-                    print "sending SIGKILL to archive.py process [%s]" % tpid
+                    #print "sending SIGKILL to archive.py process [%s]" % tpid
                     os.kill(int(tpid), 9)
                     break
                 try:
                    message,data = self.gueue.get(True, 1.0)
-                   print "received message %s while in process kill" % message
+                   #print "received message %s while in process kill" % message
                    if message == 'HALT':
                        self.queue.put((message,data))
                        return
@@ -321,7 +324,7 @@ class ArchiveIcon:
     def callback_update_time(self, widget, event, data=None):
         #print "%s::callback_update_time()" % self.__class__.__name__
         delay = calendar.timegm(time.gmtime()) - self.comm_thread.get_last_activity()
-        print "delay is %d seconds" % delay
+        #print "delay is %d seconds" % delay
         self.menuitem_delay.set_label("Delay: %d seconds" % delay)
         if delay >= self.warn_delay:
             self.status_icon.set_from_pixbuf(asl.new_icon('box'))

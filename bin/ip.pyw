@@ -242,7 +242,8 @@ class IPAddress:
 
             self.label_hosts_disp.set_text("%s (%d Host%s/%d Address%s)" % tuple(parts))
         except Exception, e:
-            print "Exception in generate_ip():", str(e)
+            #print "Exception in generate_ip():", str(e)
+            pass
         self.generating = False
 
 def split_ip(ip):
