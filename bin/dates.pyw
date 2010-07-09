@@ -340,6 +340,7 @@ class DateIcon:
         except:
             docked = False
 
+        self.menu_visible = False
         self.dates = Dates(docked)
         if docked:
             self.dates.hide()
@@ -352,7 +353,12 @@ class DateIcon:
         self.dates.today()
 
     def callback_menu(self, widget, button, activate_time, data=None):
-        self.menu.popup( None, None, None, button, activate_time, data )
+        if self.menu_visible:
+            self.menu.popdown()
+            self.menu_visible = False
+        else:
+            self.menu.popup( None, None, None, button, activate_time, data )
+            self.menu_visible = True
 
     def callback_activate(self, widget, event, data=None):
         self.dates.toggle()

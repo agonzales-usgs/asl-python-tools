@@ -9,6 +9,7 @@ import multiprocessing as mp
 import os
 import Queue
 import re
+import socket
 import string
 import subprocess
 import sys
@@ -25,6 +26,7 @@ import gtk
 
 from jtk.Logger import Logger
 from jtk.gtk.Calendar import Calendar
+from jtk.Persistence import Persistence
 
 #gtk.gdk.threads_init()
 gobject.threads_init()
@@ -33,8 +35,19 @@ gobject.threads_init()
 class Monitor(object):
     def __init__(self):
 
+        self.keep = Persistence()
+        self.keep_dict = {}
+        self.temp_dict = {}
+        try:
+            self.keep.select_database(os.path.abspath(asl.home_directory + '/.liss_monitor.db'))
+            self.keep.init()
+            pairs = self.keep.get_all()
+            for key,value in pairs:
+                self.keep_dict[key] = value
+        except:
+            pass
+
         self.path = LISSPath()
-        self.link = "http://aslwww.cr.usgs.gov/cgi-bin/LISSstat7.pl"
 
         self.status_icon = gtk.StatusIcon()
         self.status_icon.set_from_pixbuf(asl.new_icon('circle_blue'))
@@ -233,8 +246,13 @@ class Monitor(object):
         self.viewer.set_time(self.data_time)
 
     def close_application(self, widget, event, data=None):
+        self.keep.store_many(self.keep_iterator)
         gtk.main_quit()
         return False
+
+    def keep_iterator(self):
+        for key,value in self.keep_dict.items():
+            yield (key,value)
 
     def update_status_icon(self):
         if self.checking:
@@ -415,8 +433,9 @@ def check(check_queue, master_queue):
         uri = "liss-test-data.html"
         reader = open(uri, 'r')
     else:
-        uri = "http://wwwasl.cr.usgs.gov/uptime/upgrade/telmon.txt"
         #uri = "http://aslwww.cr.usgs.gov/cgi-bin/LISSstat7.pl"
+        #uri = "http://wwwasl.cr.usgs.gov/uptime/upgrade/telmon.txt"
+        uri = "http://136.177.120.21/uptime/upgrade/telmon.txt"
         reader = urllib.urlopen( uri )
     lines = reader.readlines()
     reader.close()
@@ -458,12 +477,18 @@ class Viewer(object):
         self.time_buffer = None
         self.master = master
 
+        self.regex_network  = None
+        self.regex_station  = None
+        self.regex_location = None
+        self.regex_channel  = None
+
       # Widget Data 
-        self.data_outages = gtk.TreeStore( gobject.TYPE_STRING , # Station Name
-                                           gobject.TYPE_STRING , # Channel Name
-                                           gobject.TYPE_STRING , # Downtime
-                                           gobject.TYPE_STRING , # Outage Start Timestamp
-                                           gobject.TYPE_BOOLEAN) # Checkbutton
+        self.treestore = gtk.TreeStore( gobject.TYPE_STRING , # Station Name
+                                        gobject.TYPE_STRING , # Channel Name
+                                        gobject.TYPE_STRING , # Downtime
+                                        gobject.TYPE_STRING , # Outage Start Timestamp
+                                        gobject.TYPE_BOOLEAN) # Checkbutton
+        self.treestore = self.treestore.filter_new()
 
         # Components
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
@@ -474,10 +499,11 @@ class Viewer(object):
         self.vbox_main    = gtk.VBox()
         self.hbox_time    = gtk.HBox()
         self.hbox_tree    = gtk.HBox()
+        self.hbox_filters = gtk.HBox()
         self.hbox_buttons = gtk.HBox()
 
-        self.scrollwindow          = gtk.ScrolledWindow()
         self.treeview              = gtk.TreeView()
+        self.scrollwindow          = gtk.ScrolledWindow()
         self.label_time            = gtk.Label()
         self.treeviewcol_station   = gtk.TreeViewColumn( "Station" )
         self.treeviewcol_channel   = gtk.TreeViewColumn( "Channel" )
@@ -503,6 +529,20 @@ class Viewer(object):
         self.hbox_close.pack_start(self.image_close, padding=1)
         self.hbox_close.pack_start(self.label_close, padding=1)
 
+        self.entry_filter_network  = gtk.Entry()
+        self.entry_filter_station  = gtk.Entry()
+        self.entry_filter_location = gtk.Entry()
+        self.entry_filter_channel  = gtk.Entry()
+        self.button_erase = gtk.Button(stock=None, use_underline=True)
+        self.hbox_erase   = gtk.HBox()
+        self.image_erase  = gtk.Image()
+        self.image_erase.set_from_pixbuf(asl.new_icon('erase').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        #self.label_erase  = gtk.Label('Erase')
+        self.button_erase.add(self.hbox_erase)
+        self.hbox_erase.pack_start(self.image_erase, padding=1)
+        #self.hbox_erase.pack_start(self.label_erase, padding=1)
+        self.treestore.set_visible_func(self.filter)
+
         self.crtext_station   = gtk.CellRendererText()
         self.crtext_channel   = gtk.CellRendererText()
         self.crtext_delay     = gtk.CellRendererText()
@@ -516,10 +556,16 @@ class Viewer(object):
         self.window.set_size_request(300,400)
         self.vbox_main.pack_start(self.hbox_time,    expand=False, fill=True,  padding=1)
         self.vbox_main.pack_start(self.hbox_tree,    expand=True,  fill=True,  padding=2)
+        self.vbox_main.pack_start(self.hbox_filters, expand=False, fill=True,  padding=1)
         self.vbox_main.pack_start(self.hbox_buttons, expand=False, fill=True,  padding=1)
 
         self.hbox_time.pack_start(self.label_time)
         self.hbox_tree.pack_start(self.scrollwindow, expand=True, fill=True, padding=2)
+        self.hbox_filters.pack_start(self.entry_filter_network,  expand=True, fill=True,  padding=1)
+        self.hbox_filters.pack_start(self.entry_filter_station,  expand=True, fill=True,  padding=1)
+        self.hbox_filters.pack_start(self.entry_filter_location, expand=True, fill=True,  padding=1)
+        self.hbox_filters.pack_start(self.entry_filter_channel,  expand=True, fill=True,  padding=1)
+        self.hbox_filters.pack_end(self.button_erase, expand=False, fill=True, padding=1)
         self.hbox_buttons.pack_start(self.button_refresh, expand=False, fill=True, padding=1)
         self.hbox_buttons.pack_end(self.button_close, expand=False, fill=False, padding=1)
 
@@ -532,7 +578,7 @@ class Viewer(object):
 
 # ===== Attribute Configuration ===========================================
         self.scrollwindow.set_policy( gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC )
-        self.treeview.set_model( self.data_outages )
+        self.treeview.set_model( self.treestore )
         self.treeviewcol_station.pack_start(self.crtext_station, True)
         self.treeviewcol_station.add_attribute(self.crtext_station, 'text', 0)
         self.treeviewcol_station.set_cell_data_func(self.crtext_station, self.cdf_format_station, None)
@@ -551,19 +597,53 @@ class Viewer(object):
 
         model = self.treeview.get_selection()
         model.set_mode(gtk.SELECTION_NONE)
-        
+
+        self.entry_filter_network._filter_title  = 'Network'
+        self.entry_filter_station._filter_title  = 'Station'
+        self.entry_filter_location._filter_title = 'Location'
+        self.entry_filter_channel._filter_title  = 'Channel'
+
+        if self.master.temp_dict.has_key('viewer-filter-network'):
+            self.entry_filter_network.set_text(self.master.temp_dict['viewer-filter-network'])
+        if self.master.temp_dict.has_key('viewer-filter-station'):
+            self.entry_filter_station.set_text(self.master.temp_dict['viewer-filter-station'])
+        if self.master.temp_dict.has_key('viewer-filter-location'):
+            self.entry_filter_location.set_text(self.master.temp_dict['viewer-filter-location'])
+        if self.master.temp_dict.has_key('viewer-filter-channel'):
+            self.entry_filter_channel.set_text(self.master.temp_dict['viewer-filter-channel'])
 
 # ===== Event Bindings
+        self.window.connect( "destroy-event", self.callback_destroy, None )
+        self.window.connect( "delete-event", self.callback_destroy, None )
+        self.window.connect( "configure-event", self.callback_window_configured, None )
+        self.window.connect( "screen-changed", self.callback_window_configured, None )
+        self.window.connect( "window-state-event", self.callback_window_configured, None )
+
         self.button_refresh.connect("clicked", self.callback_refresh, None)
         self.button_close.connect("clicked", self.callback_close, None)
 
-        self.window.connect( "destroy-event", self.callback_destroy, None )
-        self.window.connect( "delete-event", self.callback_destroy, None )
+        self.entry_filter_network.connect(  "changed", self.callback_filter_changed, None, "network")
+        self.entry_filter_station.connect(  "changed", self.callback_filter_changed, None, "station")
+        self.entry_filter_location.connect( "changed", self.callback_filter_changed, None, "location")
+        self.entry_filter_channel.connect(  "changed", self.callback_filter_changed, None, "channel")
+        self.entry_filter_network.connect(  "focus-in-event", self.callback_filter_focus_in, None)
+        self.entry_filter_station.connect(  "focus-in-event", self.callback_filter_focus_in, None)
+        self.entry_filter_location.connect(  "focus-in-event", self.callback_filter_focus_in, None)
+        self.entry_filter_channel.connect(  "focus-in-event", self.callback_filter_focus_in, None)
+        self.entry_filter_network.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        self.entry_filter_station.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        self.entry_filter_location.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        self.entry_filter_channel.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        self.button_erase.connect("clicked", self.callback_erase_filters, None)
+
+        self.filter_hint_show(self.entry_filter_network)
+        self.filter_hint_show(self.entry_filter_station)
+        self.filter_hint_show(self.entry_filter_location)
+        self.filter_hint_show(self.entry_filter_channel)
 
         # Show widgets
         self.window.show_all()
-        self.window.hide()
-        self.hidden = True
+        self.hide()
         self.dead   = False
 
 # ===== Cell Data Methods ============================================
@@ -611,7 +691,7 @@ class Viewer(object):
 
 # ===== Callback Methods =============================================
     def callback_close(self, widget, event, data=None):
-        self.window.hide()
+        self.hide()
 
     def callback_destroy(self, widget, event, data=None):
         self.dead = True
@@ -627,17 +707,134 @@ class Viewer(object):
             self.master.callback_clear_warn(None, None, None) 
 
     def callback_toggled(self, renderer, path, params=None):
-        iter = self.data_outages.iter_nth_child(None, int(path))
-        value = self.data_outages.get_value(iter, 4)
+        model = self.treestore.get_model()
+        iter = model.iter_nth_child(None, int(path))
+        value = model.get_value(iter, 4)
+        ns = model.get_value(iter, 0)
+        lc = model.get_value(iter, 1)
+        n,s = ns.strip().split('_')
+        l,c = lc.strip().split('-')
+        key = '%s-%s-%s-%s' % (n,s,l,c)
         if value:
-            self.data_outages.set_value(iter, 4, False)
+            model.set_value(iter, 4, False)
+            self.master.keep_dict[key] = 'False'
         else:
-            self.data_outages.set_value(iter, 4, True)
+            model.set_value(iter, 4, True)
+            self.master.keep_dict[key] = 'True'
+
+    def callback_filter_changed(self, widget, event, data=None):
+        text = widget.get_text()
+        if text == widget._filter_title:
+            text = ''
+        regex = None
+        if text == '':
+            regex = None
+        else:
+            try: regex = re.compile(text, re.IGNORECASE)
+            except: regex = None
+        if data == 'network':
+            self.regex_network = regex
+            self.master.temp_dict['viewer-filter-network'] = text
+        elif data == 'station':
+            self.regex_station = regex
+            self.master.temp_dict['viewer-filter-station'] = text
+        elif data == 'location':
+            self.regex_location = regex
+            self.master.temp_dict['viewer-filter-location'] = text
+        elif data == 'channel':
+            self.regex_channel = regex
+            self.master.temp_dict['viewer-filter-channel'] = text
+        self.treestore.refilter()
+        filter_iter = self.treestore.get_iter_first()
+        if filter_iter:
+            iter = self.treestore.convert_iter_to_child_iter(filter_iter)
+            if iter:
+                path = self.treestore.get_model().get_path(iter)
+                self.treeview.scroll_to_cell(path)
+
+    def callback_window_configured(self, widget, event, data=None):
+        #screen_id = self.window.get_screen().get_number() 
+        #display_name = self.window.get_screen().get_display().get_name()
+
+        gravity  = str(int(self.window.get_gravity()))
+        position = '%d,%d' % self.window.get_position()
+        size     = '%d,%d' % self.window.get_size()
+        #screen   = '%s,%d' % (display_name,screen_id)
+
+        #print "gravity: ", gravity
+        #print "position:", position
+        #print "screen:  ", screen
+        #print "size:    ", size
+
+        if not self.hidden:
+            self.master.keep_dict['viewer-gravity']  = gravity
+            self.master.keep_dict['viewer-position'] = position
+            self.master.keep_dict['viewer-size']     = size
+            #self.master.keep_dict['viewer-screen']   = screen
+
+    def callback_filter_focus_out(self, widget, event, data=None):
+        self.filter_hint_show(widget)
+
+    def callback_filter_focus_in(self, widget, event, data=None):
+        self.filter_hint_hide(widget)
+
+    def callback_erase_filters(self, widget, event, data=None):
+        self.entry_filter_network.set_text('')
+        self.entry_filter_station.set_text('')
+        self.entry_filter_location.set_text('')
+        self.entry_filter_channel.set_text('')
+        self.filter_hint_show(self.entry_filter_network)
+        self.filter_hint_show(self.entry_filter_station)
+        self.filter_hint_show(self.entry_filter_location)
+        self.filter_hint_show(self.entry_filter_channel)
+
 
 # ===== General Methods ==============================================
+
+    def filter_hint_show(self, widget):
+        if not len(widget.get_text()):
+            #widget._filter_state = 'EMPTY'
+            widget.set_text(widget._filter_title)
+            widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('#888888'))
+        else:
+            widget._filter_state = 'TEXT'
+
+    def filter_hint_hide(self, widget):
+        if widget.get_text() == widget._filter_title:
+            widget.set_text('')
+        widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.Color())
+
     def show(self):
-        self.hidden = False
         self.window.show()
+        if self.master.keep_dict.has_key('viewer-gravity'):
+            g = int(self.master.keep_dict['viewer-gravity'])
+            #print "gravity =", g
+            self.window.set_gravity(g)
+        if self.master.keep_dict.has_key('viewer-position'):
+            x,y = map(int,self.master.keep_dict['viewer-position'].split(',',1))
+            #print "position =", x, y
+            self.window.move(x,y)
+        if self.master.keep_dict.has_key('viewer-size'):
+            w,h = map(int,self.master.keep_dict['viewer-size'].split(',',1))
+            #print "size =", w, h
+            self.window.resize(w,h)
+        if self.master.keep_dict.has_key('viewer-fullscreen'):
+            fullscreen = self.master.keep_dict['viewer-fullscreen']
+            if fullscreen == 'TRUE':
+                self.window.fullscreen()
+            else:
+                self.window.unfullscreen()
+        #if self.master.keep_dict.has_key('viewer-screen'):
+            #d,s = self.master.keep_dict['viewer-screen'].split(',',1)
+            #print "screen =", d, s
+            #display = gtk.gdk.Display(d)
+            #print "display:", display
+            #screen = display.get_screen(int(s))
+            #print "screen:", screen
+            #print "dir", dir(screen)
+            #self.window.set_screen(gtk.gdk.Screen(gtk.gdk.Display(d).get_screen(int(s))))
+        self.hidden = False
+
 
     def hide(self):
         self.hidden = True
@@ -649,12 +846,61 @@ class Viewer(object):
         else:
             self.hide()
 
+    def get_visible(self):
+        refs = []
+        model = self.treestore.get_model()
+        filter = self.treestore
+        filter_iter = filter.get_iter_first()
+        while filter_iter:
+            iter = filter.convert_iter_to_child_iter(filter_iter)
+            path = model.get_path(iter)
+            refs.append(gtk.TreeRowReference(model, path))
+            filter_iter = filter.iter_next(filter_iter)
+        return refs
+
+    def get_selected(self):
+        selection = self.treeview.get_selection().get_selected_rows()
+        refs = []
+        model = self.treestore.get_model()
+        filter = self.treestore
+        for filter_path in selection[1]:
+            path = filter.convert_path_to_child_path(filter_path)
+            refs.append(gtk.TreeRowReference(model, path))
+        return refs
+
+    def filter(self, model, iter, user_data=None):
+        if self.regex_network:
+            parts = model.get_value(iter, 0).split('_', 1)
+            if len(parts) == 1:
+                value = ''
+            else:
+                value = parts[0]
+            if not self.regex_network.search(value):
+                return False
+        if self.regex_station:
+            value = model.get_value(iter, 0).split('_', 1)[-1]
+            if not self.regex_station.search(value):
+                return False
+        if self.regex_location:
+            parts = model.get_value(iter, 1).split('-', 1)
+            if len(parts) == 1:
+                value = ''
+            else:
+                value = parts[0]
+            if not self.regex_location.search(value):
+                return False
+        if self.regex_channel:
+            value = model.get_value(iter, 1).split('-', 1)[-1]
+            if not self.regex_channel.search(value):
+                return False
+        return True
+
     def is_dead(self):
         return self.dead
 
     def set_data(self, data):
         if data:
-            self.data_outages.clear()
+            self.treestore.get_model().clear()
             for (n,s,l,c,t,d) in data:
                 name = "%s_%s" % (n,s)
                 if not l:
@@ -664,7 +910,12 @@ class Viewer(object):
                 #delay = "%s (%0.2f)" % (d, int(d)/60.0)
                 delay = "%0.2f" % (int(d)/60.0,)
                 timestamp = t
-                self.data_outages.append(None, [name, channel, delay, timestamp, False])
+                key = "%s-%s-%s-%s" % (n,s,l,c)
+                checked = False
+                if self.master.keep_dict.has_key(key):
+                    if self.master.keep_dict[key].upper() == 'TRUE':
+                        checked = True
+                self.treestore.get_model().append(None, [name, channel, delay, timestamp, checked])
 
     def set_time(self, time):
         #print "setting time"
