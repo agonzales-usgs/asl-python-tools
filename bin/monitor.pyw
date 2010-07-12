@@ -707,13 +707,24 @@ class Viewer(object):
             self.master.callback_clear_warn(None, None, None) 
 
     def callback_toggled(self, renderer, path, params=None):
+        filter_iter = self.treestore.iter_nth_child(None, int(path))
+        iter = self.treestore.convert_iter_to_child_iter(filter_iter)
         model = self.treestore.get_model()
-        iter = model.iter_nth_child(None, int(path))
         value = model.get_value(iter, 4)
         ns = model.get_value(iter, 0)
         lc = model.get_value(iter, 1)
-        n,s = ns.strip().split('_')
-        l,c = lc.strip().split('-')
+        n_s = ns.strip().split('_',1)
+        if len(n_s) < 2:
+            n = ''
+            s = n_s[0]
+        else:
+            n,s = n_s
+        l_c = lc.strip().split('-',1)
+        if len(l_c) < 2:
+            l = ''
+            c = l_c[0]
+        else:
+            l,c = l_c
         key = '%s-%s-%s-%s' % (n,s,l,c)
         if value:
             model.set_value(iter, 4, False)
