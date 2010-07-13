@@ -11,6 +11,7 @@ class Calendar(object):
         self.completion_data = None
         self.time_high = True
         self.pushing = False
+        self.calendar = None
 
         self.granularity = "day"
         self.granules = {  'day'    : 4 ,

@@ -47,6 +47,13 @@ class Monitor(object):
         except:
             pass
 
+        if not self.keep_dict.has_key('host'):
+            self.keep_dict['host'] = '136.177.120.21'
+        if not self.keep_dict.has_key('port'):
+            self.keep_dict['port'] = '80'
+        if not self.keep_dict.has_key('path'):
+            self.keep_dict['path'] = 'uptime/upgrade/telmon.txt'
+
         self.path = LISSPath()
 
         self.status_icon = gtk.StatusIcon()
@@ -55,70 +62,41 @@ class Monitor(object):
         self.status_icon.connect( "popup-menu", self.callback_menu, None )
         self.status_icon.connect( "activate", self.callback_activate, None )
 
-
         self.menu = gtk.Menu()
         self.menu.set_title("LISS Monitor")
 
+        menu_list = [
+            ('check',   'Check Now',      'add',     self.callback_check,      True),
+            ('cancel',  'Cancel Check',   'cancel',  self.callback_cancel,     True),
+            ('view',    'Open Viewer',    'notepad', self.callback_view,       True),
+            ('clear',   'Clear Warning',  'accept',  self.callback_clear_warn, True),
+            ('history', 'History Viewer', 'events',  self.callback_history,    False),
+            ('server',  'Set Server',     'network', self.callback_server,     True),
+            ('save',    'Save State',     'save',    self.callback_save,       True),
+            ('quit',    'Quit',           'exit',    self.callback_quit,       True),
+        ]
+        self.menu_items = {}
+
+        for id,title,icon,callback,show in menu_list:
+            item_dict = {}
+            item_dict['widget'] = gtk.ImageMenuItem(title, id.capitalize())
+            item_dict['image'] = gtk.Image()
+            item_dict['image'].set_from_pixbuf(asl.new_icon(icon).scale_simple(16,16,gtk.gdk.INTERP_HYPER))
+            item_dict['widget'].set_image(item_dict['image'])
+            item_dict['callback'] = callback
+            item_dict['widget'].connect("activate", self.callback_menu_selection, None, id)
+            item_dict['show'] = show
+            self.menu_items[id] = item_dict
+            item_dict = None
+            self.menu.append(self.menu_items[id]['widget'])
+
         self.image_default = gtk.Image()
-        self.image_check   = gtk.Image()
-        self.image_cancel  = gtk.Image()
-        self.image_view    = gtk.Image()
-        self.image_clear   = gtk.Image()
-        self.image_history = gtk.Image()
-        self.image_quit    = gtk.Image()
-
         self.image_default.set_from_pixbuf(asl.new_icon('circle_blue').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.image_check.set_from_pixbuf(asl.new_icon('add').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.image_cancel.set_from_pixbuf(asl.new_icon('cancel').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.image_view.set_from_pixbuf(asl.new_icon('notepad').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.image_clear.set_from_pixbuf(asl.new_icon('accept').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.image_history.set_from_pixbuf(asl.new_icon('events').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.image_quit.set_from_pixbuf(asl.new_icon('exit').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-
-        self.menuitem_check = gtk.ImageMenuItem("Check Now", "Check")
-        self.menuitem_cancel = gtk.ImageMenuItem("Cancel Check", "Cancel")
-        self.menuitem_view = gtk.ImageMenuItem("Open Viewer", "View")
-        self.menuitem_clear = gtk.ImageMenuItem("Clear Warning", "Clear")
-        self.menuitem_history = gtk.ImageMenuItem("History Viewer", "History")
-        self.menuitem_quit = gtk.ImageMenuItem("Quit", "Quit")
-
-        self.menuitem_check.set_image(self.image_check)
-        self.menuitem_cancel.set_image(self.image_cancel)
-        self.menuitem_view.set_image(self.image_view)
-        self.menuitem_clear.set_image(self.image_clear)
-        self.menuitem_history.set_image(self.image_history)
-        self.menuitem_quit.set_image(self.image_quit)
-
-        self.menuitem_check.connect(  "activate", self.callback_menu_selection, None, 'check' )
-        self.menuitem_cancel.connect( "activate", self.callback_menu_selection, None, 'cancel' )
-        self.menuitem_view.connect(   "activate", self.callback_menu_selection, None, 'view' )
-        self.menuitem_clear.connect(  "activate", self.callback_menu_selection, None, 'clear' )
-        self.menuitem_history.connect("activate", self.callback_menu_selection, None, 'history' )
-        self.menuitem_quit.connect(   "activate", self.callback_menu_selection, None, 'quit' )
-
-        self.menu_callbacks = {
-            'check'   : self.callback_check,
-            'cancel'  : self.callback_cancel,
-            'view'    : self.callback_view,
-            'clear'   : self.callback_clear_warn,
-            'history' : self.callback_history,
-            'quit'    : self.callback_quit,
-            }
-
-        self.menu.append(self.menuitem_check)
-        self.menu.append(self.menuitem_cancel)
-        self.menu.append(self.menuitem_view)
-        self.menu.append(self.menuitem_clear)
-        self.menu.append(self.menuitem_history)
-        self.menu.append(self.menuitem_quit)
 
         self.menu.show()
-        self.menuitem_check.show()
-        self.menuitem_cancel.show()
-        self.menuitem_view.show()
-        self.menuitem_clear.show()
-        #self.menuitem_history.show() # Re-Enable once history viewer is implemented
-        self.menuitem_quit.show()
+        for key in self.menu_items.keys():
+            if self.menu_items[key]['show']:
+                self.menu_items[key]['widget'].show()
 
         self.viewer = Viewer(self)
 
@@ -139,17 +117,17 @@ class Monitor(object):
         self.hbutton_status_icon_clear_archive.connect('clicked', self.callback_clear_archive, None)
 
       # Station Processing
-        self.menu_visible = False
-        self.startup_grace = 1
+        self.menu_visible   = False
+        self.startup_grace  = 1
         self.warn_threshold = 0.25 # hours
-        self.stations = []
-        self.lock_status = threading.Lock()
-        self.checking  = False
-        self.warning   = False
-        self.archiving = False
-        self.data_time = ''
-        self.data = None
-        self.core = Core(self)
+        self.stations       = []
+        self.lock_status    = threading.Lock()
+        self.checking       = False
+        self.warning        = False
+        self.archiving      = False
+        self.data_time      = ''
+        self.data           = None
+        self.core           = Core(self)
         self.core.start()
 
 # ===== Callback Methods =============================================
@@ -157,8 +135,8 @@ class Monitor(object):
     def callback_menu_selection(self, widget, event, data=None):
         self.menu_visible = False
         #print "menu selection data:", data
-        if self.menu_callbacks.has_key(data):
-            self.menu_callbacks[data](widget, event, data)
+        if self.menu_items.has_key(data):
+            self.menu_items[data]['callback'](widget, event, data)
 
     def callback_check(self, widget, event, data=None):
         #print "check now"
@@ -179,6 +157,75 @@ class Monitor(object):
         #print "exit program"
         self.core.stop()
         self.close_application(widget, event, data)
+
+    def callback_server(self, widget, event, data=None):
+        dialog = gtk.Dialog(title="LISS Monitor Server", 
+                                 buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
+                                          gtk.STOCK_OK,     gtk.RESPONSE_ACCEPT))
+        dialog.set_icon(asl.new_icon('network'))
+        dialog_hbox = gtk.HBox()
+        dialog_label = gtk.Label('http://')
+        dialog_entry_host  = gtk.Entry()
+        dialog_label_colon = gtk.Label(':')
+        dialog_entry_port  = gtk.Entry()
+        dialog_label_slash = gtk.Label('/')
+        dialog_entry_path  = gtk.Entry()
+
+        dialog_entry_host.set_width_chars(20)
+        dialog_entry_port.set_width_chars(5)
+        dialog_entry_path.set_width_chars(30)
+
+        host = self.keep_dict['host']
+        port = self.keep_dict['port']
+        path = self.keep_dict['path']
+        dialog_entry_host.set_text(host)
+        dialog_entry_port.set_text(str(port))
+        dialog_entry_path.set_text(path)
+
+        dialog_hbox.pack_start(dialog_label,       False, False, 0)
+        dialog_hbox.pack_start(dialog_entry_host,  False, False, 0)
+        dialog_hbox.pack_start(dialog_label_colon, False, False, 0)
+        dialog_hbox.pack_start(dialog_entry_port,  False, False, 0)
+        dialog_hbox.pack_start(dialog_label_slash, False, False, 0)
+        dialog_hbox.pack_start(dialog_entry_path,  False, False, 0)
+
+        dialog.vbox.pack_end(dialog_hbox)
+        dialog_hbox.show_all()
+
+        response = dialog.run()
+        host = dialog_entry_host.get_text()
+        port = dialog_entry_port.get_text()
+        path = dialog_entry_path.get_text()
+        dialog.destroy()
+
+        if response == gtk.RESPONSE_ACCEPT:
+
+            if host == '':
+                dialog = gtk.MessageDialog(type=gtk.MESSAGE_WARNING,
+                                           buttons=gtk.BUTTONS_OK,
+                                           message_format="Invalid Host")
+                dialog.run()
+                dialog.destroy()
+                return
+
+            try:
+                port = int(port)
+                assert port > 0
+                assert port < 65536
+            except:
+                dialog = gtk.MessageDialog(type=gtk.MESSAGE_WARNING,
+                                           buttons=gtk.BUTTONS_OK,
+                                           message_format="Invalid Port")
+                dialog.run()
+                dialog.destroy()
+                return
+
+            self.keep_dict['host'] = host
+            self.keep_dict['port'] = str(port)
+            self.keep_dict['path'] = path.lstrip('/')
+
+    def callback_save(self, widget, event, data=None):
+        self.keep.store_many(self.keep_iterator)
 
     def callback_menu(self, widget, button, activate_time, data=None):
         #print "toggle menu"
@@ -316,6 +363,9 @@ class Monitor(object):
 
     def current_time(self):
         return time.mktime(time.gmtime())
+
+    def get_uri(self):
+        return "http://%(host)s:%(port)s/%(path)s" % self.keep_dict
 #/*}}}*/
 
 # === Core Class /*{{{*/
@@ -369,6 +419,11 @@ class Core(threading.Thread):
 
             if request == 'STOP':
                 self.running = False
+            elif request == 'CHECK_FAILED':
+                self.check_queue.put('THANKS')
+                self.check_process.join()
+                self._check_done()
+                self._start_archive()
             elif request == 'CHECK_DONE':
                 self.gui.data_time = data[0] + ' UTC'
                 self.gui.data      = data[1]
@@ -391,7 +446,7 @@ class Core(threading.Thread):
             if self.check_queue:
                 del self.check_queue
             self.check_queue = mp.Queue()
-            args = [self.check_queue, self.queue]
+            args = [self.check_queue, self.queue, self.gui.get_uri()]
             self.check_process = mp.Process(target=check, args=args)
             self.check_process.start()
             self.last_check = calendar.timegm(time.gmtime())
@@ -425,41 +480,35 @@ class Core(threading.Thread):
 #/*}}}*/
 
 # === Check Function /*{{{*/
-def check(check_queue, master_queue):
-    test = False
-    #test = True
-    
-    if test:
-        uri = "liss-test-data.html"
-        reader = open(uri, 'r')
-    else:
-        #uri = "http://aslwww.cr.usgs.gov/cgi-bin/LISSstat7.pl"
-        #uri = "http://wwwasl.cr.usgs.gov/uptime/upgrade/telmon.txt"
-        uri = "http://136.177.120.21/uptime/upgrade/telmon.txt"
-        reader = urllib.urlopen( uri )
+def check(check_queue, master_queue, uri):
+    reader = urllib.urlopen(uri)
     lines = reader.readlines()
     reader.close()
     results = []
 
     # find the problem stations
     for line in lines:
-        #print line
-        #print tuple(map(lambda s:s.strip(), line.split(',')))
-        s,n,l,c,t,d = tuple(map(lambda s:s.strip(), line.split(',')))
-        results.append((n,s,l,c,t,d))
-
-    results = sorted(results, st_cmp)
-    timestamp = results[-1][4]
-    delay = results[-1][5]
-    #print "time was:     ", timestamp
-    if delay > 0:
+        if line[0] == '#':
+            continue
         try:
-            timestamp = time.strftime('%Y %j %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(timestamp, '%Y %j %H:%M:%S')) + (int(delay) * 60))))
+            s,n,l,c,t,d = tuple(map(lambda s:s.strip(), line.split(',')))
+            results.append((n,s,l,c,t,d))
         except:
             pass
-    #print "time adjusted:", timestamp
 
-    master_queue.put(('CHECK_DONE', (timestamp, sorted(results, st_cmp))))
+    if len(results):
+        results = sorted(results, st_cmp)
+        timestamp = results[-1][4]
+        delay = results[-1][5]
+        if delay > 0:
+            try:
+                timestamp = time.strftime('%Y %j %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(timestamp, '%Y %j %H:%M:%S')) + (int(delay) * 60))))
+            except:
+                pass
+
+        master_queue.put(('CHECK_DONE', (timestamp, sorted(results, st_cmp))))
+    else:
+        master_queue.put('CHECK_FAILED')
     check_queue.get()
 #/*}}}*/
 
@@ -533,6 +582,7 @@ class Viewer(object):
         self.entry_filter_station  = gtk.Entry()
         self.entry_filter_location = gtk.Entry()
         self.entry_filter_channel  = gtk.Entry()
+        self.hscale_checked = gtk.HScale()
         self.button_erase = gtk.Button(stock=None, use_underline=True)
         self.hbox_erase   = gtk.HBox()
         self.image_erase  = gtk.Image()
@@ -561,12 +611,13 @@ class Viewer(object):
 
         self.hbox_time.pack_start(self.label_time)
         self.hbox_tree.pack_start(self.scrollwindow, expand=True, fill=True, padding=2)
-        self.hbox_filters.pack_start(self.entry_filter_network,  expand=True, fill=True,  padding=1)
-        self.hbox_filters.pack_start(self.entry_filter_station,  expand=True, fill=True,  padding=1)
-        self.hbox_filters.pack_start(self.entry_filter_location, expand=True, fill=True,  padding=1)
-        self.hbox_filters.pack_start(self.entry_filter_channel,  expand=True, fill=True,  padding=1)
-        self.hbox_filters.pack_end(self.button_erase, expand=False, fill=True, padding=1)
+        self.hbox_filters.pack_start(self.entry_filter_network,  expand=True,  fill=True,  padding=1)
+        self.hbox_filters.pack_start(self.entry_filter_station,  expand=True,  fill=True,  padding=1)
+        self.hbox_filters.pack_start(self.entry_filter_location, expand=True,  fill=True,  padding=1)
+        self.hbox_filters.pack_start(self.entry_filter_channel,  expand=True,  fill=True,  padding=1)
+        self.hbox_filters.pack_end(self.button_erase,            expand=False, fill=True, padding=1)
         self.hbox_buttons.pack_start(self.button_refresh, expand=False, fill=True, padding=1)
+        self.hbox_buttons.pack_start(self.hscale_checked, expand=True,  fill=True,  padding=1)
         self.hbox_buttons.pack_end(self.button_close, expand=False, fill=False, padding=1)
 
         self.scrollwindow.add(self.treeview)
@@ -602,6 +653,14 @@ class Viewer(object):
         self.entry_filter_station._filter_title  = 'Station'
         self.entry_filter_location._filter_title = 'Location'
         self.entry_filter_channel._filter_title  = 'Channel'
+        self.hscale_checked.set_range(0.0,2.0)
+        self.hscale_checked.set_digits(0)
+        self.hscale_checked.set_draw_value(False)
+        self.hscale_checked.set_increments(1.0,1.0)
+        try:
+            self.hscale_checked.set_value(float(self.master.temp_dict['viewer-filter-checked']))
+        except:
+            self.hscale_checked.set_value(1.0)
 
         if self.master.temp_dict.has_key('viewer-filter-network'):
             self.entry_filter_network.set_text(self.master.temp_dict['viewer-filter-network'])
@@ -634,6 +693,7 @@ class Viewer(object):
         self.entry_filter_station.connect(  "focus-out-event", self.callback_filter_focus_out, None)
         self.entry_filter_location.connect(  "focus-out-event", self.callback_filter_focus_out, None)
         self.entry_filter_channel.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        self.hscale_checked.connect(   "value-changed", self.callback_scale_show_checked, None)
         self.button_erase.connect("clicked", self.callback_erase_filters, None)
 
         self.filter_hint_show(self.entry_filter_network)
@@ -705,6 +765,16 @@ class Viewer(object):
             self.time_buffer = None
         if self.master:
             self.master.callback_clear_warn(None, None, None) 
+
+    def callback_scale_show_checked(self, widget, event, data=None):
+        self.master.temp_dict['viewer-filter-checked'] = str(self.hscale_checked.get_value())
+        self.treestore.refilter()
+        filter_iter = self.treestore.get_iter_first()
+        if filter_iter:
+            iter = self.treestore.convert_iter_to_child_iter(filter_iter)
+            if iter:
+                path = self.treestore.get_model().get_path(iter)
+                self.treeview.scroll_to_cell(path)
 
     def callback_toggled(self, renderer, path, params=None):
         filter_iter = self.treestore.iter_nth_child(None, int(path))
@@ -798,6 +868,7 @@ class Viewer(object):
         self.filter_hint_show(self.entry_filter_station)
         self.filter_hint_show(self.entry_filter_location)
         self.filter_hint_show(self.entry_filter_channel)
+        self.hscale_checked.set_value(1)
 
 
 # ===== General Methods ==============================================
@@ -880,6 +951,15 @@ class Viewer(object):
         return refs
 
     def filter(self, model, iter, user_data=None):
+        #if self.checkbutton_checked.get_active():
+        #    if not model.get_value(iter, 4):
+        #        return False
+        if self.hscale_checked.get_value() < 0.66:
+            if model.get_value(iter, 4):
+                return False
+        if self.hscale_checked.get_value() > 1.33:
+            if not model.get_value(iter, 4):
+                return False
         if self.regex_network:
             parts = model.get_value(iter, 0).split('_', 1)
             if len(parts) == 1:
