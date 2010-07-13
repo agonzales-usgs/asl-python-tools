@@ -74,7 +74,7 @@ class Crypt:
         else:
             self.executable = os.path.abspath(path + '/utils/aescrypt/aescrypt.exe')
         if not os.path.exists(self.executable):
-            raise Exception("Unable to locate aescrypt executable")
+            raise Exception("Crypt: Unable to locate aescrypt executable")
 
     def build_actions(self):
         self.action = self.shell + " \"%s" % self.executable
@@ -117,6 +117,9 @@ class Crypt:
             self._log( "Caught Exception: " + e.__str__() )
             return 0
         return 1
+
+    def generate_key(self, bytes):
+        return os.popen("%s -g %d" % (self.executable, bytes)).read()
 
     def crypt_data(self, data_unprocessed='', src_file=None, dst_file=None):
         data_processed = ""
