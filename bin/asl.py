@@ -36,10 +36,11 @@ except:
 asl_path_file = os.path.abspath(home_directory + '/.asl_utilities_path')
 
 if not os.path.isfile(asl_path_file):
-    print "Could not locate ASL Utilities directory"
-    sys.exit(1)
-fh = open(asl_path_file, 'r')
-path = fh.readline().strip()
+    path = os.path.dirname(sys.path[1])
+else:
+    fh = open(asl_path_file, 'r')
+    path = fh.readline().strip()
+
 if not os.path.exists(path):
     print "ASL Utilities directory '%s' does not exist" % path
     sys.exit(1)
@@ -48,6 +49,13 @@ if not os.path.isdir(path):
     sys.exit(1)
 
 python_path = os.path.abspath(path + '/lib/python')
+
+if not os.path.exists(python_path):
+    print "Python library '%s' does not exist" % python_path
+    sys.exit(1)
+if not os.path.isdir(python_path):
+    print "path '%s' exists, but is not a directory" % python_path
+    sys.exit(1)
 
 sys.path.insert(0, python_path)
 

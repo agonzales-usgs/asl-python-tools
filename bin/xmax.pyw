@@ -45,7 +45,10 @@ class XmaxGui:
         if os.environ.has_key('XMAX_DIRECTORY'):
             self.xmax_directory = os.environ['XMAX_DIRECTORY']
         if not os.path.exists(self.xmax_directory):
-            self.xmax_directory = os.path.abspath("%s/utils/xmax" % asl.path)
+            try:
+                self.xmax_directory = os.path.abspath("%s/utils/xmax" % asl.path)
+            except:
+                pass
         if not os.path.exists(self.xmax_directory):
             self.xmax_directory = '/opt/xmax'
         if not os.path.exists(self.xmax_directory):
@@ -638,10 +641,8 @@ class XmaxGui:
             self.run_unix(option_list)
 
     def run_win(self, option_list):
-        xmax_version = open("%s%sxmax-version.txt" % (self.xmax_directory, self.sep), 'r').readline().strip()
-        xmax_path = os.path.abspath("%s/%s" % (self.xmax_directory, xmax_version))
-        xmax_jar = os.path.abspath("%s/xmax.jar" % xmax_path)
-        os.chdir(xmax_path)
+        xmax_jar = os.path.abspath("%s/xmax.jar" % self.xmax_directory)
+        os.chdir(self.xmax_directory)
         arguments = ["java", "-Xms512M", "-Xmx512M", "-jar", xmax_jar]
         arguments.extend(option_list)
         #print "argument list:", arguments
