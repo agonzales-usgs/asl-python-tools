@@ -17,8 +17,6 @@ import threading
 import time
 import urllib
 
-from pysqlite2 import dbapi2 as sqlite
-
 import pygtk
 pygtk.require('2.0')
 import gobject
@@ -26,26 +24,17 @@ import gtk
 
 from jtk.Logger import Logger
 from jtk.gtk.Calendar import Calendar
-from jtk.Persistence import Persistence
+from jtk.StatefulClass import StatefulClass
 
 #gtk.gdk.threads_init()
 gobject.threads_init()
 
 # === Monitor Class (User Interface) /*{{{*/
-class Monitor(object):
+class Monitor(StatefulClass):
     def __init__(self):
+        StatefulClass.__init__(self, os.path.abspath(asl.home_directory + '/.liss_monitor.db'))
 
-        self.keep = Persistence()
-        self.keep_dict = {}
-        self.temp_dict = {}
-        try:
-            self.keep.select_database(os.path.abspath(asl.home_directory + '/.liss_monitor.db'))
-            self.keep.init()
-            pairs = self.keep.get_all()
-            for key,value in pairs:
-                self.keep_dict[key] = value
-        except:
-            pass
+        self.load_state()
 
         if not self.keep_dict.has_key('host'):
             self.keep_dict['host'] = '136.177.120.21'
@@ -225,7 +214,7 @@ class Monitor(object):
             self.keep_dict['path'] = path.lstrip('/')
 
     def callback_save(self, widget, event, data=None):
-        self.keep.store_many(self.keep_iterator)
+        self.save_state()
 
     def callback_menu(self, widget, button, activate_time, data=None):
         #print "toggle menu"
@@ -293,13 +282,9 @@ class Monitor(object):
         self.viewer.set_time(self.data_time)
 
     def close_application(self, widget, event, data=None):
-        self.keep.store_many(self.keep_iterator)
+        self.save_state()
         gtk.main_quit()
         return False
-
-    def keep_iterator(self):
-        for key,value in self.keep_dict.items():
-            yield (key,value)
 
     def update_status_icon(self):
         if self.checking:

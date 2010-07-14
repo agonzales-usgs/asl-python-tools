@@ -16,12 +16,16 @@ pygtk.require('2.0')
 import gtk
 import gobject
 
+from jtk.StatefulClass import StatefulClass
+
 # === Dates Class /*{{{*/
 class Dates:
-    def __init__(self, docked=True):
+    def __init__(self, master, docked=True):
+        self.master = master
         self.lock_update_time = threading.Lock()
         self.hidden = False
         self.docked = docked
+        self.calendar = None
 
         self.month_map = [
             [31, 31], # January
@@ -130,6 +134,9 @@ class Dates:
 # ===== Event Bindings ============================================
         self.window.connect( "destroy-event", self.callback_close, None )
         self.window.connect( "delete-event",  self.callback_close, None )
+        self.window.connect( "configure-event", self.callback_window_configured, None )
+        self.window.connect( "screen-changed", self.callback_window_configured, None )
+        self.window.connect( "window-state-event", self.callback_window_configured, None )
 
         self.calendar.connect( "day-selected",  self.callback_update_time, 'calendar')
         self.calendar.connect( "month-changed", self.callback_update_time, 'calendar')
@@ -154,8 +161,21 @@ class Dates:
         self.window.show_all()
 
         # Synchronize the widget contents
+        self.hidden = True
         self.button_today.clicked()
-        
+        self.hidden = False
+
+        if self.master.temp_dict.has_key('year'):
+            self.spinbutton_year.set_value(int(self.master.temp_dict['year']))
+        if self.master.temp_dict.has_key('month'):
+            self.spinbutton_month.set_value(int(self.master.temp_dict['month']))
+        if self.master.temp_dict.has_key('day'):
+            self.spinbutton_day.set_value(int(self.master.temp_dict['day']))
+        if self.master.temp_dict.has_key('jyear'):
+            self.spinbutton_jyear.set_value(int(self.master.temp_dict['jyear']))
+        if self.master.temp_dict.has_key('jday'):
+            self.spinbutton_jday.set_value(int(self.master.temp_dict['jday']))
+
 
 # ===== Utility Methods ===========================================
     def get_active_text(self, combobox):
@@ -209,6 +229,15 @@ class Dates:
         else:
             gtk.main_quit()
 
+    def callback_window_configured(self, widget, event, data=None):
+        gravity  = str(int(self.window.get_gravity()))
+        position = '%d,%d' % self.window.get_position()
+        size     = '%d,%d' % self.window.get_size()
+        if not self.hidden:
+            self.master.keep_dict['viewer-gravity']  = gravity
+            self.master.keep_dict['viewer-position'] = position
+            self.master.keep_dict['viewer-size']     = size
+
     def callback_key_pressed(self, widget, event, data=None):
         if event.state == gtk.gdk.MOD1_MASK:
             if event.keyval == ord('q'):
@@ -231,6 +260,22 @@ class Dates:
         self.hidden = True
 
     def show(self):
+        if self.master.keep_dict.has_key('viewer-gravity'):
+            g = int(self.master.keep_dict['viewer-gravity'])
+            self.window.set_gravity(g)
+        if self.master.keep_dict.has_key('viewer-position'):
+            x,y = map(int,self.master.keep_dict['viewer-position'].split(',',1))
+            self.window.move(x,y)
+        if self.master.keep_dict.has_key('viewer-size'):
+            w,h = map(int,self.master.keep_dict['viewer-size'].split(',',1))
+            self.window.resize(w,h)
+        if self.master.keep_dict.has_key('viewer-fullscreen'):
+            fullscreen = self.master.keep_dict['viewer-fullscreen']
+            if fullscreen == 'TRUE':
+                self.window.fullscreen()
+            else:
+                self.window.unfullscreen()
+
         self.button_show.clicked()
         self.hidden = False
 
@@ -300,14 +345,25 @@ class Dates:
             self.the_date = datetime.datetime(year, month, day)
         self.set_from_time()
 
+        if not self.hidden:
+            self.master.temp_dict['year']  = str(int(self.spinbutton_year.get_value()))
+            self.master.temp_dict['month'] = str(int(self.spinbutton_month.get_value()))
+            self.master.temp_dict['day']   = str(int(self.spinbutton_day.get_value()))
+            self.master.temp_dict['jyear'] = str(int(self.spinbutton_jyear.get_value()))
+            self.master.temp_dict['jday']  = str(int(self.spinbutton_jday.get_value()))
+
         try: self.lock_update_time.release()
         except: pass
 #/*}}}*/
 
 # === DateIcon Class /*{{{*/
-class DateIcon:
+class DateIcon(StatefulClass):
     def __init__(self):
+        StatefulClass.__init__(self, os.path.abspath(asl.home_directory + '/.dates.db'))
+
+        self.load_state()
         docked = True
+
         try:
             self.status_icon = gtk.StatusIcon()
             self.status_icon.set_from_pixbuf(asl.new_icon('clock'))
@@ -341,7 +397,7 @@ class DateIcon:
             docked = False
 
         self.menu_visible = False
-        self.dates = Dates(docked)
+        self.dates = Dates(self, docked)
         if docked:
             self.dates.hide()
 
@@ -365,8 +421,10 @@ class DateIcon:
 
 # ===== Methods ======================================================
     def close_application(self, widget, event, data=None):
+        self.save_state()
         gtk.main_quit()
         return False
+
 #/*}}}*/
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@ from pysqlite2 import dbapi2 as sqlite
 
 class Persistence(object):
     def __init__(self):
+        object.__init__(self)
+        
         self.db  = None
         self.cur = None
         self.foreign_iterator = None
