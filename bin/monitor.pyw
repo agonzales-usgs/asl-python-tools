@@ -326,10 +326,13 @@ class Monitor(StatefulClass):
         self.refresh_viewer()
 
     def refresh_viewer(self):
+        if self.viewer.is_dead():
+            self.new_viewer()
         if self.data:
             self.viewer.set_data_buffer(self.data)
         if self.data_time:
             self.viewer.set_time_buffer(self.data_time)
+        self.viewer.auto_refresh()
 
     def warn(self, alert_stations, restored_stations):
         self.callback_warn(None, None, None)
@@ -539,6 +542,7 @@ class Viewer(object):
         self.treeview              = gtk.TreeView()
         self.scrollwindow          = gtk.ScrolledWindow()
         self.label_time            = gtk.Label()
+        self.checkbutton_refresh   = gtk.CheckButton('Auto Refresh')
         self.treeviewcol_station   = gtk.TreeViewColumn( "Station" )
         self.treeviewcol_channel   = gtk.TreeViewColumn( "Channel" )
         self.treeviewcol_delay     = gtk.TreeViewColumn( "Delay (Hours)" )
@@ -594,7 +598,8 @@ class Viewer(object):
         self.vbox_main.pack_start(self.hbox_filters, expand=False, fill=True,  padding=1)
         self.vbox_main.pack_start(self.hbox_buttons, expand=False, fill=True,  padding=1)
 
-        self.hbox_time.pack_start(self.label_time)
+        self.hbox_time.pack_start(self.checkbutton_refresh, expand=False,  fill=False,  padding=2)
+        self.hbox_time.pack_end(self.label_time, expand=False,  fill=True,  padding=2)
         self.hbox_tree.pack_start(self.scrollwindow, expand=True, fill=True, padding=2)
         self.hbox_filters.pack_start(self.entry_filter_network,  expand=True,  fill=True,  padding=1)
         self.hbox_filters.pack_start(self.entry_filter_station,  expand=True,  fill=True,  padding=1)
@@ -646,6 +651,11 @@ class Viewer(object):
             self.hscale_checked.set_value(float(self.master.temp_dict['viewer-filter-checked']))
         except:
             self.hscale_checked.set_value(1.0)
+    
+        self.checkbutton_refresh.set_active(False)
+        if self.master.keep_dict.has_key('viewer-refresh-auto'):
+            if self.master.keep_dict['viewer-refresh-auto'].upper() == 'TRUE':
+                self.checkbutton_refresh.set_active(True)
 
         if self.master.temp_dict.has_key('viewer-filter-network'):
             self.entry_filter_network.set_text(self.master.temp_dict['viewer-filter-network'])
@@ -662,6 +672,8 @@ class Viewer(object):
         self.window.connect( "configure-event", self.callback_window_configured, None )
         self.window.connect( "screen-changed", self.callback_window_configured, None )
         self.window.connect( "window-state-event", self.callback_window_configured, None )
+
+        self.checkbutton_refresh.connect("toggled", self.callback_toggle_refresh_auto, None)
 
         self.button_refresh.connect("clicked", self.callback_refresh, None)
         self.button_close.connect("clicked", self.callback_close, None)
@@ -688,8 +700,14 @@ class Viewer(object):
 
         # Show widgets
         self.window.show_all()
-        self.hide()
-        self.dead   = False
+        if self.master.keep_dict.has_key('viewer-hidden'):
+            if self.master.keep_dict['viewer-hidden'].upper() == 'TRUE':
+                self.hide()
+            else:
+                self.show()
+        else:
+            self.hide()
+        self.dead = False
 
 # ===== Cell Data Methods ============================================
     def cdf_format_station(self, column, cell, model, iter, data=None):
@@ -740,6 +758,12 @@ class Viewer(object):
 
     def callback_destroy(self, widget, event, data=None):
         self.dead = True
+
+    def callback_toggle_refresh_auto(self, widget, event, data=None):
+        if self.checkbutton_refresh.get_active():
+            self.master.keep_dict['viewer-refresh-auto'] = 'True'
+        else:
+            self.master.keep_dict['viewer-refresh-auto'] = 'False'
 
     def callback_refresh(self, widget, event, data=None):
         if self.data_buffer:
@@ -857,6 +881,9 @@ class Viewer(object):
 
 
 # ===== General Methods ==============================================
+    def auto_refresh(self):
+        if self.checkbutton_refresh.get_active():
+            self.button_refresh.clicked()
 
     def filter_hint_show(self, widget):
         if not len(widget.get_text()):
@@ -900,10 +927,11 @@ class Viewer(object):
             #print "screen:", screen
             #print "dir", dir(screen)
             #self.window.set_screen(gtk.gdk.Screen(gtk.gdk.Display(d).get_screen(int(s))))
+        self.master.keep_dict['viewer-hidden'] = 'False'
         self.hidden = False
 
-
     def hide(self):
+        self.master.keep_dict['viewer-hidden'] = 'True'
         self.hidden = True
         self.window.hide()
 

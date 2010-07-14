@@ -160,10 +160,22 @@ class Dates:
         # Show widgets
         self.window.show_all()
 
+        self.hidden = True
+        if not self.docked:
+            self.show()
+        elif self.master.keep_dict.has_key('viewer-hidden'):
+            if self.master.keep_dict['viewer-hidden'].upper() == 'TRUE':
+                self.hide()
+            else:
+                self.show()
+        else:
+            self.hide()
+
         # Synchronize the widget contents
+        was_hidden = self.hidden
         self.hidden = True
         self.button_today.clicked()
-        self.hidden = False
+        self.hidden = was_hidden
 
         if self.master.temp_dict.has_key('year'):
             self.spinbutton_year.set_value(int(self.master.temp_dict['year']))
@@ -257,6 +269,7 @@ class Dates:
 
     def hide(self):
         self.button_hide.clicked()
+        self.master.keep_dict['viewer-hidden'] = 'True'
         self.hidden = True
 
     def show(self):
@@ -277,6 +290,7 @@ class Dates:
                 self.window.unfullscreen()
 
         self.button_show.clicked()
+        self.master.keep_dict['viewer-hidden'] = 'False'
         self.hidden = False
 
     def today(self):
@@ -398,8 +412,6 @@ class DateIcon(StatefulClass):
 
         self.menu_visible = False
         self.dates = Dates(self, docked)
-        if docked:
-            self.dates.hide()
 
 # ===== Callback Methods =============================================
     def callback_quit(self, widget, event, data=None):
