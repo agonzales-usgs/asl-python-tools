@@ -37,7 +37,7 @@ SD_TO_FILE   = 2
 SD_BOTH      = 3
 
 class Crypt:
-    def __init__(self):
+    def __init__(self, executable):
         self.mode = ENCRYPT
         self.shell     = "/bin/bash -c"
 
@@ -53,28 +53,7 @@ class Crypt:
         self.logger.set_log_note("Crypt")
         self.logger.set_log_to_file(False)
 
-        try:
-            home_directory = os.path.abspath(os.environ['HOME'])
-        except:
-            home_directory = os.path.abspath(os.environ['USERPROFILE'])
-        asl_path_file = os.path.abspath(home_directory + '/.asl_utilities_path')
-        if not os.path.isfile(asl_path_file):
-            raise Exception("Crypt: Could not locate ASL Utilities directory")
-        fh = open(asl_path_file, 'r')
-        path = fh.readline().strip()
-        if not os.path.exists(path):
-            raise Exception("ASL Utilities directory '%s' does not exist" % path)
-        if not os.path.isdir(path):
-            raise Exception("path '%s' exists, but is not a directory" % path)
-
-        if platform.system() == 'Linux':
-            self.executable = os.path.abspath(path + '/utils/aescrypt/aescrypt.linux')
-        elif platform.system() == 'FreeBSD':
-            self.executable = os.path.abspath(path + '/utils/aescrypt/aescrypt.bsd')
-        else:
-            self.executable = os.path.abspath(path + '/utils/aescrypt/aescrypt.exe')
-        if not os.path.exists(self.executable):
-            raise Exception("Crypt: Unable to locate aescrypt executable")
+        self.executable = executable
 
     def build_actions(self):
         self.action = self.shell + " \"%s" % self.executable
@@ -357,7 +336,10 @@ class Crypt:
 def usage():
     print "usage: encrypt.py [-h] [-d] -i|--input=infile -o|--output=outfile"
 
-def main():
+def main(executable):
+    if executable == '':
+        print "aescrypt binary could not be located"
+
     option_list = [
         optparse.make_option("-d", "--decrypt", action="store_true", dest="decrypt", help="decrypt instead of encrypting"),
         optparse.make_option("-i", "--input-file", type="string", action="store", dest="input_file", help="which form which input will be read"),
@@ -413,7 +395,7 @@ def main():
             else:
                 out_file = default_out_file
 
-        engine = Crypt()
+        engine = Crypt(executable)
         args  = sys.argv[1:]
 
         #engine.log_file_name("engine.log")
@@ -434,7 +416,4 @@ def main():
     except EOFError:
         print ""
         sys.exit(0)
-
-if __name__ == "__main__":
-    main()
 

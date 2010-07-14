@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+import platform
 import sys
 
 try:
@@ -56,6 +57,15 @@ if not os.path.exists(python_path):
 if not os.path.isdir(python_path):
     print "path '%s' exists, but is not a directory" % python_path
     sys.exit(1)
+
+if platform.system() == 'Linux':
+    aescrypt_bin = os.path.abspath(path + '/utils/aescrypt/aescrypt.linux')
+elif platform.system() == 'FreeBSD':
+    aescrypt_bin = os.path.abspath(path + '/utils/aescrypt/aescrypt.bsd')
+else:
+    aescrypt_bin = os.path.abspath(path + '/utils/aescrypt/aescrypt.exe')
+if not os.path.exists(aescrypt_bin):
+    aescrypt_bin = ''
 
 sys.path.insert(0, python_path)
 
