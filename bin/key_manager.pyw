@@ -1,6 +1,19 @@
 #!/usr/bin/env python
+import asl
+
 import os
+import re
+import struct
+import subprocess
 import sys
+import threading
+import time
+
+import pygtk
+pygtk.require('2.0')
+import gtk
+import gobject
+gobject.threads_init()
 
 from jtk.StatefulClass import StatefulClass
 from jtk.Keys import Keys
@@ -14,3 +27,4 @@ class KeyManager(StatefulClass):
         self.signatures = Keys()
 
 
+    

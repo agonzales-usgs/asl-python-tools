@@ -15,7 +15,7 @@ class Keys(Persistence):
     # Overrides Persitence::store_iterator
     def store_iterator(self, foreign_iterator, encryption_key=None):
         for (id, key) in foreign_iterator():
-            yield (id, self.key_pre(key, encryption_key)))
+            yield (id, self.key_pre(key, encryption_key))
 
     def key_pre(self, key, encryption_key):
         return self.key_prepare(key, encryption_key, True)
@@ -24,21 +24,22 @@ class Keys(Persistence):
         return self.key_prepare(key, encryption_key, False)
 
     def key_prepare(self, key, encryption_key, store=True):
+        key_crypt = key
         if encryption_key is not None:
             try:
                 engine = Blowfish(encryption_key)
                 engine.initCTR()
                 key_crypt = engine.encryptCTR(key)
             except:
-                key_crypt = key
-            try:
-                if store:
-                    key_ready = base64.standard_b64encode(key_crypt)
-                else:
-                    key_ready = base64.standard_b64decode(key_crypt)
-            except:
-                key_ready = key_crypt
-            return key_ready
+                pass
+        try:
+            if store:
+                key_ready = base64.standard_b64encode(key_crypt)
+            else:
+                key_ready = base64.standard_b64decode(key_crypt)
+        except:
+            key_ready = key_crypt
+        return key_ready
 
     def add_key(self, id, key, encryption_key=None):
         try:
@@ -63,8 +64,8 @@ class Keys(Persistence):
     def get_keys(self, limit=-1, idx=0, encryption_key=None):
         try:
             results = []
-            for id,key in self.get_many(limit, idx)
-                results.append((id,self.key_post(key, encryption_key))
+            for id,key in self.get_many(limit, idx):
+                results.append((id,self.key_post(key, encryption_key)))
             return results
         except:
             return None
