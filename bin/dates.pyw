@@ -374,8 +374,8 @@ class Dates:
 class DateIcon(StatefulClass):
     def __init__(self):
         StatefulClass.__init__(self, os.path.abspath(asl.home_directory + '/.dates.db'))
-
         self.load_state()
+
         docked = True
 
         try:

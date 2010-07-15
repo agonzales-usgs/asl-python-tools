@@ -13,13 +13,17 @@ try:
     import sys
     import time
 
-    import pexpect  # expect lib
+    try:
+        import pexpect  # expect lib
+        PEXPECT = True
+    except:
+        PEXPECT = False
     from Logger import Logger
 except Exception, e:
     print "Exception: " + e.__str__()
     import time
     time.sleep(3)
-    raise Exception, "crypt could not be initialized. Exception: " + e.__str__()
+    raise Exception, "Crypt could not be initialized. Exception: " + e.__str__()
 
 try:
     import hashlib
@@ -42,6 +46,7 @@ class Crypt:
         self.shell     = "/bin/bash -c"
 
         self.password = ""
+        self.key      = ""
         self.seed     = ""
         self.action   = ""
 
@@ -144,16 +149,14 @@ class Crypt:
                 key_s_read  = []
                 key_s_write = [aes_stdin]
                 key_s_error = []
-                digest = sha1(self.password).digest() + sha1(self.password[::-1]).digest()[0:12]
-                key = struct.pack("!H", len(digest)) + digest
                 #print "key:", base64.standard_b64encode(key)
 
-                total = len(key)
+                total = len(self.key)
                 count = 0
                 index = 0
                 #self._log("Sending key [%s] of length %d to child..." % (base64.standard_b64encode(key), len(key)))
                 while True:
-                    buffer = key[index:]
+                    buffer = self.key[index:]
                     #self._log("selecting on file descriptors...")
                     (readable, writeable, errors) = select.select( key_s_read, key_s_write, key_s_error )
                     #self._log("file descriptor(s) ready.")
@@ -321,7 +324,12 @@ class Crypt:
             return "Password must contain at least one numeric character."
 
         self.password = password
+        digest = sha1(self.password).digest() + sha1(self.password[::-1]).digest()[0:12]
+        self.key = struct.pack("!H", len(digest)) + digest
         return ""
+
+    def set_key(self, key):
+        self.key = struct.pack("!H", len(key) + key
         
     def set_input(self, filename):
         self.in_file = filename

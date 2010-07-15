@@ -571,6 +571,8 @@ class Viewer(object):
         self.entry_filter_station  = gtk.Entry()
         self.entry_filter_location = gtk.Entry()
         self.entry_filter_channel  = gtk.Entry()
+        self.checkbutton_scale_unchecked = gtk.CheckButton()
+        self.checkbutton_scale_checked = gtk.CheckButton()
         self.hscale_checked = gtk.HScale()
         self.button_erase = gtk.Button(stock=None, use_underline=True)
         self.hbox_erase   = gtk.HBox()
@@ -607,7 +609,9 @@ class Viewer(object):
         self.hbox_filters.pack_start(self.entry_filter_channel,  expand=True,  fill=True,  padding=1)
         self.hbox_filters.pack_end(self.button_erase,            expand=False, fill=True, padding=1)
         self.hbox_buttons.pack_start(self.button_refresh, expand=False, fill=True, padding=1)
+        self.hbox_buttons.pack_start(self.checkbutton_scale_unchecked, expand=False,  fill=False,  padding=1)
         self.hbox_buttons.pack_start(self.hscale_checked, expand=True,  fill=True,  padding=1)
+        self.hbox_buttons.pack_start(self.checkbutton_scale_checked, expand=False,  fill=False,  padding=1)
         self.hbox_buttons.pack_end(self.button_close, expand=False, fill=False, padding=1)
 
         self.scrollwindow.add(self.treeview)
@@ -633,7 +637,6 @@ class Viewer(object):
         self.treeviewcol_timestamp.add_attribute(self.crtext_timestamp, 'text', 3)
         self.treeviewcol_timestamp.set_cell_data_func(self.crtext_timestamp, self.cdf_format_timestamp, None)
         self.treeviewcol_viewed.pack_start(self.crtoggle_viewed, True)
-        self.treeviewcol_viewed.add_attribute(self.crtoggle_viewed, 'radio', 4)
         self.treeviewcol_viewed.set_cell_data_func(self.crtoggle_viewed, self.cdf_format_viewed, None)
 
         model = self.treeview.get_selection()
@@ -651,6 +654,10 @@ class Viewer(object):
             self.hscale_checked.set_value(float(self.master.temp_dict['viewer-filter-checked']))
         except:
             self.hscale_checked.set_value(1.0)
+        self.checkbutton_scale_unchecked.set_sensitive(False)
+        self.checkbutton_scale_unchecked.set_active(False)
+        self.checkbutton_scale_checked.set_sensitive(False)
+        self.checkbutton_scale_checked.set_active(True)
     
         self.checkbutton_refresh.set_active(False)
         if self.master.keep_dict.has_key('viewer-refresh-auto'):
