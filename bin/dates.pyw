@@ -16,11 +16,13 @@ pygtk.require('2.0')
 import gtk
 import gobject
 
+from jtk.Class import Class
 from jtk.StatefulClass import StatefulClass
 
 # === Dates Class /*{{{*/
-class Dates:
+class Dates(Class):
     def __init__(self, master, docked=True):
+        Class.__init__(self)
         self.master = master
         self.lock_update_time = threading.Lock()
         self.hidden = False

@@ -894,11 +894,8 @@ class Viewer(object):
 
     def filter_hint_show(self, widget):
         if not len(widget.get_text()):
-            #widget._filter_state = 'EMPTY'
             widget.set_text(widget._filter_title)
             widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('#888888'))
-        else:
-            widget._filter_state = 'TEXT'
 
     def filter_hint_hide(self, widget):
         if widget.get_text() == widget._filter_title:

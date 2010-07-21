@@ -34,6 +34,11 @@ from jtk.gtk.utils import select_directory
 from jtk.gtk.utils import select_directories
 from jtk.seed.utils import CMP_SEED_TIMES
 
+DF_POLICY_FAIL      = 0
+DF_POLICY_SKIP      = 1
+DF_POLICY_OVERWRITE = 2
+DF_POLICY_APPEND    = 3
+
 # === Exceptions /*{{{*/
 class ExFileExists(Exception):
     pass
@@ -69,6 +74,8 @@ class SeedGui(Class):
                 self.output_directory = '/opt/data/temp_data'
         if not os.path.exists(self.output_directory):
             self.output_directory = self.home_directory
+
+        self.duplicate_file_policy = DF_POLICY_FAIL
 
         self.scanning            = False
         self.writing             = False
@@ -363,6 +370,12 @@ class SeedGui(Class):
         self.checkbutton_legacy = gtk.CheckButton(label="Legacy Read Algorithm")
         self.checkbutton_input_files = gtk.CheckButton(label="Only Use Files from Input File List")
 
+        self.label_dfp = gtk.Label("Duplicate File Policy")
+        self.radiobutton_dfp_fail      = gtk.RadioButton(group=None, label="Fail")
+        self.radiobutton_dfp_skip      = gtk.RadioButton(group=self.radiobutton_dfp_fail, label="Skip")
+        self.radiobutton_dfp_append    = gtk.RadioButton(group=self.radiobutton_dfp_fail, label="Append")
+        self.radiobutton_dfp_overwrite = gtk.RadioButton(group=self.radiobutton_dfp_fail, label="Overwrite")
+
       # Progress Indicators
         self.progress_file = gtk.ProgressBar()
         self.progress_byte = gtk.ProgressBar()
@@ -453,27 +466,32 @@ class SeedGui(Class):
         self.table_selection_buttons.attach( self.button_remove_visible_channels,  2, 3, 1, 2, 0, 0, 1, 1)
         self.table_selection_buttons.attach( self.button_remove_selected_channels, 3, 4, 1, 2, 0, 0, 1, 1)
 
-        self.table_output.attach( LEFT(self.label_scan_first_time),    0, 1, 0, 1, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( LEFT(self.label_scan_start_time),    1, 2, 0, 1, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( LEFT(self.hbox_m_set_start_time),    2, 3, 0, 1, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( LEFT(self.label_scan_last_time),     0, 1, 1, 2, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( LEFT(self.label_scan_end_time),      1, 2, 1, 2, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( LEFT(self.hbox_m_set_end_time),      2, 3, 1, 2, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( LEFT(self.label_start_time),         0, 1, 2, 3, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( self.entry_start_time,               1, 3, 2, 3, gtk.FILL | gtk.EXPAND, 0, 1, 1)
-        self.table_output.attach( self.button_start_time,              3, 4, 2, 3, 0, 0, 1, 1)
-        self.table_output.attach( LEFT(self.label_end_time),           0, 1, 3, 4, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( self.entry_end_time,                 1, 3, 3, 4, gtk.FILL | gtk.EXPAND, 0, 1, 1)
-        self.table_output.attach( self.button_end_time,                3, 4, 3, 4, 0, 0, 1, 1)
-        self.table_output.attach( LEFT(self.label_target_dir),         0, 1, 4, 5, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( self.entry_target_dir,               1, 3, 4, 5, gtk.FILL | gtk.EXPAND, 0, 1, 1)
-        self.table_output.attach( self.button_target_dir,              3, 4, 4, 5, 0, 0, 1, 1)
-        self.table_output.attach( LEFT(self.radiobutton_merge),        0, 1, 5, 6, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( self.entry_merge_file,               1, 3, 5, 6, gtk.FILL | gtk.EXPAND, 0, 1, 1)
-        self.table_output.attach( self.button_merge_file,              3, 4, 5, 6, 0, 0, 1, 1)
-        self.table_output.attach( LEFT(self.radiobutton_split),        0, 1, 6, 7, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( LEFT(self.checkbutton_legacy),       0, 4, 7, 8, gtk.FILL, 0, 1, 1)
-        self.table_output.attach( LEFT(self.checkbutton_input_files),  0, 4, 8, 9, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.label_scan_first_time),     0, 1,  0,  1, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.label_scan_start_time),     1, 2,  0,  1, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.hbox_m_set_start_time),     2, 3,  0,  1, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.label_scan_last_time),      0, 1,  1,  2, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.label_scan_end_time),       1, 2,  1,  2, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.hbox_m_set_end_time),       2, 3,  1,  2, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.label_start_time),          0, 1,  2,  3, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( self.entry_start_time,                1, 3,  2,  3, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_output.attach( self.button_start_time,               3, 4,  2,  3, 0, 0, 1, 1)
+        self.table_output.attach( LEFT(self.label_end_time),            0, 1,  3,  4, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( self.entry_end_time,                  1, 3,  3,  4, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_output.attach( self.button_end_time,                 3, 4,  3,  4, 0, 0, 1, 1)
+        self.table_output.attach( LEFT(self.label_target_dir),          0, 1,  4,  5, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( self.entry_target_dir,                1, 3,  4,  5, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_output.attach( self.button_target_dir,               3, 4,  4,  5, 0, 0, 1, 1)
+        self.table_output.attach( LEFT(self.radiobutton_merge),         0, 1,  5,  6, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( self.entry_merge_file,                1, 3,  5,  6, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_output.attach( self.button_merge_file,               3, 4,  5,  6, 0, 0, 1, 1)
+        self.table_output.attach( LEFT(self.radiobutton_split),         0, 1,  6,  7, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.checkbutton_legacy),        0, 4,  7,  8, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.checkbutton_input_files),   0, 4,  8,  9, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.label_dfp),                 0, 4,  9, 10, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.radiobutton_dfp_fail),      0, 4, 10, 11, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.radiobutton_dfp_skip),      0, 4, 11, 12, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.radiobutton_dfp_append),    0, 4, 12, 13, gtk.FILL, 0, 1, 1)
+        self.table_output.attach( LEFT(self.radiobutton_dfp_overwrite), 0, 4, 13, 14, gtk.FILL, 0, 1, 1)
 
         self.hbox_control.pack_start( self.button_write,        False, False,  0)
         self.hbox_control.pack_start( self.button_auto_write,   False, False,  0)
@@ -507,6 +525,7 @@ class SeedGui(Class):
 
         # Default to splitting data into individual files
         self.radiobutton_split.set_active(True)
+        self.radiobutton_dfp_fail.set_active(True)
 
         self.treeview_files.set_model(     self.treestore_files)
         self.treeview_channels.set_model(  self.treestore_channels)
@@ -527,6 +546,11 @@ class SeedGui(Class):
 
         self.treeview_files.get_selection().set_mode(     gtk.SELECTION_MULTIPLE)
         self.treeview_channels.get_selection().set_mode(  gtk.SELECTION_MULTIPLE)
+
+        self.entry_filter_network._filter_title  = 'Network'
+        self.entry_filter_station._filter_title  = 'Station'
+        self.entry_filter_location._filter_title = 'Location'
+        self.entry_filter_channel._filter_title  = 'Channel'
 
         self.treestore_files.set_sort_func(0, self.sort_files)
         self.treestore_channels.get_model().set_sort_func(0, self.sort_channels, "network")
@@ -581,6 +605,10 @@ class SeedGui(Class):
                                                                 "These files are stored in the target directory")
         self.apply_tooltip(self.checkbutton_legacy,          "Use the older read algorithm (faster, but less flexible)")
         self.apply_tooltip(self.checkbutton_input_files,     "If this is not selected, the program will use all files that have been scanned, even if they are no longer in the input file list.")
+        self.apply_tooltip(self.radiobutton_dfp_fail,        "If an output file exists, the write operation will fail.")
+        self.apply_tooltip(self.radiobutton_dfp_skip,        "If an output file exists, skip any records destined for it. This is probably a bad idea as you will receive no error messages.")
+        self.apply_tooltip(self.radiobutton_dfp_append,      "If an output file exists, add data to the end of it.")
+        self.apply_tooltip(self.radiobutton_dfp_overwrite,   "If an output file exists, replace it.")
 
         self.apply_tooltip(self.button_write,                "Standard write operation (requires a pre-scan and channel selections)")
         self.apply_tooltip(self.button_auto_write,           "Write data that matches filter entries and dates")
@@ -617,6 +645,11 @@ class SeedGui(Class):
         self.radiobutton_split.connect(      "toggled", self.callback_radio,           None)
         self.radiobutton_merge.connect(      "toggled", self.callback_radio,           None)
 
+        self.radiobutton_dfp_fail.connect(        "toggled", self.callback_dfp,        None)
+        self.radiobutton_dfp_skip.connect(        "toggled", self.callback_dfp,        None)
+        self.radiobutton_dfp_append.connect(      "toggled", self.callback_dfp,        None)
+        self.radiobutton_dfp_overwrite.connect(   "toggled", self.callback_dfp,        None)
+
         self.window.connect("key-press-event", self.callback_key_pressed)
 
         self.button_set_start_time.connect( "clicked", self.callback_set_start_time, None)
@@ -635,6 +668,20 @@ class SeedGui(Class):
         self.entry_filter_station.connect(  "changed", self.callback_filter_changed, None, "station")
         self.entry_filter_location.connect( "changed", self.callback_filter_changed, None, "location")
         self.entry_filter_channel.connect(  "changed", self.callback_filter_changed, None, "channel")
+        self.entry_filter_network.connect(  "focus-in-event", self.callback_filter_focus_in, None)
+        self.entry_filter_station.connect(  "focus-in-event", self.callback_filter_focus_in, None)
+        self.entry_filter_location.connect(  "focus-in-event", self.callback_filter_focus_in, None)
+        self.entry_filter_channel.connect(  "focus-in-event", self.callback_filter_focus_in, None)
+        self.entry_filter_network.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        self.entry_filter_station.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        self.entry_filter_location.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        self.entry_filter_channel.connect(  "focus-out-event", self.callback_filter_focus_out, None)
+        #self.button_erase.connect("clicked", self.callback_erase_filters, None)
+
+        self.filter_hint_show(self.entry_filter_network)
+        self.filter_hint_show(self.entry_filter_station)
+        self.filter_hint_show(self.entry_filter_location)
+        self.filter_hint_show(self.entry_filter_channel)
 
       # Hidden Buttons (Used for Threaded GUI update)
         self.hbutton_channel_added       = gtk.Button()
@@ -676,6 +723,8 @@ class SeedGui(Class):
 
     def callback_filter_changed(self, widget, event, data=None):
         text = widget.get_text()
+        if text == widget._filter_title:
+            text = ''
         regex = None
         if text == '':
             regex = None
@@ -691,6 +740,34 @@ class SeedGui(Class):
         elif data == 'channel':
             self.regex_channel = regex
         self.treestore_channels.refilter()
+        self.update_interface()
+
+    def callback_filter_focus_out(self, widget, event, data=None):
+        self.filter_hint_show(widget)
+
+    def callback_filter_focus_in(self, widget, event, data=None):
+        self.filter_hint_hide(widget)
+
+    def callback_erase_filters(self, widget, event, data=None):
+        self.entry_filter_network.set_text('')
+        self.entry_filter_station.set_text('')
+        self.entry_filter_location.set_text('')
+        self.entry_filter_channel.set_text('')
+        self.filter_hint_show(self.entry_filter_network)
+        self.filter_hint_show(self.entry_filter_station)
+        self.filter_hint_show(self.entry_filter_location)
+        self.filter_hint_show(self.entry_filter_channel)
+        self.hscale_checked.set_value(1)
+
+    def callback_dfp(self, widget, event, data=None):
+        if self.radiobutton_dfp_fail.get_active():
+            self.duplicate_file_policy = DF_POLICY_FAIL
+        elif self.radiobutton_dfp_skip.get_active():
+            self.duplicate_file_policy = DF_POLICY_SKIP
+        elif self.radiobutton_dfp_append.get_active():
+            self.duplicate_file_policy = DF_POLICY_APPEND
+        elif self.radiobutton_dfp_overwrite.get_active():
+            self.duplicate_file_policy = DF_POLICY_OVERWRITE
         self.update_interface()
 
     def callback_quit(self, widget, event, data=None):
@@ -885,6 +962,16 @@ class SeedGui(Class):
         self.flush_queue(self.queue_file_count)
         self.flush_queue(self.queue_byte_count)
 
+    def filter_hint_show(self, widget):
+        if not len(widget.get_text()):
+            widget.set_text(widget._filter_title)
+            widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('#888888'))
+
+    def filter_hint_hide(self, widget):
+        if widget.get_text() == widget._filter_title:
+            widget.set_text('')
+        widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.Color())
+
     def update_interface(self):
         # Users shouldn't be doing anything if we are processing data
         if self.writing or self.scanning or self.auto_writing:
@@ -902,6 +989,10 @@ class SeedGui(Class):
             self.button_end_time.set_sensitive(False)
             self.radiobutton_merge.set_sensitive(False)
             self.radiobutton_split.set_sensitive(False)
+            self.radiobutton_dfp_fail.set_sensitive(False)
+            self.radiobutton_dfp_skip.set_sensitive(False)
+            self.radiobutton_dfp_append.set_sensitive(False)
+            self.radiobutton_dfp_overwrite.set_sensitive(False)
 
             self.button_rescan.set_sensitive(False)
             self.button_scan.set_sensitive(False)
@@ -946,6 +1037,10 @@ class SeedGui(Class):
             self.radiobutton_split.set_sensitive(True)
             self.checkbutton_legacy.set_sensitive(True)
             self.checkbutton_input_files.set_sensitive(True)
+            self.radiobutton_dfp_fail.set_sensitive(True)
+            self.radiobutton_dfp_skip.set_sensitive(True)
+            self.radiobutton_dfp_append.set_sensitive(True)
+            self.radiobutton_dfp_overwrite.set_sensitive(True)
 
             self.button_rescan.set_sensitive(True)
             self.button_scan.set_sensitive(True)
@@ -2168,18 +2263,34 @@ class WriteThread(Thread):
                         if not os.path.exists(self.target_dir):
                             raise ExDirDNE(self.target_dir)
                         file = self.target_dir + '/' + key + '.seed'
+                        mode = 'w+b'
                         if os.path.exists(file):
-                            raise ExFileExists(file)
-                        self.file_handles[key] = open(file, 'w+b')
+                            if self.gui.duplicate_file_policy == DF_POLICY_APPEND:
+                                mode = 'a+b'
+                            elif self.gui.duplicate_file_policy == DF_POLICY_SKIP:
+                                mode = 'SKIP'
+                            elif self.gui.duplicate_file_policy == DF_POLICY_FAIL:
+                                raise ExFileExists(file)
+                        if mode == 'SKIP':
+                            return
+                        self.file_handles[key] = open(file, mode)
                         file_handle = self.file_handles[key]
                     record = data[8]
                     #self._log("SPLIT: Writing %d bytes for %s" % (len(record), key), 'dbg')
                     file_handle.write(record)
                 elif self.mode == 'MERGE':
                     if not self.file_handle:
+                        mode = 'w+b'
                         if os.path.exists(self.merge_file):
-                            raise ExFileExists(self.merge_file)
-                        self.file_handle = open(self.merge_file, 'w+b')
+                            if self.gui.duplicate_file_policy == DF_POLICY_APPEND:
+                                mode = 'a+b'
+                            elif self.gui.duplicate_file_policy == DF_POLICY_SKIP:
+                                mode = 'SKIP'
+                            elif self.gui.duplicate_file_policy == DF_POLICY_FAIL:
+                                raise ExFileExists(self.merge_file)
+                        if mode == 'SKIP':
+                            return
+                        self.file_handle = open(self.merge_file, mode)
                     record = data[8]
                     #self._log("SPLIT: Writing %d bytes for %s" % (len(record), "%s_%s_%s_%s" % tuple(map(str.strip, data[2:6]))), 'dbg')
                     self.file_handle.write(record)
