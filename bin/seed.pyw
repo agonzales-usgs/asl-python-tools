@@ -58,8 +58,8 @@ class SeedGui(Class):
             self.home_directory = os.environ['USERPROFILE']
 
         self.archive_directory = ''
-        if os.environ.has_key('ARCHIVE_DIRECTORY'):
-            self.archive_directory = os.environ['ARCHIVE_DIRECTORY']
+        if os.environ.has_key('SEED_ARCHIVE_DIRECTORY'):
+            self.archive_directory = os.environ['SEED_ARCHIVE_DIRECTORY']
         if not os.path.exists(self.archive_directory):
             if os.path.exists('/opt/data/archive'):
                 self.archive_directory = '/opt/data/archive'
@@ -67,13 +67,19 @@ class SeedGui(Class):
             self.archive_directory = self.home_directory
 
         self.output_directory = ''
-        if os.environ.has_key('OUTPUT_DIRECTORY'):
-            self.output_directory = os.environ['OUTPUT_DIRECTORY']
+        if os.environ.has_key('SEED_OUTPUT_DIRECTORY'):
+            self.output_directory = os.environ['SEED_OUTPUT_DIRECTORY']
         if not os.path.exists(self.output_directory):
             if os.path.exists('/opt/data/temp_data'):
                 self.output_directory = '/opt/data/temp_data'
         if not os.path.exists(self.output_directory):
             self.output_directory = self.home_directory
+
+        self.root_directory = ''
+        if os.environ.has_key('SEED_ROOT_DIRECTORY'):
+            self.root_directory = os.environ['SEED_ROOT_DIRECTORY']
+        if not os.path.exists(self.root_directory):
+            self.root_directory = ''
 
         self.duplicate_file_policy = DF_POLICY_FAIL
 
@@ -547,12 +553,14 @@ class SeedGui(Class):
         self.treeview_files.get_selection().set_mode(     gtk.SELECTION_MULTIPLE)
         self.treeview_channels.get_selection().set_mode(  gtk.SELECTION_MULTIPLE)
 
+        self.treeview_files.set_reorderable(True)
+
         self.entry_filter_network._filter_title  = 'Network'
         self.entry_filter_station._filter_title  = 'Station'
         self.entry_filter_location._filter_title = 'Location'
         self.entry_filter_channel._filter_title  = 'Channel'
 
-        self.treestore_files.set_sort_func(0, self.sort_files)
+        #self.treestore_files.set_sort_func(0, self.sort_files)
         self.treestore_channels.get_model().set_sort_func(0, self.sort_channels, "network")
         self.treestore_channels.get_model().set_sort_func(1, self.sort_channels, "station")
         self.treestore_channels.get_model().set_sort_func(2, self.sort_channels, "location")
@@ -928,7 +936,7 @@ class SeedGui(Class):
 
 # ===== TreeView Methods ===========================================
     def sort_files(self, treemodel, iter1, iter2, user_data=None):
-        cmp(treemodel.get_value(iter1, 0), treemodel.get_value(iter2, 0))
+        return cmp(treemodel.get_value(iter1, 0), treemodel.get_value(iter2, 0))
 
     def sort_channels(self, treemodel, iter1, iter2, user_data=None):
         if   user_data == "network" : column = 0
