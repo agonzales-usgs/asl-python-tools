@@ -151,6 +151,9 @@ class FileWidget(gtk.VBox):
             ('ctime',   'Created',      gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
         ]
 
+        self._icons = {}
+        self._icon_width = 32
+        self._icon_height = 32
         self._columns = {}
         self._sort_order = gtk.SORT_ASCENDING
         self._folders_first = True
@@ -322,7 +325,7 @@ class FileWidget(gtk.VBox):
                 mode = properties[0]
                 type = 'file'
                 if stat.S_ISDIR(mode):
-                        type = 'directory'
+                    type = 'directory'
                 elif stat.S_ISBLK(mode):
                     type = 'block-device'
                 elif stat.S_ISCHR(mode):
@@ -332,20 +335,21 @@ class FileWidget(gtk.VBox):
                 elif stat.S_ISSOCK(mode):
                     type = 'socket'
                 elif stat.S_ISLNK(mode):
-                    r_mode = os.stat(file_path)[0]
-                    if stat.S_ISREG(r_mode):
+                    properties = os.stat(file_path)
+                    mode = properties[0]
+                    if stat.S_ISREG(mode):
                         type = 'link-to-file'
-                    elif stat.S_ISDIR(r_mode):
+                    elif stat.S_ISDIR(mode):
                         type = 'link-to-directory'
-                    elif stat.S_ISBLK(r_mode):
+                    elif stat.S_ISBLK(mode):
                         type = 'link-to-block-device'
-                    elif stat.S_ISCHR(r_mode):
+                    elif stat.S_ISCHR(mode):
                         type = 'link-to-character-device'
-                    elif stat.S_ISFIFO(r_mode):
+                    elif stat.S_ISFIFO(mode):
                         type = 'link-to-named-pipe'
-                    elif stat.S_ISSOCK(r_mode):
+                    elif stat.S_ISSOCK(mode):
                         type = 'link-to-socket'
-                    elif stat.S_ISLNK(r_mode):
+                    elif stat.S_ISLNK(mode):
                         type = 'link-to-link'
                     
                 icon = self.get_icon(type)
@@ -361,20 +365,31 @@ class FileWidget(gtk.VBox):
             raise
 
     def get_icon(self, type):
-        if   type == 'directory':                stock = gtk.STOCK_DIRECTORY
-        elif type == 'link-to-directory':        stock = gtk.STOCK_DIRECTORY
-        elif type == 'link-to-file':             stock = gtk.STOCK_CONVERT
-        elif type == 'link-to-link':             stock = gtk.STOCK_CONVERT
-        elif type == 'block-device':             stock = gtk.STOCK_HARDDISK
-        elif type == 'link-to-block-device':     stock = gtk.STOCK_HARDDISK
-        elif type == 'character-device':         stock = gtk.STOCK_HARDDISK
-        elif type == 'link-to-character-device': stock = gtk.STOCK_HARDDISK
-        elif type == 'named-pipe':               stock = gtk.STOCK_HARDDISK
-        elif type == 'link-to-named-pipe':       stock = gtk.STOCK_HARDDISK
-        elif type == 'socket':                   stock = gtk.STOCK_DISCONNECT
-        elif type == 'link-to-socket':           stock = gtk.STOCK_DISCONNECT
-        else:                                    stock = gtk.STOCK_FILE
-        return self.treeview.render_icon(stock, size=gtk.ICON_SIZE_MENU, detail=None)
+        if self._icons.has_key(type):
+            return self._icons[type]
+        if   type == 'directory':                id = ('folder',      None)
+        elif type == 'block-device':             id = ('blockdevice', None)
+        elif type == 'character-device':         id = ('chardevice',  None)
+        elif type == 'named-pipe':               id = ('pipe',        None)
+        elif type == 'socket':                   id = ('socket',      None)
+        elif type == 'link-to-directory':        id = ('folder',      'link_overlay')
+        elif type == 'link-to-file':             id = ('file',        'link_overlay')
+        elif type == 'link-to-link':             id = ('file_broken', 'link_overlay')
+        elif type == 'link-to-block-device':     id = ('blockdevice', 'link_overlay')
+        elif type == 'link-to-character-device': id = ('chardevice',  'link_overlay')
+        elif type == 'link-to-named-pipe':       id = ('pipe',        'link_overlay')
+        elif type == 'link-to-socket':           id = ('socket',      'link_overlay')
+        else:                                    id = ('file',        None)
+        icon = asl.new_icon(id[0])
+        if id[1] is not None:
+            pixmap,mask = icon.render_pixmap_and_mask(alpha_threshold=127)
+            width,height = pixmap.get_size()
+            overlay = asl.new_icon(id[1])
+            pixmap.draw_pixbuf(None, overlay, 0, 0, 0, 0, width, height)
+            icon = gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, True, 8, width, height)
+            icon.get_from_drawable(pixmap, self.window.get_colormap(), 0, 0, 0, 0, width, height)
+        self._icons[type] = icon.scale_simple(self._icon_width, self._icon_height, gtk.gdk.INTERP_HYPER)
+        return icon
 
     def get_permissions(self, permissions):
         string = ''
@@ -406,7 +421,7 @@ class FileManager(StatefulClass):
 # ===== GUI Build-up ========================================
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("File Manager")
-        self.window.set_icon(asl.new_icon('aluminum_inactive'))
+        self.window.set_icon(asl.new_icon('file_manager'))
 
         self.vbox_main = gtk.VBox()
         self.files = FileWidget()

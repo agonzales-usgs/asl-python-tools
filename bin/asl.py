@@ -12,12 +12,18 @@ try:
 except:
     GTK = False
 
+icons = {}
+
 def new_icon_gtk(id):
     image_file = os.path.abspath('%s/icons/%s.png' % (path, id))
-    if os.path.exists(image_file):
-        img = gtk.Image()
-        img.set_from_file(image_file)
-        return img.get_pixbuf()
+    if not icons.has_key(id):
+        if os.path.exists(image_file):
+            img = gtk.Image()
+            img.set_from_file(image_file)
+            icons[id] = img.get_pixbuf()
+            return icons[id]
+    else:
+        return icons[id]
     return None
 
 def new_icon_none(id):
@@ -28,13 +34,16 @@ if GTK:
 else:
     new_icon = new_icon_none
 
+asl_path_file = ""
+if os.environ.has_key('ASL_UTILITIES_PATH_FILE'):
+    asl_path_file = os.path.abspath(os.environ['ASL_UTILITIES_PATH_FILE'])
 
 try:
     home_directory = os.path.abspath(os.environ['HOME'])
 except:
     home_directory = os.path.abspath(os.environ['USERPROFILE'])
-
-asl_path_file = os.path.abspath(home_directory + '/.asl_utilities_path')
+if not os.path.isfile(asl_path_file):
+    asl_path_file = os.path.abspath(home_directory + '/.asl_utilities_path')
 
 if not os.path.isfile(asl_path_file):
     path = os.path.dirname(sys.path[1])
