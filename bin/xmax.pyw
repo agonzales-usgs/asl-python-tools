@@ -227,7 +227,7 @@ class XmaxGui:
         self.button_quit           = gtk.Button(stock=None, use_underline=True)
         self.hbox_quit             = gtk.HBox()
         self.image_quit            = gtk.Image()
-        self.image_quit.set_from_stock(gtk.STOCK_STOP, gtk.ICON_SIZE_MENU)
+        self.image_quit.set_from_stock(gtk.STOCK_QUIT, gtk.ICON_SIZE_MENU)
         self.label_quit            = gtk.Label('Quit')
         self.button_quit.add(self.hbox_quit)
         self.hbox_quit.pack_start(self.image_quit, padding=1)

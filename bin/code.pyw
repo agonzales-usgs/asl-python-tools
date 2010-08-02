@@ -36,15 +36,6 @@ class Q330_Code:
         self.label_auth_code = gtk.Label("Auth. Code:")
         self.entry_auth_code = gtk.Entry(max=16)
 
-        self.button_quit = gtk.Button(stock=None, use_underline=True)
-        self.hbox_quit   = gtk.HBox()
-        self.image_quit  = gtk.Image()
-        self.image_quit.set_from_stock(gtk.STOCK_QUIT, gtk.ICON_SIZE_MENU)
-        self.label_quit  = gtk.Label('Quit')
-        self.button_quit.add(self.hbox_quit)
-        self.hbox_quit.pack_start(self.image_quit, padding=1)
-        self.hbox_quit.pack_start(self.label_quit, padding=1)
-
         self.button_copy_all = gtk.Button(stock=None, use_underline=True)
         self.hbox_copy_all   = gtk.HBox()
         self.image_copy_all  = gtk.Image()
@@ -62,6 +53,15 @@ class Q330_Code:
         self.button_copy_selection.add(self.hbox_copy_selection)
         self.hbox_copy_selection.pack_start(self.image_copy_selection, padding=1)
         self.hbox_copy_selection.pack_start(self.label_copy_selection, padding=1)
+
+        self.button_quit = gtk.Button(stock=None, use_underline=True)
+        self.hbox_quit   = gtk.HBox()
+        self.image_quit  = gtk.Image()
+        self.image_quit.set_from_stock(gtk.STOCK_QUIT, gtk.ICON_SIZE_MENU)
+        self.label_quit  = gtk.Label('Quit')
+        self.button_quit.add(self.hbox_quit)
+        self.hbox_quit.pack_start(self.image_quit, padding=1)
+        self.hbox_quit.pack_start(self.label_quit, padding=1)
 
 
 # ===== Layout Configuration ======================================
@@ -86,9 +86,9 @@ class Q330_Code:
         self.hbox_auth_code.pack_start(self.label_auth_code, False, False, 0)
         self.hbox_auth_code.pack_end(self.entry_auth_code, False, False, 0)
 
-        self.hbox_control.pack_start(self.button_quit, False, False, 0)
-        self.hbox_control.pack_end(self.button_copy_all, False, False, 0)
-        self.hbox_control.pack_end(self.button_copy_selection, False, False, 0)
+        self.hbox_control.pack_start(self.button_copy_all, False, False, 0)
+        self.hbox_control.pack_start(self.button_copy_selection, False, False, 0)
+        self.hbox_control.pack_end(self.button_quit, False, False, 0)
 
 # ===== Widget Configurations =====================================
         self.entry_station.set_text("")
@@ -121,9 +121,9 @@ class Q330_Code:
 
         self.entry_auth_code.connect("focus", self.callback_entry_auth_code_focused, None)
 
-        self.button_quit.connect("clicked", self.callback_quit, None)
         self.button_copy_all.connect("clicked", self.callback_copy_all, None)
         self.button_copy_selection.connect("clicked", self.callback_copy_selection, None)
+        self.button_quit.connect("clicked", self.callback_quit, None)
 
 # ===== Keyboard Shortcuts ========================================
         self.window.connect("key-press-event", self.callback_key_pressed)

@@ -1,12 +1,28 @@
 import os
 
-from Persistence import Persistence
+try:
+    from Persistence import Persistence
+    KEEP=True
+except:
+    KEEP=False
+
+class PersistenceStub(object):
+    def __init__(self): object.__init__(self)
+    def select_database(db): return
+    def init(): return
+    def store(k,v): return
+    def recall(k): return None
+    def get_all(): return []
+    def store_many(i): return
 
 class StatefulClass(object):
     def __init__(self, database):
         object.__init__(self)
 
-        self.keep = Persistence()
+        if KEEP:
+            self.keep = Persistence()
+        else:
+            self.keep = PersistenceStub()
         self.keep_dict = {}
         self.temp_dict = {}
         try:

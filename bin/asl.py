@@ -16,19 +16,24 @@ icons = {}
 
 def new_icon_gtk(id):
     image_file = os.path.abspath('%s/icons/%s.png' % (path, id))
+    # Is this icon already in the buffer
     if not icons.has_key(id):
         if os.path.exists(image_file):
+            # Create a new icon
             img = gtk.Image()
             img.set_from_file(image_file)
+            # Add the new icon to the buffer
             icons[id] = img.get_pixbuf()
             return icons[id]
     else:
+        # If we have this icon buffered, return its reference
         return icons[id]
     return None
 
 def new_icon_none(id):
     return None
 
+# Point the function to a stub if we don't have GTK support
 if GTK:
     new_icon = new_icon_gtk
 else:
