@@ -26,10 +26,6 @@ from jtk.Thread import Thread
 from jtk.Logger import LogThread
 from jtk.StatefulClass import StatefulClass
 
-FILTER_NONE  = 0
-FILTER_ENTRY = 1
-FILTER_COMBO = 2
-
 COLUMN_HIDE = False
 COLUMN_SHOW = True
 
@@ -42,6 +38,7 @@ FO_LINK_ERROR = 2
 
 class FileOperation(Thread):
     def __init__(self, action, file_list, context=None):
+        Thread.__init__(self)
         self.progress_queue = Queue.Queue()
 
         self.window = gtk.Window()
@@ -95,10 +92,11 @@ class FileOperation(Thread):
 
     def _pre(self):
         # Fill queue here? How else do we plan to get the files in?
-        for file in file_list:
+        for file in self.file_list:
             self.queue.put(file)
 
     def _run(self, message, data):
+        print "Processing File"
         # TODO:
         # Perhaps we should be handling the process rather than
         # using language utilities...
@@ -119,6 +117,9 @@ class FileOperation(Thread):
             except:
                 raise FO_LINK_ERROR
         time.sleep(0.5)
+
+    def _post(self):
+        self.window.hide()
 
 
 class PathWidget(gtk.HBox):
@@ -217,27 +218,6 @@ class PathWidget(gtk.HBox):
         self._update_callback()
 
 
-#class DragTreeStore(gtk.TreeStore):
-#    def __init__(self):
-#        gtk.TreeStore.__init__(self)
-#
-#    def drag_data_get(path, selection_data):
-#        uris = []
-#        refs = self.get_selected_files()
-#        model = self.treestore.get_model()
-#        directory = self.path.get_path()
-#        index = self._columns['name']['index']
-#        for ref in refs:
-#            path = ref.get_path()
-#            iter = model.get_iter(path)
-#            name = model.get_value(iter, index)
-#            uris.append(os.path.abspath(directory + '/' + name))
-#        if info == DND_URI_TUPLE[-1]:
-#            selection_data.set(selection_data.target, 8, '\n'.join(uris))
-#
-#    def drag_data_delete(path):
-
-
 class FileWidget(gtk.VBox):
     def __init__(self):
         gtk.VBox.__init__(self)
@@ -245,20 +225,20 @@ class FileWidget(gtk.VBox):
         #self._root = os.path.abspath('/data/temp_data')
 
         self._column_defs = [
-            ('icon',    '',             gtk.gdk.Pixbuf,      'pixbuf',  COLUMN_SHOW, FILTER_NONE),
-            ('name',    'Name',         gobject.TYPE_STRING, 'text',    COLUMN_SHOW, FILTER_ENTRY),
-            ('type',    'Type',         gobject.TYPE_STRING, 'text',    COLUMN_SHOW, FILTER_NONE),
-            ('perm',    'Permissions',  gobject.TYPE_STRING, 'text',    COLUMN_SHOW, FILTER_NONE),
-            ('mode',    'Mode',         gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
-            ('ino',     'Inode',        gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
-            ('dev',     'Device',       gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
-            ('nlink',   'Link Count',   gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
-            ('uid',     'User',         gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
-            ('gid',     'Group',        gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
-            ('size',    'Size',         gobject.TYPE_INT64,  'text',    COLUMN_SHOW, FILTER_NONE),
-            ('atime',   'Accessed',     gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
-            ('mtime',   'Modified',     gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
-            ('ctime',   'Created',      gobject.TYPE_LONG,   'text',    COLUMN_HIDE, FILTER_NONE),
+            ('icon',    '',             gtk.gdk.Pixbuf,      'pixbuf',  COLUMN_SHOW),
+            ('name',    'Name',         gobject.TYPE_STRING, 'text',    COLUMN_SHOW),
+            ('type',    'Type',         gobject.TYPE_STRING, 'text',    COLUMN_SHOW),
+            ('perm',    'Permissions',  gobject.TYPE_STRING, 'text',    COLUMN_SHOW),
+            ('mode',    'Mode',         gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
+            ('ino',     'Inode',        gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
+            ('dev',     'Device',       gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
+            ('nlink',   'Link Count',   gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
+            ('uid',     'User',         gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
+            ('gid',     'Group',        gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
+            ('size',    'Size',         gobject.TYPE_INT64,  'text',    COLUMN_SHOW),
+            ('atime',   'Accessed',     gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
+            ('mtime',   'Modified',     gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
+            ('ctime',   'Created',      gobject.TYPE_LONG,   'text',    COLUMN_HIDE),
         ]
 
         self._icons = {}
@@ -270,7 +250,7 @@ class FileWidget(gtk.VBox):
 
 # ===== GUI Build-up ========================================
         args = map(lambda c: c[2], self._column_defs)
-        self.treestore = gtk.TreeStore(*args).filter_new()
+        self.treestore = gtk.TreeStore(*args)
 
         try:
             self.tooltips = gtk.Tooltips()
@@ -278,8 +258,6 @@ class FileWidget(gtk.VBox):
             self.tooltips = None
 
 # ===== Widget Creation ============================================
-        self.hbox_filters       = gtk.HBox()
-
         self.scroll_treeview    = gtk.ScrolledWindow()
         self.scroll_iconview    = gtk.ScrolledWindow()
 
@@ -290,8 +268,8 @@ class FileWidget(gtk.VBox):
         self.scroll_treeview.add(self.treeview)
 
         idx = 0
-        model = self.treestore.get_model()
-        for id,title,type,attribute,show,filter in self._column_defs:
+        model = self.treestore
+        for id,title,type,attribute,show in self._column_defs:
             tvc = gtk.TreeViewColumn(title)
             if attribute == 'pixbuf':
                 cr = gtk.CellRendererPixbuf()
@@ -307,18 +285,6 @@ class FileWidget(gtk.VBox):
             column['treeviewcol']    = tvc
             column['cellrenderer']   = cr
             column['show']           = show
-            if filter == FILTER_ENTRY:
-                filter_widget = gtk.Entry()
-                filter_widget._filter_title = title
-                filter_widget.connect('changed',         self.callback_filter_changed,   None, id)
-                filter_widget.connect('focus-in-event',  self.callback_filter_focus_in,  None)
-                filter_widget.connect('focus-out-event', self.callback_filter_focus_out, None)
-                self.filter_hint_show(filter_widget)
-            else:
-                filter_widget = None
-            if filter_widget is not None:
-                self.hbox_filters.pack_start(filter_widget, False, True, 2)
-            column['filter']         = filter_widget
             column['regex']          = None
 
             if show:
@@ -329,13 +295,11 @@ class FileWidget(gtk.VBox):
         self.path = PathWidget(self.callback_path_updated)
 
         self.pack_start(self.path,              False, True,  2)
-        self.pack_start(self.hbox_filters,      False, True,  2)
         self.pack_start(self.scroll_treeview,   True,  True,  2)
 
         self.treeview.get_selection().set_mode(gtk.SELECTION_MULTIPLE)
         self.scroll_iconview.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
         self.scroll_treeview.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-        self.treestore.set_visible_func(self.filter_files)
         #self.treeview.drag_data_received = self.drag_data_received
 
         self.path.set_path('.')
@@ -388,7 +352,7 @@ class FileWidget(gtk.VBox):
         # Send data to the destination
         uris = []
         refs = self.get_selected_files()
-        model = self.treestore.get_model()
+        model = self.treestore
         directory = self.path.get_path()
         index = self._columns['name']['index']
         for ref in refs:
@@ -404,18 +368,18 @@ class FileWidget(gtk.VBox):
         if info == DND_URI_TUPLE[-1]:
             try:
                 uris = map(lambda s: s.strip(), selection_data.data.split('\n'))
-                fileop = FileOperations(drag_context.action, uris, drag_context)
+                print "creating file-op object"
+                fileop = FileOperation(drag_context.action, uris, drag_context)
+                print "creating callback button"
                 button = gtk.Button()
+                print "connecting callback"
                 button.connect('clicked', self.callback_dnd_fops_complete, None, fileop)
+                print "starting file-op thread"
                 fileop.start()
                 button = None
                 fileop = None
-                print "PROCESSING FILES"
             except:
                 drag_context.finish(False, False, int(time.time()))
-
-    def drag_data_received(self, treestore, dest, selection_data):
-        print "OVERRIDDEN!"
 
     def callback_dnd_fops_complete(self, widget, event, drag_context=None):
         delete = False
@@ -439,8 +403,11 @@ class FileWidget(gtk.VBox):
         pass
 
     def callback_key_pressed(self, widget, event, data=None):
-        if event.keyval == gtk.keysyms.Delete:
-            self.delete_selected_files()
+        if event.state == 0:
+            if event.keyval == gtk.keysyms.Delete:
+                self.delete_selected_files()
+                return True
+        return False
 
     def callback_key_released(self, widget, event, data=None):
         pass
@@ -448,7 +415,7 @@ class FileWidget(gtk.VBox):
     def callback_row_activated(self, treeview, path, column, user_data=None):
         path = self.treestore.convert_path_to_child_path(path)
         index = self._columns['name']['index']
-        model = self.treestore.get_model()
+        model = self.treestore
         iter = model.get_iter(path)
         name = model.get_value(iter, index)
         self.path.step_in(name)
@@ -460,51 +427,7 @@ class FileWidget(gtk.VBox):
         self.update()
         self.path_lock.release()
 
-    def callback_filter_changed(self, widget, event, id=None):
-        text = widget.get_text()
-        if text == widget._filter_title:
-            text = ''
-        regex = None
-        if text == '':
-            regex = None
-        else:
-            try: regex = re.compile(text, re.IGNORECASE)
-            except: regex = None
-        self._columns[id]['regex'] = regex
-        self.treestore.refilter()
-        filter_iter = self.treestore.get_iter_first()
-        if filter_iter:
-            iter = self.treestore.convert_iter_to_child_iter(filter_iter)
-            if iter:
-                path = self.treestore.get_model().get_path(iter)
-                self.treeview.scroll_to_cell(path)
-
-    def callback_filter_focus_out(self, widget, event, data=None):
-        self.filter_hint_show(widget)
-
-    def callback_filter_focus_in(self, widget, event, data=None):
-        self.filter_hint_hide(widget)
-
-# ===== Filter and Sorting Methods ===================================
-    def filter_files(self, model, iter, data=None):
-        for id in self._columns.keys():
-            regex = self._columns[id]['regex'] 
-            index = self._columns[id]['index']
-            value = model.get_value(iter, index)
-            if value and regex and not regex.search(value):
-                return False
-        return True
-
-    def filter_hint_show(self, widget):
-        if not len(widget.get_text()):
-            widget.set_text(widget._filter_title)
-            widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('#888888'))
-
-    def filter_hint_hide(self, widget):
-        if widget.get_text() == widget._filter_title:
-            widget.set_text('')
-        widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.Color())
-
+# ===== Sorting Methods ===================================
     def sort_files(self, treemodel, iter1, iter2, user_data=None):
         name_idx = self._columns['name']['index']
         mode_idx = self._columns['mode']['index']
@@ -522,7 +445,7 @@ class FileWidget(gtk.VBox):
 # ===== General Methods ==============================================
     def delete_selected_files(self):
         refs = self.get_selected_files()
-        model = self.treestore.get_model()
+        model = self.treestore
         #index = self._columns['name']['index']
         for ref in refs:
             path = ref.get_path()
@@ -534,10 +457,8 @@ class FileWidget(gtk.VBox):
     def get_selected_files(self):
         selection = self.treeview.get_selection().get_selected_rows()
         refs = []
-        model = self.treestore.get_model()
-        filter = self.treestore
-        for filter_path in selection[1]:
-            path = filter.convert_path_to_child_path(filter_path)
+        model = self.treestore
+        for path in selection[1]:
             refs.append(gtk.TreeRowReference(model, path))
         return refs
 
@@ -545,7 +466,7 @@ class FileWidget(gtk.VBox):
         try:
             path = self.path.get_path()
             files = os.listdir(path)
-            model = self.treestore.get_model()
+            model = self.treestore
             model.clear()
             for file in files:
                 file_path = os.path.abspath(path + '/' + file)
@@ -585,9 +506,8 @@ class FileWidget(gtk.VBox):
                 args = [icon,file,type,permissions]
                 args.extend(list(properties))
                 model.append(None, args)
-            self.treestore.get_model().set_sort_column_id(self._columns['name']['index'], self._sort_order)
-            #self.treestore.get_model().sort_column_changed()
-            self.treestore.refilter()
+            self.treestore.set_sort_column_id(self._columns['name']['index'], self._sort_order)
+            #self.treestore.sort_column_changed()
         except TypeError, e:
             print "TypeError:", str(e)
             raise

@@ -669,6 +669,7 @@ class SeedGui(Class):
         self.entry_start_time.connect(  "changed", self.callback_update_times, None)
         self.entry_end_time.connect(    "changed", self.callback_update_times, None)
 
+        self.treeview_files.connect("key-press-event", self.callback_key_pressed_treeview, None)
         self.treeview_files.get_selection().connect(     "changed", self.callback_selection, None)
         self.treeview_channels.get_selection().connect(  "changed", self.callback_selection, None)
 
@@ -728,6 +729,13 @@ class SeedGui(Class):
             if event.keyval == ord('q'):
                 self.callback_quit(widget, event, data)
         self.update_interface()
+
+    def callback_key_pressed_treeview(self, widget, event, data=None):
+        if event.state == 0:
+            if event.keyval == gtk.keysyms.Delete:
+                self.remove_files()
+                return True
+        return False
 
     def callback_filter_changed(self, widget, event, data=None):
         text = widget.get_text()
