@@ -32,6 +32,19 @@ class StatefulClass(object):
         except:
             pass
 
+    def store_temp_value(self, key, value):
+        try:
+            self.temp_dict[key] = value
+            return True
+        except:
+            return False
+
+    def recall_temp_value(self, key):
+        try:
+            return self.temp_dict[key]
+        except:
+            return None
+
     def store_value(self, key, value):
         try:
             self.keep_dict[key] = value

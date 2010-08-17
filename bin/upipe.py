@@ -35,6 +35,9 @@ except:
 """
 TCP Forwarding:
 
+(NOTE: Most of this has been done, but there are still
+       some bugs to work out.)
+
 We need a way for a TCP connection status to be recognized
 both on local and remote pipes. The best way to start is
 to add support for local pipes to recognize TCP connections.
@@ -66,33 +69,45 @@ class Counter(object):
     def __init__(self, value=0, stride=1):
         self.stride = stride
         self.original = value
+        self.lock = threading.Lock()
         self.reset()
 
+    def reset_t(self): self.lock.acquire(); self.reset(); self.lock.release()
     def reset(self):
         self.value = self.original
 
+    def set_value_t(self, value): self.lock.acquire(); self.set_value(); self.lock.release()
     def set_value(self, value):
         self.value = value
 
+    def set_stride_t(self, value): self.lock.acquire(); self.set_stride(); self.lock.release()
     def set_stride(self, stride):
         self.stride = stride
 
+    # Post increment
+    def inc_t(self, value): self.lock.acquire(); self.inc(); self.lock.release()
     def inc(self):
-        self.value += 1
+        self.value += self.stride
         return self.value
 
+    # Post decrement
+    def dec_t(self, value): self.lock.acquire(); self.dec(); self.lock.release()
     def dec(self):
-        self.value -= 1
+        self.value -= self.stride
         return self.value
 
+    # Pre increment
+    def inc_p_t(self, value): self.lock.acquire(); self.inc_p(); self.lock.release()
     def inc_p(self):
         temp = self.value
-        self.value += 1
+        self.value += self.stride
         return temp
 
+    # Pre decrement
+    def dec_p_t(self, value): self.lock.acquire(); self.dec_p(); self.lock.release()
     def dec_p(self):
         temp = self.value
-        self.value -= 1
+        self.value -= self.stride
         return temp
 #/*}}}*/
 
@@ -151,6 +166,8 @@ class PipeBase(asyncore.dispatcher):
         if socket_type not in ('UDP', 'TCP', socket.SOCK_DGRAM, socket.SOCK_STREAM):
             raise ValueError("invalid value for socket_type")
         if type(socket_type) is int:
+            if not socket_type in (socket.SOCK_DGRAM, socket.SOCK_STREAM):
+                raise ValueError("invalid value for socket_type")
             self._socket_type = socket_type
         else:
             if socket_type == 'UDP':
@@ -177,6 +194,7 @@ class PipeBase(asyncore.dispatcher):
             return "%s-%d-%s" % (self._address[0], self._address[1], self.get_socket_type_str())
         return ""
 
+    # Add packet to buffer list for transmission
     def queue_packet(self, packet, address=None):
         self.log("Queueing Packet: %s %s" % (str(packet), str(address)), 4)
         if not packet:
@@ -326,13 +344,21 @@ class Host(PipeBase):
             self._master.client_to_host('CONNECT', self._remote_key, self.get_key(), 'CONNECT')
             self._master.notify()
 
+    # Each port can only handle a single open connection,
+    # so we have to be certain of our state.
     def _handle_accept(self, client_key):
         if self._connected:
             return
+        # If we are in the process of disconnection,
+        # we are not yet ready for a new connection
         if self._disconnecting:
             return
+        # If a connection has not been initialized,
+        # we are not ready to accept
         if not self._connecting:
             return
+        # If the remote key was not generated for some reason,
+        # we cannot establish a connection
         if self._remote_key is None:
             return
         if client_key == self._remote_key:
@@ -348,6 +374,7 @@ class Host(PipeBase):
                 return
             self._master.client_to_host('CLOSE', self._remote_key, self.get_key(), 'CLOSE')
             self._handle_close()
+            # Wake up asyncore so it can update file descriptors
             self._master.notify()
 
     def _handle_close(self):
@@ -392,6 +419,8 @@ class Pipe(PipeBase):
             self._master.host_to_client('ACCEPT', self._remote_key, self.get_key(), 'ACCEPT')
             self._connected = True
 
+    # The Client class always initiates connections with the real host
+    # I think I just added this to see if this was being called...
     def handle_accept(self):
         self.log("Pipe::handle_accept()", 3)
 
@@ -400,6 +429,7 @@ class Pipe(PipeBase):
         if self._socket_type == socket.SOCK_STREAM:
             self._master.host_to_client('CLOSE', self._remote_key, self.get_key(), 'CLOSE')
             self._handle_close()
+            # Wake up asyncore so it can update file descriptors
             self._master.notify()
 
     def _handle_close(self):
@@ -410,7 +440,13 @@ class Pipe(PipeBase):
         self._disconnecting = False
         self._master.del_pipe(self.get_key())
 
-# Used to break out of the listener when an updated is needed
+# Writes to itself to force asyncore to re-evaluated file descriptors
+# This is necessary both when adding and removing pipes
+# - A new pipe needs to be added to asyncore's file descriptor list
+# - An old pipe should not be left in the list, or we may receive a
+#   response that we are unable to handle. This may actually be an
+#   issue still, as we do not tend to destroy the Client/Host after the
+#   notification is done...
 class Notifier(PipeBase):
     def __init__(self, master):
         PipeBase.__init__(self, master)
@@ -452,6 +488,7 @@ class Internal(PipeBase):
         self._src_to_dst(command, src_key, dst_key, packet)
         return len(msg)
 
+    # Break down a message into keys and data
     def melt(self, message):
         self.log("Melting: %s" % str(message), 1)
         match = self.regex_message.search(message)
@@ -466,6 +503,7 @@ class Internal(PipeBase):
         self.log("Melt Failed!", 3)
         return None
 
+    # Assemble a message from keys and data
     def freeze(self, src_key, dst_key, packet, command='FWD_DATA'):
         message = "<[%s](%s)(%s){%s}>" % (command, src_key, dst_key, base64.standard_b64encode(packet))
         self.log("Freezing: %s" % str(message), 1)
@@ -1130,4 +1168,13 @@ def main():
 #/*}}}*/
 
 if __name__ == "__main__":
+    try:
+        import psyco
+        #psyco.full()
+        psyco.profile()
+        print "Psyco JIT enabled."
+    except ImportError:
+        pass
+
     main()
+

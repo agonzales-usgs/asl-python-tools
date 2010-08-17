@@ -145,10 +145,12 @@ class SeedGui(Class):
         self.crtext_location         = gtk.CellRendererText()
         self.crtext_channel          = gtk.CellRendererText()
 
+        self.tooltips = None
+        self.hbutton_tooltip_test = gtk.Button()
         try:
-            self.tooltips            = gtk.Tooltips()
+            self.hbutton_tooltip_test.set_tooltip_text("TEST")
         except:
-            self.tooltips            = None
+            self.tooltips = gtk.Tooltips()
 
 # ===== Widget Creation ============================================
         self.vbox_main               = gtk.VBox()
@@ -718,9 +720,12 @@ class SeedGui(Class):
         self.xbox_progress.hide_all()
 
     def apply_tooltip(self, widget, tip):
-        try:
-            widget.set_tooltip_text(tip)
-        except:
+        if self.tooltips is None:
+            try:
+                widget.set_tooltip_text(tip)
+            except:
+                pass
+        else:
             self.tooltips.set_tip(widget, tip) 
 
 # ===== Callbacks ==================================================

@@ -159,3 +159,12 @@
 2010-07-13 11:40:40,359  WARN File IU-GNI_4-20100713003048: Skipping block 10 due to absence of data
 2010-07-13 11:40:41,227  WARN File IU-GNI_4-20100712205919: Skipping block 24 due to absence of data
 2010-07-13 11:40:42,431  WARN File IU-GNI_4-20100713003048: Skipping block 26 due to absence of data
+2010-08-04 15:38:05,828  WARN Deleting PlotDataProvider: US/ISCO//ACE due to absence of data
+2010-08-04 15:38:07,019 ERROR File US_ISCO__LOG.seed: Can't decompress data of block 569, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2010-08-04 15:46:52,539  WARN Deleting PlotDataProvider: US/ISCO//ACE due to absence of data
+2010-08-04 15:46:53,565 ERROR File US_ISCO__LOG.seed: Can't decompress data of block 569, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2010-08-04 15:52:18,403  WARN Deleting PlotDataProvider: US/ISCO//ACE due to absence of data
+2010-08-04 15:52:18,884 ERROR File US_ISCO__LOG.seed: Can't decompress data of block 569, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2010-08-12 08:21:58,338  INFO Parsing /home/jdedwards/DATA/wci/2010_223/00BH11008110000.seed
+2010-08-12 08:21:58,338  INFO Parsing /home/jdedwards/DATA/wci/2010_223/00BH11008110000.seed
+2010-08-12 13:14:47,927  WARN can't load class FilterBP, plug-in {PluginDescriptor: uid=com.isti.xmax.core@1.0.0} is not activated yet

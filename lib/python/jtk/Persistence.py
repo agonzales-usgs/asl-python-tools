@@ -4,6 +4,7 @@ class Persistence(object):
     def __init__(self):
         object.__init__(self)
         
+        self.file_name = ''
         self.db  = None
         self.cur = None
 
@@ -16,6 +17,10 @@ class Persistence(object):
         self.db = None
         self.db = sqlite.connect(file)
         self.cur = self.db.cursor()
+        self.file_name = file
+
+    def get_database_file_name(self):
+        return self.file_name
 
     def delete(self, key):
         self.cur.execute("DELETE FROM Data WHERE key=?", (key,))

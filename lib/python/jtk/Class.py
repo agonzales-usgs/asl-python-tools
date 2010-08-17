@@ -7,4 +7,6 @@ class Class(object):
 
     def _log(self, log_str, category='default', note=None):
         if self.log_queue:
-            self.log_queue.put_nowait((self.__class__.__name__, (log_str, category)))
+            if note is None:
+                note = self.__class__.__name__
+            self.log_queue.put_nowait((note, (log_str, category)))

@@ -7,6 +7,7 @@ import time
 
 class Calendar(object):
     def __init__(self):
+        object.__init__(self)
         self.completion_callback = None
         self.completion_data = None
         self.time_high = True

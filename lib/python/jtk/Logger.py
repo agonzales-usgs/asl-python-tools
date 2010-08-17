@@ -7,16 +7,18 @@ from Thread import Thread
 
 class Logger(object):
     def __init__(self, directory='.', prefix='', postfix='', extension='log', note='', yday=False):
-        self.log_to_file   = True
-        self.log_to_screen = False
-        self.log_fh        = None
-        self.note_first    = True
-        self.log_debug     = False
-        self.yday          = yday
+        self.log_to_file    = True
+        self.log_to_screen  = False
+        self.log_fh         = None
+        self.note_first     = True
+        self.log_debug      = False
+        self.yday           = yday
 
-        self._note         = note
-        self._file_name    = ''
-        self._file_set     = False
+        self._note          = note
+        self._log_pid       = False
+        self._pid           = str(os.getpid())
+        self._file_name     = ''
+        self._file_set      = False
 
         self.categories = {
             'dbg'     : 'DEBUG',
@@ -59,13 +61,19 @@ class Logger(object):
             file_date = timestamp_text[0:4] + timestamp_text[5:7] + timestamp_text[8:10]
 
         text = ""
+        note = self._note
+        if self._log_pid:
+            if note:
+                note = "%s:%s" % (self._pid,note)
+            else:
+                note = self._pid
         if self.note_first:
-            if self._note:
-                text = "[%s: %s] %s>" % (self._note, timestamp_text, category)
+            if note:
+                text = "[%s @ %s] %s>" % (note, timestamp_text, category)
             else:
                 text = "[%s] %s>" % (timestamp_text, category)
         else:
-            text = "[%s: %s] %s>" % (category, timestamp_text, self._note)
+            text = "[%s @ %s] %s>" % (category, timestamp_text, note)
         text += " %s\n" % string.strip('\n')
 
         if self.log_to_file:
@@ -99,6 +107,9 @@ class Logger(object):
 
     def set_log_note(self, note=''):
         self._note = note
+
+    def set_log_pid(self, pid):
+        self._log_pid = pid
         
     def set_note_first(self, enabled):
         self.note_first = enabled
@@ -124,6 +135,9 @@ class Logger(object):
 
     def get_log_note(self):
         return self._note
+
+    def get_log_pid(self):
+        return self._log_pid
 
     def get_note_first(self):
         return self.note_first
@@ -166,26 +180,28 @@ class Logger(object):
 
 
 class LogThread(Thread):
-    def __init__(self):
+    def __init__(self, directory='.', prefix='', postfix='', extension='log', note='LOGGER', yday=False, pid=False):
         Thread.__init__(self)
         self.file_handles = {}
-        self.logger = Logger()
+        self.logger = Logger(directory=directory, prefix=prefix, postfix=postfix, extension=extension, note=note, yday=yday)
+        self._log_note = note
         self.logger.set_log_debug(False)
         #self.logger.set_log_debug(True)
         self.logger.set_log_to_file(False)
         self.logger.set_log_to_screen(True)
-        self.logger.set_log_note('SEED')
+        self.logger.set_log_note(note)
         self.logger.set_note_first(True)
+        self.logger.set_log_pid(pid)
 
     def _run(self, message, data):
         try:
             if type(message) == str:
                 self.logger.set_log_note(message)
             else:
-                self.logger.set_log_note('SEED')
+                self.logger.set_log_note(self._log_note)
             self.logger.log(data[0], data[1])
         except KeyboardInterrupt:
             pass
         except Exception, e:
-            self._pog("_run() Exception: %s" % str(e))
+            self._log("_run() Exception: %s" % str(e))
 

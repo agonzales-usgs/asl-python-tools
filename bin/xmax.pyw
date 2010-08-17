@@ -61,8 +61,8 @@ class XmaxGui:
             self.xmax_directory = self.home_directory
 
         self.archive_directory = ''
-        if os.environ.has_key('ARCHIVE_DIRECTORY'):
-            self.archive_directory = os.environ['ARCHIVE_DIRECTORY']
+        if os.environ.has_key('SEED_ARCHIVE_DIRECTORY'):
+            self.archive_directory = os.environ['SEED_ARCHIVE_DIRECTORY']
         if not os.path.exists(self.archive_directory):
             if os.path.exists('/opt/data/archive'):
                 self.archive_directory = '/opt/data/archive'
@@ -651,9 +651,12 @@ class XmaxGui:
 
     def run_unix(self, option_list):
         executable = '/usr/bin/xterm'
-        arguments  = ['xterm', '-T', '\"XMAX\"', '-sl', '10240', '-e', "\"cd %s; java -Xms512M -Xmx512M -jar xmax.jar %s && read -p 'Press any key to continue...'\"" % (self.xmax_directory, ' '.join(option_list))]
+        arguments  = ['xterm', '-T', '\"XMAX\"', '-sl', '10240', '-e', "\"cd %s; java -Xms512M -Xmx512M -jar xmax.jar %s && read -n 1 -p 'Press any key to continue...'\"" % (self.xmax_directory, ' '.join(option_list))]
         #print "Command:", ' '.join(arguments)
         os.popen(' '.join(arguments))
+        return None
+        #process = subprocess.Popen(arguments)
+        #return process
 
 def main():
     app = XmaxGui()

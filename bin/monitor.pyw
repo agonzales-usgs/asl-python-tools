@@ -3,6 +3,7 @@ import asl
 
 import base64
 import calendar
+import gc
 import hashlib
 import inspect
 import multiprocessing as mp
@@ -25,6 +26,10 @@ import gtk
 from jtk.Logger import Logger
 from jtk.gtk.Calendar import Calendar
 from jtk.StatefulClass import StatefulClass
+from jtk.gtk.utils import select_file
+from jtk.gtk.utils import select_save_file
+from jtk.gtk.Dialog import Dialog
+from jtk.gtk.GtkClass import GtkClass
 
 #gtk.gdk.threads_init()
 gobject.threads_init()
@@ -36,12 +41,12 @@ class Monitor(StatefulClass):
 
         self.load_state()
 
-        if not self.keep_dict.has_key('host'):
-            self.keep_dict['host'] = '136.177.120.21'
-        if not self.keep_dict.has_key('port'):
-            self.keep_dict['port'] = '80'
-        if not self.keep_dict.has_key('path'):
-            self.keep_dict['path'] = 'uptime/upgrade/telmon.txt'
+        if not self.recall_value('host'):
+            self.store_value('host', '136.177.120.21')
+        if not self.recall_value('port'):
+            self.store_value('port', '80')
+        if not self.recall_value('path'):
+            self.store_value('path', 'uptime/upgrade/telmon.txt')
 
         self.path = LISSPath()
 
@@ -55,14 +60,18 @@ class Monitor(StatefulClass):
         self.menu.set_title("LISS Monitor")
 
         menu_list = [
-            ('check',   'Check Now',      'add',     self.callback_check,      True),
-            ('cancel',  'Cancel Check',   'cancel',  self.callback_cancel,     True),
-            ('view',    'Open Viewer',    'notepad', self.callback_view,       True),
-            ('clear',   'Clear Warning',  'accept',  self.callback_clear_warn, True),
-            ('history', 'History Viewer', 'events',  self.callback_history,    False),
-            ('server',  'Set Server',     'network', self.callback_server,     True),
-            ('save',    'Save State',     'save',    self.callback_save,       True),
-            ('quit',    'Quit',           'exit',    self.callback_quit,       True),
+            ('check',         'Check Now',        'add',          self.callback_check,           True),
+            ('cancel',        'Cancel Check',     'cancel',       self.callback_cancel,          True),
+            ('view',          'Open Viewer',      'notepad',      self.callback_view,            True),
+            ('clear',         'Clear Warning',    'accept',       self.callback_clear_warn,      True),
+            ('history',       'History Viewer',   'events',       self.callback_history,         False),
+            ('server',        'Set Server',       'network',      self.callback_server,          True),
+            ('open_database', 'Open Database',    'database',     self.callback_open_database,   True),
+            ('new_database',  'New Database',     'database_add', self.callback_new_database,    True),
+            ('save',          'Save State',       'save',         self.callback_save,            True),
+            ('load',          'Restore State',    'load',         self.callback_load,            True),
+            ('garbage',       'Print Garbage',    'trashcan_full',self.callback_print_garbage,   True),
+            ('quit',          'Quit',             'exit',         self.callback_quit,            True),
         ]
         self.menu_items = {}
 
@@ -120,6 +129,45 @@ class Monitor(StatefulClass):
         self.core.start()
 
 # ===== Callback Methods =============================================
+    def callback_print_garbage(self, widget, event, data=None):
+        type_counts = {}
+        #name_counts = {}
+        for item in gc.get_objects():
+            t = type(item) 
+            #if hasattr(item, '__class__'):
+            #    if hasattr(item.__class__, '__name__'):
+            #        name = item.__class__.__name__
+            #    else:
+            #        name = 'unknown-class'
+            #else:
+            #    name = 'non-class-object'
+
+            #try:    name_counts[name] += 1
+            #except: name_counts[name]  = 1
+
+            try:    type_counts[t] += 1
+            except: type_counts[t]  = 1
+            
+        print "===================================================="
+        print "===== OBJECTS ======================================"
+        print "===================================================="
+        print "Found", len(gc.get_objects()), "objects"
+        print
+        print "=== Types ================"
+        #for t,c in sorted(type_counts.items(), lambda a,b: cmp(a[1],b[1])):
+        #    print "% 6d : %s" % (c,t)
+        #d = Dialog()
+        #t = type(d)
+        #d._disconnect_all
+        #d.destroy()
+        #del d
+        #d = None
+        #print "% 6d : %s" % (type_counts[t],t)
+        print
+        print "===================================================="
+        print "===== GARBAGE ======================================"
+        print "===================================================="
+        print gc.garbage
     
     def callback_menu_selection(self, widget, event, data=None):
         self.menu_visible = False
@@ -136,9 +184,9 @@ class Monitor(StatefulClass):
         self.core.cancel_check()
 
     def callback_view(self, widget, event, data=None):
-        #print "viewer launched"
-        if self.viewer.is_dead():
-            self.new_viewer()
+        #if self.viewer.is_dead():
+        #    del self.viewer
+        #    self.new_viewer()
         self.viewer.show()
         self.callback_clear_warn(None, None, None)
 
@@ -148,73 +196,134 @@ class Monitor(StatefulClass):
         self.close_application(widget, event, data)
 
     def callback_server(self, widget, event, data=None):
-        dialog = gtk.Dialog(title="LISS Monitor Server", 
-                                 buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
-                                          gtk.STOCK_OK,     gtk.RESPONSE_ACCEPT))
+        dialog = Dialog(title="LISS Monitor Server")
         dialog.set_icon(asl.new_icon('network'))
+        dialog.add_button_left("OK", self.callback_server_ok, focus=True)
+        dialog.add_button_right("Cancel")
+
         dialog_hbox = gtk.HBox()
         dialog_label = gtk.Label('http://')
-        dialog_entry_host  = gtk.Entry()
+        dialog.entry_host  = gtk.Entry()
         dialog_label_colon = gtk.Label(':')
-        dialog_entry_port  = gtk.Entry()
+        dialog.entry_port  = gtk.Entry()
         dialog_label_slash = gtk.Label('/')
-        dialog_entry_path  = gtk.Entry()
+        dialog.entry_path  = gtk.Entry()
 
-        dialog_entry_host.set_width_chars(20)
-        dialog_entry_port.set_width_chars(5)
-        dialog_entry_path.set_width_chars(30)
+        dialog.entry_host.set_width_chars(20)
+        dialog.entry_port.set_width_chars(5)
+        dialog.entry_path.set_width_chars(30)
 
-        host = self.keep_dict['host']
-        port = self.keep_dict['port']
-        path = self.keep_dict['path']
-        dialog_entry_host.set_text(host)
-        dialog_entry_port.set_text(str(port))
-        dialog_entry_path.set_text(path)
+        host = self.recall_value('host')
+        port = self.recall_value('port')
+        path = self.recall_value('path')
+        dialog.entry_host.set_text(host)
+        dialog.entry_port.set_text(str(port))
+        dialog.entry_path.set_text(path)
 
-        dialog_hbox.pack_start(dialog_label,       False, False, 0)
-        dialog_hbox.pack_start(dialog_entry_host,  False, False, 0)
-        dialog_hbox.pack_start(dialog_label_colon, False, False, 0)
-        dialog_hbox.pack_start(dialog_entry_port,  False, False, 0)
-        dialog_hbox.pack_start(dialog_label_slash, False, False, 0)
-        dialog_hbox.pack_start(dialog_entry_path,  False, False, 0)
+        dialog_hbox.pack_start(dialog_label,       False, False, 5)
+        dialog_hbox.pack_start(dialog.entry_host,  False, False, 5)
+        dialog_hbox.pack_start(dialog_label_colon, False, False, 5)
+        dialog_hbox.pack_start(dialog.entry_port,  False, False, 5)
+        dialog_hbox.pack_start(dialog_label_slash, False, False, 5)
+        dialog_hbox.pack_start(dialog.entry_path,  False, False, 5)
 
         dialog.vbox.pack_end(dialog_hbox)
         dialog_hbox.show_all()
 
         response = dialog.run()
-        host = dialog_entry_host.get_text()
-        port = dialog_entry_port.get_text()
-        path = dialog_entry_path.get_text()
-        dialog.destroy()
+        return
 
-        if response == gtk.RESPONSE_ACCEPT:
+    def callback_server_ok(self, widget, event, data):
+        host = widget.entry_host.get_text()
+        port = widget.entry_port.get_text()
+        path = widget.entry_path.get_text()
+        del widget
 
-            if host == '':
-                dialog = gtk.MessageDialog(type=gtk.MESSAGE_WARNING,
-                                           buttons=gtk.BUTTONS_OK,
-                                           message_format="Invalid Host")
-                dialog.run()
-                dialog.destroy()
+        if host == '':
+            dialog = Dialog(title='Select Host: Invalid Host', message='Invalid Host')
+            dialog.set_icon(asl.new_icon('network'))
+            dialog.add_button_right('OK', focus=True)
+            dialog.run()
+            return
+
+        try:
+            port = int(port)
+            assert port > 0
+            assert port < 65536
+        except:
+            dialog = Dialog(title='Select Host: Invalid Port', message='Invalid Port')
+            dialog.set_icon(asl.new_icon('network'))
+            dialog.add_button_right('OK', focus=True)
+            dialog.run()
+            return
+
+        self.store_value('host', host)
+        self.store_value('port', str(port))
+        self.store_value('path', path.lstrip('/'))
+
+    def callback_new_database(self, widget, event, data=None):
+        database_file = select_save_file()
+        if database_file == '':
+            return
+        if os.path.exists(database_file):
+            dialog = Dialog(title="Select Database: File Exists")
+            dialog.set_icon(asl.new_icon('database'))
+            dialog.add_button_right("No", focus=True)
+            dialog.add_button_right("Yes", self.callback_open_database, database_file)
+            dialog.set_message("The file you selected already exists, do you wish to replace it?")
+            dialog.run()
+            return
+        else:
+            self.attach_to_database(database_file)
+
+    def callback_open_database(self, widget, event, data=None):
+        if data == 'open_database':
+            database_file = select_file()
+            if database_file == '':
                 return
+            truncate = False
+        else:
+            database_file = data
+            trunacte = True
+        self.attach_to_database(database_file, truncate)
 
-            try:
-                port = int(port)
-                assert port > 0
-                assert port < 65536
-            except:
-                dialog = gtk.MessageDialog(type=gtk.MESSAGE_WARNING,
-                                           buttons=gtk.BUTTONS_OK,
-                                           message_format="Invalid Port")
-                dialog.run()
-                dialog.destroy()
-                return
-
-            self.keep_dict['host'] = host
-            self.keep_dict['port'] = str(port)
-            self.keep_dict['path'] = path.lstrip('/')
+    def attach_to_database(self, database_file, truncate=False):
+        old_database = self.keep.get_database_file_name()
+        if not os.path.exists(database_file):
+            message = "Could not create new database."
+        else:
+            message = "Could not attach to database."
+        try:
+            self.keep.select_database(database_file)
+            self.keep.init()
+            if truncate:
+                self.save_state()
+            else:
+                self.load_state()
+                self.viewer.apply_state()
+        except:
+            dialog = Dialog(title="Select Database: Failed")
+            dialog.set_icon(asl.new_icon('database'))
+            dialog.add_button_right("OK", focus=True)
+            dialog.set_message(message)
+            dialog.run()
+            self.keep.select_database(old_database)
+            self.keep.init()
+            self.load_state()
+            self.viewer.apply_state()
+            return
+        dialog = Dialog(title="Select Database: Success")
+        dialog.set_icon(asl.new_icon('database'))
+        dialog.add_button_right("OK", focus=True)
+        dialog.set_message("Successfully attached to database.")
+        dialog.run()
 
     def callback_save(self, widget, event, data=None):
         self.save_state()
+
+    def callback_load(self, widget, event, data=None):
+        self.load_state()
+        self.viewer.apply_state()
 
     def callback_menu(self, widget, button, activate_time, data=None):
         #print "toggle menu"
@@ -264,6 +373,7 @@ class Monitor(StatefulClass):
     def callback_activate(self, wiget, event, data=None):
         #print "status icon activated"
         if self.viewer.is_dead():
+            del self.viewer
             self.new_viewer()
         self.viewer.toggle()
 
@@ -327,6 +437,7 @@ class Monitor(StatefulClass):
 
     def refresh_viewer(self):
         if self.viewer.is_dead():
+            del self.viewer
             self.new_viewer()
         if self.data:
             self.viewer.set_data_buffer(self.data)
@@ -507,8 +618,10 @@ def archive(archive_queue, master_queue, data, timestamp, directory):
 #/*}}}*/
 
 # === Viewer Class  /*{{{*/
-class Viewer(object):
+class Viewer(GtkClass):
     def __init__(self, master=None):
+        GtkClass.__init__(self)
+
         self.list_store_data = None
         self.data_buffer = None
         self.time_buffer = None
@@ -590,7 +703,7 @@ class Viewer(object):
         self.crtext_timestamp = gtk.CellRendererText()
         self.crtoggle_viewed  = gtk.CellRendererToggle()
         self.crtoggle_viewed.set_property('activatable', True)
-        self.crtoggle_viewed.connect('toggled', self.callback_toggled, None)
+        self._connect(self.crtoggle_viewed, 'toggled', self.callback_toggled, None)
 
 # ===== Layout Configuration ==============================================
         self.window.add(self.vbox_main)
@@ -650,9 +763,9 @@ class Viewer(object):
         self.hscale_checked.set_digits(0)
         self.hscale_checked.set_draw_value(False)
         self.hscale_checked.set_increments(1.0,1.0)
-        try:
-            self.hscale_checked.set_value(float(self.master.temp_dict['viewer-filter-checked']))
-        except:
+        if self.master.recall_temp_value('viewer-filter-checked'):
+            self.hscale_checked.set_value(float(self.master.recall_temp_value('viewer-filter-checked')))
+        else:
             self.hscale_checked.set_value(1.0)
         self.checkbutton_scale_unchecked.set_sensitive(False)
         self.checkbutton_scale_unchecked.set_active(False)
@@ -660,45 +773,45 @@ class Viewer(object):
         self.checkbutton_scale_checked.set_active(True)
     
         self.checkbutton_refresh.set_active(False)
-        if self.master.keep_dict.has_key('viewer-refresh-auto'):
-            if self.master.keep_dict['viewer-refresh-auto'].upper() == 'TRUE':
+        if self.master.recall_value('viewer-refresh-auto'):
+            if self.master.recall_value('viewer-refresh-auto').upper() == 'TRUE':
                 self.checkbutton_refresh.set_active(True)
 
-        if self.master.temp_dict.has_key('viewer-filter-network'):
-            self.entry_filter_network.set_text(self.master.temp_dict['viewer-filter-network'])
-        if self.master.temp_dict.has_key('viewer-filter-station'):
-            self.entry_filter_station.set_text(self.master.temp_dict['viewer-filter-station'])
-        if self.master.temp_dict.has_key('viewer-filter-location'):
-            self.entry_filter_location.set_text(self.master.temp_dict['viewer-filter-location'])
-        if self.master.temp_dict.has_key('viewer-filter-channel'):
-            self.entry_filter_channel.set_text(self.master.temp_dict['viewer-filter-channel'])
+        if self.master.recall_temp_value('viewer-filter-network'):
+            self.entry_filter_network.set_text(self.master.recall_temp_value('viewer-filter-network'))
+        if self.master.recall_temp_value('viewer-filter-station'):
+            self.entry_filter_station.set_text(self.master.recall_temp_value('viewer-filter-station'))
+        if self.master.recall_temp_value('viewer-filter-location'):
+            self.entry_filter_location.set_text(self.master.recall_temp_value('viewer-filter-location'))
+        if self.master.recall_temp_value('viewer-filter-channel'):
+            self.entry_filter_channel.set_text(self.master.recall_temp_value('viewer-filter-channel'))
 
 # ===== Event Bindings
-        self.window.connect( "destroy-event", self.callback_destroy, None )
-        self.window.connect( "delete-event", self.callback_destroy, None )
-        self.window.connect( "configure-event", self.callback_window_configured, None )
-        self.window.connect( "screen-changed", self.callback_window_configured, None )
-        self.window.connect( "window-state-event", self.callback_window_configured, None )
+        self._connect(self.window,  "destroy-event",      self.callback_destroy, None)
+        self._connect(self.window,  "delete-event",       self.callback_destroy, None)
+        self._connect(self.window,  "configure-event",    self.callback_window_configured, None)
+        self._connect(self.window,  "screen-changed",     self.callback_window_configured, None)
+        self._connect(self.window,  "window-state-event", self.callback_window_configured, None)
 
-        self.checkbutton_refresh.connect("toggled", self.callback_toggle_refresh_auto, None)
+        self._connect(self.checkbutton_refresh, "toggled", self.callback_toggle_refresh_auto, None)
 
-        self.button_refresh.connect("clicked", self.callback_refresh, None)
-        self.button_close.connect("clicked", self.callback_close, None)
+        self._connect(self.button_refresh, "clicked", self.callback_refresh, None)
+        self._connect(self.button_close,   "clicked", self.callback_close, None)
 
-        self.entry_filter_network.connect(  "changed", self.callback_filter_changed, None, "network")
-        self.entry_filter_station.connect(  "changed", self.callback_filter_changed, None, "station")
-        self.entry_filter_location.connect( "changed", self.callback_filter_changed, None, "location")
-        self.entry_filter_channel.connect(  "changed", self.callback_filter_changed, None, "channel")
-        self.entry_filter_network.connect(  "focus-in-event", self.callback_filter_focus_in, None)
-        self.entry_filter_station.connect(  "focus-in-event", self.callback_filter_focus_in, None)
-        self.entry_filter_location.connect(  "focus-in-event", self.callback_filter_focus_in, None)
-        self.entry_filter_channel.connect(  "focus-in-event", self.callback_filter_focus_in, None)
-        self.entry_filter_network.connect(  "focus-out-event", self.callback_filter_focus_out, None)
-        self.entry_filter_station.connect(  "focus-out-event", self.callback_filter_focus_out, None)
-        self.entry_filter_location.connect(  "focus-out-event", self.callback_filter_focus_out, None)
-        self.entry_filter_channel.connect(  "focus-out-event", self.callback_filter_focus_out, None)
-        self.hscale_checked.connect(   "value-changed", self.callback_scale_show_checked, None)
-        self.button_erase.connect("clicked", self.callback_erase_filters, None)
+        self._connect(self.entry_filter_network, "changed", self.callback_filter_changed, None, "network")
+        self._connect(self.entry_filter_station, "changed", self.callback_filter_changed, None, "station")
+        self._connect(self.entry_filter_location,"changed", self.callback_filter_changed, None, "location")
+        self._connect(self.entry_filter_channel, "changed", self.callback_filter_changed, None, "channel")
+        self._connect(self.entry_filter_network, "focus-in-event", self.callback_filter_focus_in, None)
+        self._connect(self.entry_filter_station, "focus-in-event", self.callback_filter_focus_in, None)
+        self._connect(self.entry_filter_location,"focus-in-event", self.callback_filter_focus_in, None)
+        self._connect(self.entry_filter_channel, "focus-in-event", self.callback_filter_focus_in, None)
+        self._connect(self.entry_filter_network, "focus-out-event", self.callback_filter_focus_out, None)
+        self._connect(self.entry_filter_station, "focus-out-event", self.callback_filter_focus_out, None)
+        self._connect(self.entry_filter_location,"focus-out-event", self.callback_filter_focus_out, None)
+        self._connect(self.entry_filter_channel, "focus-out-event", self.callback_filter_focus_out, None)
+        self._connect(self.hscale_checked,       "value-changed", self.callback_scale_show_checked, None)
+        self._connect(self.button_erase,         "clicked", self.callback_erase_filters, None)
 
         self.filter_hint_show(self.entry_filter_network)
         self.filter_hint_show(self.entry_filter_station)
@@ -707,8 +820,8 @@ class Viewer(object):
 
         # Show widgets
         self.window.show_all()
-        if self.master.keep_dict.has_key('viewer-hidden'):
-            if self.master.keep_dict['viewer-hidden'].upper() == 'TRUE':
+        if self.master.recall_value('viewer-hidden'):
+            if self.master.recall_value('viewer-hidden').upper() == 'TRUE':
                 self.hide()
             else:
                 self.show()
@@ -764,13 +877,16 @@ class Viewer(object):
         self.hide()
 
     def callback_destroy(self, widget, event, data=None):
-        self.dead = True
+        self.hide()
+        return True
+        #self.dead = True
+        #self._disconnect_all()
 
     def callback_toggle_refresh_auto(self, widget, event, data=None):
         if self.checkbutton_refresh.get_active():
-            self.master.keep_dict['viewer-refresh-auto'] = 'True'
+            self.master.store_value('viewer-refresh-auto', 'True')
         else:
-            self.master.keep_dict['viewer-refresh-auto'] = 'False'
+            self.master.store_value('viewer-refresh-auto', 'False')
 
     def callback_refresh(self, widget, event, data=None):
         if self.data_buffer:
@@ -783,7 +899,7 @@ class Viewer(object):
             self.master.callback_clear_warn(None, None, None) 
 
     def callback_scale_show_checked(self, widget, event, data=None):
-        self.master.temp_dict['viewer-filter-checked'] = str(self.hscale_checked.get_value())
+        self.master.store_temp_value('viewer-filter-checked', str(self.hscale_checked.get_value()))
         self.treestore.refilter()
         filter_iter = self.treestore.get_iter_first()
         if filter_iter:
@@ -814,10 +930,10 @@ class Viewer(object):
         key = '%s-%s-%s-%s' % (n,s,l,c)
         if value:
             model.set_value(iter, 4, False)
-            self.master.keep_dict[key] = 'False'
+            self.master.store_value(key, 'False')
         else:
             model.set_value(iter, 4, True)
-            self.master.keep_dict[key] = 'True'
+            self.master.store_value(key, 'True')
 
     def callback_filter_changed(self, widget, event, data=None):
         text = widget.get_text()
@@ -831,16 +947,16 @@ class Viewer(object):
             except: regex = None
         if data == 'network':
             self.regex_network = regex
-            self.master.temp_dict['viewer-filter-network'] = text
+            self.master.store_temp_value('viewer-filter-network', text)
         elif data == 'station':
             self.regex_station = regex
-            self.master.temp_dict['viewer-filter-station'] = text
+            self.master.store_temp_value('viewer-filter-station', text)
         elif data == 'location':
             self.regex_location = regex
-            self.master.temp_dict['viewer-filter-location'] = text
+            self.master.store_temp_value('viewer-filter-location', text)
         elif data == 'channel':
             self.regex_channel = regex
-            self.master.temp_dict['viewer-filter-channel'] = text
+            self.master.store_temp_value('viewer-filter-channel', text)
         self.treestore.refilter()
         filter_iter = self.treestore.get_iter_first()
         if filter_iter:
@@ -864,10 +980,10 @@ class Viewer(object):
         #print "size:    ", size
 
         if not self.hidden:
-            self.master.keep_dict['viewer-gravity']  = gravity
-            self.master.keep_dict['viewer-position'] = position
-            self.master.keep_dict['viewer-size']     = size
-            #self.master.keep_dict['viewer-screen']   = screen
+            self.master.store_value('viewer-gravity', gravity)
+            self.master.store_value('viewer-position', position)
+            self.master.store_value('viewer-size', size)
+            #self.master.store_value('viewer-screen', screen)
 
     def callback_filter_focus_out(self, widget, event, data=None):
         self.filter_hint_show(widget)
@@ -904,26 +1020,26 @@ class Viewer(object):
 
     def show(self):
         self.window.show()
-        if self.master.keep_dict.has_key('viewer-gravity'):
-            g = int(self.master.keep_dict['viewer-gravity'])
+        if self.master.recall_value('viewer-gravity'):
+            g = int(self.master.recall_value('viewer-gravity'))
             #print "gravity =", g
             self.window.set_gravity(g)
-        if self.master.keep_dict.has_key('viewer-position'):
-            x,y = map(int,self.master.keep_dict['viewer-position'].split(',',1))
+        if self.master.recall_value('viewer-position'):
+            x,y = map(int,self.master.recall_value('viewer-position').split(',',1))
             #print "position =", x, y
             self.window.move(x,y)
-        if self.master.keep_dict.has_key('viewer-size'):
-            w,h = map(int,self.master.keep_dict['viewer-size'].split(',',1))
+        if self.master.recall_value('viewer-size'):
+            w,h = map(int,self.master.recall_value('viewer-size').split(',',1))
             #print "size =", w, h
             self.window.resize(w,h)
-        if self.master.keep_dict.has_key('viewer-fullscreen'):
-            fullscreen = self.master.keep_dict['viewer-fullscreen']
+        if self.master.recall_value('viewer-fullscreen'):
+            fullscreen = self.master.recall_value('viewer-fullscreen')
             if fullscreen == 'TRUE':
                 self.window.fullscreen()
             else:
                 self.window.unfullscreen()
-        #if self.master.keep_dict.has_key('viewer-screen'):
-            #d,s = self.master.keep_dict['viewer-screen'].split(',',1)
+        #if self.master.recall_value('viewer-screen'):
+            #d,s = self.master.recall_value('viewer-screen').split(',',1)
             #print "screen =", d, s
             #display = gtk.gdk.Display(d)
             #print "display:", display
@@ -931,11 +1047,18 @@ class Viewer(object):
             #print "screen:", screen
             #print "dir", dir(screen)
             #self.window.set_screen(gtk.gdk.Screen(gtk.gdk.Display(d).get_screen(int(s))))
-        self.master.keep_dict['viewer-hidden'] = 'False'
+        self.master.store_value('viewer-hidden', 'False')
         self.hidden = False
 
+    def apply_state(self):
+        was_hidden = self.hidden
+        self.show()
+        if was_hidden:
+            self.hide()
+        self.set_data(self._data)
+
     def hide(self):
-        self.master.keep_dict['viewer-hidden'] = 'True'
+        self.master.store_value('viewer-hidden', 'True')
         self.hidden = True
         self.window.hide()
 
@@ -1008,6 +1131,7 @@ class Viewer(object):
 
     def set_data(self, data):
         if data:
+            self._data = data
             self.treestore.get_model().clear()
             for (n,s,l,c,t,d) in data:
                 name = "%s_%s" % (n,s)
@@ -1020,8 +1144,8 @@ class Viewer(object):
                 timestamp = t
                 key = "%s-%s-%s-%s" % (n,s,l,c)
                 checked = False
-                if self.master.keep_dict.has_key(key):
-                    if self.master.keep_dict[key].upper() == 'TRUE':
+                if self.master.recall_value(key):
+                    if self.master.recall_value(key).upper() == 'TRUE':
                         checked = True
                 self.treestore.get_model().append(None, [name, channel, delay, timestamp, checked])
 
