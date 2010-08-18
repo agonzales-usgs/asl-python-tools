@@ -1,8 +1,0 @@
-archive-path  = /home/joel/data/archive/IU_ANMO
-log-path      = /home/joel/data/archive/IU_ANMO
-liss-host     = anmo.iu.liss.org
-liss-port     = 4000
-status-port   = 13000
-log-debug     = FALSE
-log-to-screen = TRUE
-log-to-file   = TRUE
