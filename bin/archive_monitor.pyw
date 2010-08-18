@@ -19,6 +19,7 @@ import gobject
 import gtk
 
 from jtk.StatefulClass import StatefulClass
+from jtk.gtk.Dialog import Dialog
 from jtk.Class import Class
 from jtk.Thread import Thread
 from jtk.Logger import LogThread
@@ -137,7 +138,10 @@ class CommThread(Thread):
         self._running = False
         self._notifier = Notifier()
         self._status = Status(self)
-        self._status.set_port(self._master.get_address())
+        self._status.set_address(self._master.get_address())
+
+    def set_address(self, address):
+        return self._status.set_address(address)
 
     def halt_now(self):
         self.halt()
@@ -298,9 +302,9 @@ class ArchiveIcon:
         self.menu.append(self.menuitem_restart)
 
         self.image_server = gtk.Image()
-        self.image_server.set_from_pixbuf(asl.new_icon('network').scape_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.image_server.set_from_pixbuf(asl.new_icon('network').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
         self.menuitem_server = gtk.ImageMenuItem("Server", "Server")
-        self.menuitem_server.set_iamte(self.image_server)
+        self.menuitem_server.set_image(self.image_server)
         self.menuitem_server.connect("activate", self.callback_server, None)
         self.menu.append(self.menuitem_server)
 
@@ -314,6 +318,7 @@ class ArchiveIcon:
         self.menu.show()
         self.menuitem_delay.show()
         self.menuitem_restart.show()
+        self.menuitem_server.show()
         self.menuitem_exit.show()
 
         self.warn_delay = 60
@@ -389,6 +394,7 @@ class ArchiveIcon:
             return
 
         self._address = (host, port)
+        self.comm_thread.set_address(self._address)
 
     def callback_menu(self, widget, button, activate_time, data=None):
         self.menu.popup(None, None, None, button, activate_time, data)
@@ -495,7 +501,7 @@ def main():
         if not host:
             host = default_host
 
-        app = ArchiveIcon()
+        app = ArchiveIcon(address=(host,port))
         gtk.main()
     except KeyboardInterrupt:
         pass

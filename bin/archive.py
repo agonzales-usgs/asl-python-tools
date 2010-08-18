@@ -3,6 +3,7 @@ import asl
 
 import asyncore
 import calendar
+import optparse
 import os
 import Queue
 import re
