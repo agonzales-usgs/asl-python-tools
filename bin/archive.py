@@ -460,8 +460,12 @@ class Main(Class):
         # INFO: Can use the self._log() method after this point only  
 
     def start(self):
-
         try:
+            use_message = """usage: %prog [options]"""
+            option_list = []
+            option_list.append(optparse.make_option("-c", "--config-file", dest="config_file", action="store", help="use this configuration file instead of the default"))
+            parser = optparse.OptionParser(option_list=option_list, usage=use_message)
+            options, args = parser.parse_args()
 
             self.context['write'] = WriteThread(log_queue=self.context['log'].queue)
             self.context['read']  = ReadThread(self.context['write'].queue, log_queue=self.context['log'].queue)
@@ -470,14 +474,15 @@ class Main(Class):
             archive_path = ''
             config_file  = ''
             configuration = {}
-            if os.environ.has_key('SEED_ARCHIVE_CONFIG'):
-                config_file = os.environ['SEED_ARCHIVE_CONFIG']
+            if options.config_file:
+                config_file = options.config_file
             if not os.path.exists(config_file):
-                config_file = '/etc/q330/archive.config'
-            if not os.path.exists(config_file):
-                config_file = '/opt/etc/archive.config'
+                if os.environ.has_key('SEED_ARCHIVE_CONFIG'):
+                    config_file = os.environ['SEED_ARCHIVE_CONFIG']
             if not os.path.exists(config_file):
                 config_file = 'archive.config'
+            if not os.path.exists(config_file):
+                config_file = '/opt/etc/archive.config'
             if os.path.exists(config_file):
                 try:
                     fh = open(config_file, 'r')

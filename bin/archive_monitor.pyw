@@ -3,6 +3,7 @@ import asl
 
 import asyncore
 import calendar
+import optparse
 import os
 import Queue
 import re
@@ -17,6 +18,7 @@ pygtk.require('2.0')
 import gobject
 import gtk
 
+from jtk.StatefulClass import StatefulClass
 from jtk.Class import Class
 from jtk.Thread import Thread
 from jtk.Logger import LogThread
@@ -62,10 +64,20 @@ class Status(asyncore.dispatcher):
         self._last_activity = 0
         self._regex_status = re.compile('^\[(.*)\]<(.*)>$')
         self._master = master
+        self._address = ('127.0.0.1', 4000)
 
     def check_status(self):
         #print "%s::check_status()" % self.__class__.__name__
-        self._buffers.append(('[TIMESTAMP]<LAST-PACKET>', ('127.0.0.1', 4000)))
+        self._buffers.append(('[TIMESTAMP]<LAST-PACKET>', self._address))
+
+    def set_address(self, address):
+        tmp_address = self._address
+        try:
+            self._address = (socket.gethostbyname(address[0]),int(address[1]))
+        except:
+            self._address = tmp_address
+            return False
+        return True
 
     def handle_read(self):
         #print "%s::handle_read()" % self.__class__.__name__
@@ -125,6 +137,7 @@ class CommThread(Thread):
         self._running = False
         self._notifier = Notifier()
         self._status = Status(self)
+        self._status.set_port(self._master.get_address())
 
     def halt_now(self):
         self.halt()
@@ -258,8 +271,10 @@ class RestartThread(Thread):
 
 # === ArchiveIcon Class /*{{{*/
 class ArchiveIcon:
-    def __init__(self):
+    def __init__(self, address=('127.0.0.1', 4000)):
         signal.signal(signal.SIGTERM, self.halt_now)
+
+        self._address = address
 
         self.status_icon = gtk.StatusIcon()
         self.status_icon.set_from_pixbuf(asl.new_icon('box'))
@@ -281,6 +296,13 @@ class ArchiveIcon:
         self.menuitem_restart.set_image(self.image_restart)
         self.menuitem_restart.connect("activate", self.callback_restart, None)
         self.menu.append(self.menuitem_restart)
+
+        self.image_server = gtk.Image()
+        self.image_server.set_from_pixbuf(asl.new_icon('network').scape_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.menuitem_server = gtk.ImageMenuItem("Server", "Server")
+        self.menuitem_server.set_iamte(self.image_server)
+        self.menuitem_server.connect("activate", self.callback_server, None)
+        self.menu.append(self.menuitem_server)
 
         self.image_exit = gtk.Image()
         self.image_exit.set_from_pixbuf(asl.new_icon('stop').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
@@ -314,6 +336,59 @@ class ArchiveIcon:
 
     def callback_restart(self, widget, event, data=None):
         self.restart_thread.queue.put(('RESTART', None))
+
+    def callback_server(self, widget, event, data=None):
+        dialog = Dialog(title="Archive Status Server")
+        dialog.set_icon(asl.new_icon('network'))
+        dialog.add_button_left("OK", self.callback_server_ok, focus=True)
+        dialog.add_button_right("Cancel")
+
+        dialog_hbox = gtk.HBox()
+        dialog.entry_host  = gtk.Entry()
+        dialog_label_colon = gtk.Label(':')
+        dialog.entry_port  = gtk.Entry()
+
+        dialog.entry_host.set_width_chars(20)
+        dialog.entry_port.set_width_chars(5)
+
+        host,port = self._address
+        dialog.entry_host.set_text(host)
+        dialog.entry_port.set_text(str(port))
+
+        dialog_hbox.pack_start(dialog.entry_host,  False, False, 5)
+        dialog_hbox.pack_start(dialog_label_colon, False, False, 5)
+        dialog_hbox.pack_start(dialog.entry_port,  False, False, 5)
+
+        dialog.vbox.pack_end(dialog_hbox)
+        dialog_hbox.show_all()
+
+        response = dialog.run()
+        return
+
+    def callback_server_ok(self, widget, event, data):
+        host = widget.entry_host.get_text()
+        port = widget.entry_port.get_text()
+        del widget
+
+        if host == '':
+            dialog = Dialog(title='Select Host: Invalid Host', message='Invalid Host')
+            dialog.set_icon(asl.new_icon('network'))
+            dialog.add_button_right('OK', focus=True)
+            dialog.run()
+            return
+
+        try:
+            port = int(port)
+            assert port > 0
+            assert port < 65536
+        except:
+            dialog = Dialog(title='Select Host: Invalid Port', message='Invalid Port')
+            dialog.set_icon(asl.new_icon('network'))
+            dialog.add_button_right('OK', focus=True)
+            dialog.run()
+            return
+
+        self._address = (host, port)
 
     def callback_menu(self, widget, button, activate_time, data=None):
         self.menu.popup(None, None, None, button, activate_time, data)
@@ -353,14 +428,79 @@ class ArchiveIcon:
         #print "%s::check_status()" % self.__class__.__name__
         self.comm_thread.check_status()
 
+    def get_address(self):
+        return self._address
+
     def halt_now(self):
         self.close_application()
 #/*}}}*/
 
-if __name__ == "__main__":
+# === main/*{{{*/
+def main():
     try:
+        default_port = 4000
+        default_host = '127.0.0.1'
+
+        use_message = """usage: %prog [options]"""
+        option_list = []
+        option_list.append(optparse.make_option("-c", "--config-file", dest="config_file", action="store", help="use this configuration file instead of the default"))
+        option_list.append(optparse.make_option("-H", "--host", dest="host", action="store", help="use this host instead of the default (%s)" % default_host))
+        option_list.append(optparse.make_option("-p", "--port", dest="port", action="store", type="int", help="monitor on this port instead of the default (%d)" % default_port))
+        parser = optparse.OptionParser(option_list=option_list, usage=use_message)
+        options, args = parser.parse_args()
+
+        host = ''
+        port = -1
+        configuration = []
+        config_file = ''
+        if options.config_file:
+            config_file = options.config_file
+        if not os.path.exists(config_file):
+            if os.environ.has_key('SEED_ARCHIVE_CONFIG'):
+                config_file = os.environ['SEED_ARCHIVE_CONFIG']
+        if not os.path.exists(config_file):
+            config_file = 'archive.config'
+        if not os.path.exists(config_file):
+            config_file = '/opt/etc/archive.config'
+        if os.path.isfile(config_file):
+            try:
+                fh = open(config_file, 'r')
+                lines = fh.readlines()
+                for line in lines:
+                    if line[0] == '#':
+                        continue
+                    line = line.split('#',1)[0]
+                    parts = tuple(map(lambda p: p.strip(), line.split('=',1)))
+                    if len(parts) != 2:
+                        continue
+                    k,v = parts
+                    configuration[k] = v
+                if configuration.has_key('status-port'):
+                    port = int(configuration['status-port'])
+            except:
+                pass
+        if options.port:
+            try:
+                port = int(options.port)
+            except:
+                pass
+        if options.host:
+            try:
+                host = socket.gethostbyname(options.host)
+            except:
+                pass
+
+        if 0 > port > 65535:
+            port = default_port
+        if not host:
+            host = default_host
+
         app = ArchiveIcon()
         gtk.main()
     except KeyboardInterrupt:
         pass
+#/*}}}*/
+
+if __name__ == "__main__":
+    main()
 
