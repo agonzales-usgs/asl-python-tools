@@ -917,13 +917,11 @@ class PipeUI:
             dialog_entry_port.connect("key-press-event", self.callback_dialog_enter)
 
             response = self.dialog.run()
-
+            host = dialog_entry_host.get_text()
+            port = dialog_entry_port.get_text()
             self.dialog.destroy()
 
             if response == gtk.RESPONSE_ACCEPT:
-                host = dialog_entry_host.get_text()
-                port = dialog_entry_port.get_text()
-
                 try:
                     host = socket.gethostbyname(host)
                 except:
@@ -1092,6 +1090,8 @@ def main():
         parser = optparse.OptionParser(option_list=option_list, usage=use_message)
         options, args = parser.parse_args()
 
+        gui = None
+
         if options.quiet:
             verbosity = 0
         else:
@@ -1115,7 +1115,7 @@ def main():
                 #ip   = args[0]
                 #port = int(args[1])
                 #address = (ip, port)
-            reader = PipeUI(local=local, log=options.log, verbosity=verbosity)
+            gui = PipeUI(local=local, log=options.log, verbosity=verbosity)
             gtk.main()
         else:
             if options.type == 'S':

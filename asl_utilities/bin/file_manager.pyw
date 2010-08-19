@@ -15,6 +15,7 @@ import threading
 import time
 import traceback
 
+# === GUI Modules and Initialization /*{{{*/
 try:
     try: import pygtk
     except: 
@@ -40,18 +41,22 @@ except:
         print message[1]
         sys.exit(1)
 
-try: import gnomevfs
+try: import gio
 except:
-    message = gtk.MessageDialog(parent=None, type=gtk.MESSAGE_ERROR, buttons=gtk.BUTTONS_OK)
-    message.set_markup("Your system does not support GnomeVFS, which is required by File Manager.")
-    message.run()
-    message.destroy()
-    sys.exit(1)
+    try: import gnomevfs
+    except:
+        message = gtk.MessageDialog(parent=None, type=gtk.MESSAGE_ERROR, buttons=gtk.BUTTONS_OK)
+        message.set_markup("Your system does not support Gio or GnomeVFS.\nFile Manager needs at least one of these modules.")
+        message.run()
+        message.destroy()
+        sys.exit(1)
+#/*}}}*/
 
 from jtk.Thread import Thread
 from jtk.Logger import LogThread
 from jtk.StatefulClass import StatefulClass
 
+# === Definitions/*{{{*/
 COLUMN_HIDE = False
 COLUMN_SHOW = True
 
@@ -73,6 +78,7 @@ POLICY_CHECK     = 0
 POLICY_SKIP      = 1
 POLICY_IGNORE    = 2
 POLICY_OVERWRITE = 3
+#/*}}}*/
 
 # === FileWalker Class/*{{{*/
 class FileWalker(Thread):
@@ -296,7 +302,7 @@ class FileOperation(Thread):
 
     def _run(self, message, data):
         self.count += 1
-        time.sleep(0.1)
+        #time.sleep(0.1)
         self.update_progress(self.count, self.total)
         return #TODO: comment out and test
 
@@ -475,6 +481,11 @@ class FileWidget(gtk.VBox):
         self._folders_first = True
         self._file_operations = {}
         self._max_id = 0
+        self._main_window_closed = False
+
+        self._lock_shutdown = threading.Lock()
+        self._lock_fileop   = threading.Lock()
+        self._lock_path     = threading.Lock()
 
 # ===== GUI Build-up ========================================
         args = map(lambda c: c[2], self._column_defs)
@@ -547,8 +558,6 @@ class FileWidget(gtk.VBox):
         #self.treeview.connect("drag-failed",        self.callback_dnd_failed,    None)
         self.treeview.connect("drag-motion",        self.callback_dnd_motion,    None)
 
-        self.path_lock = threading.Lock()
-
         self.show_all()
         self.update()
 
@@ -613,7 +622,11 @@ class FileWidget(gtk.VBox):
                 drag_context.finish(False, False, int(time.time()))
 
     def callback_file_operation_complete(self, id):
+        self._lock_fileop.acquire()
         del self._file_operations[id]
+        if self._main_window_closed:
+            self.shutdown()
+        self._lock_fileop.release()
 
     def callback_dnd_fops_complete(self, widget, event, drag_context=None):
         delete = False
@@ -655,10 +668,10 @@ class FileWidget(gtk.VBox):
         self.update()
 
     def callback_path_updated(self):
-        if not self.path_lock.acquire(0):
+        if not self._lock_path.acquire(0):
             return
         self.update()
-        self.path_lock.release()
+        self._lock_path.release()
 
 # ===== Sorting Methods ===================================
     def sort_files(self, treemodel, iter1, iter2, user_data=None):
@@ -704,9 +717,11 @@ class FileWidget(gtk.VBox):
         return refs
 
     def shutdown(self):
-        for id,fileop in self._file_operations.items():
-            fileop.halt_now()
-            fileop.join()
+        self._lock_shutdown.acquire()
+        self._main_window_closed = True
+        if not len(self._file_operations.items()):
+            gtk.main_quit()
+        self._lock_shutdown.release()
 
     def update(self):
         try:
@@ -840,8 +855,8 @@ class FileManager(StatefulClass):
 
         g = self.recall_value('window-gravity')
         if g: self.window.set_gravity(int(g))
-        coordinates = self.recall_value('window-position')
-        if coordinates: self.window.move(*map(int,coordinates.split(',',1)))
+        #coordinates = self.recall_value('window-position')
+        #if coordinates: self.window.move(*map(int,coordinates.split(',',1)))
         dimensions = self.recall_value('window-size')
         if dimensions: self.window.resize(*map(int,dimensions.split(',',1)))
         fullscreen = self.recall_value('window-fullscreen')
@@ -870,7 +885,7 @@ class FileManager(StatefulClass):
         position = '%d,%d' % self.window.get_position()
         size     = '%d,%d' % self.window.get_size()
         self.store_value('window-gravity', gravity)
-        self.store_value('window-position', position)
+        #self.store_value('window-position', position)
         self.store_value('window-size', size)
         #if event.type == gtk.gdk.WINDOW_STATE:
         #    if event.new_window_state == gtk.gdk.WINDOW_STATE_MAXIMIZED:
@@ -879,9 +894,9 @@ class FileManager(StatefulClass):
         #        self.store_value('window-fullscreen', 'FALSE')
 
     def close_application(self, widget, event, data=None):
-        self.files.shutdown()
+        self.window.hide()
         self.save_state()
-        gtk.main_quit()
+        self.files.shutdown()
         return False
 #/*}}}*/
 
@@ -894,6 +909,5 @@ if __name__ == '__main__':
         import psyco
         psyco.full()
     except: pass
-
     main()
 
