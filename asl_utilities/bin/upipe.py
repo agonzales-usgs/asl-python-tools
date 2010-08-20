@@ -598,6 +598,16 @@ class MultiPipe(threading.Thread):
             self.log(str(self._sockets), 6)
             self.log(str(self._get_map()), 6)
             asyncore.loop(30.0, False, self._get_map(), 1)
+        self._remove_all_pipes()
+
+        try: self._scokets['INTERNAL'].close() 
+        except: pass
+        try: del self._sockets['INTERNAL']
+        except: pass
+
+        try: self._sockets['NOTIFIER'].close()
+        except: pass
+        del self._sockets['NOTIFIER']
 
     def notify(self):
         self._sockets['NOTIFIER'].notify()
@@ -957,7 +967,7 @@ class PipeUI:
     def callback_key_pressed(self, widget, event, data=None):
         if event.state == gtk.gdk.MOD1_MASK:
             if event.keyval == ord('q'):
-                self.close_application(widget, event, data)
+                self.close_application()
 
     def callback_dialog_escape(self, widget, event, data=None):
         if event.keyval == gtk.keysyms.Escape:
@@ -968,7 +978,7 @@ class PipeUI:
             self.dialog.response(gtk.RESPONSE_ACCEPT)
 
     def callback_quit(self, widget, event, data=None):
-        self.close_application(widget, event, data)
+        self.close_application()
 
     def callback_add(self, widget, event, data=None):
         try:
@@ -988,7 +998,7 @@ class PipeUI:
 
 
 # ===== Public Methods ============================================
-    def close_application(self, widget, event, data=None):
+    def close_application(self):
         self.core.stop()
         gtk.main_quit()
         return False
@@ -1075,6 +1085,7 @@ class PipeUI:
 # === main /*{{{*/
 def main():
     pipe = None
+    gui = None
     try:
         use_message = """usage: %prog [options] [args]
        U/C args -- udp_address udp_port
@@ -1089,8 +1100,6 @@ def main():
         option_list.append(optparse.make_option("-v", action="count", dest="verbosity", help="specify multiple time to increase verbosity"))
         parser = optparse.OptionParser(option_list=option_list, usage=use_message)
         options, args = parser.parse_args()
-
-        gui = None
 
         if options.quiet:
             verbosity = 0
@@ -1149,6 +1158,11 @@ def main():
             pipe.run()
     except KeyboardInterrupt:
         print "Keyboard Interrupt [^C]"
+        if gui:
+            try: gui.close_application()
+            except RuntimeError: pass
+        if pipe:
+            pipe.stop()
     except ExServerDied, e:
         print str(e)
     except Exception, e:
