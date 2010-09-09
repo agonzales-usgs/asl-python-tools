@@ -14,7 +14,7 @@ except:
 
 icons = {}
 
-def new_icon_gtk(id):
+def new_icon_gtk(id, enone=False):
     image_file = os.path.abspath('%s/icons/%s.png' % (path, id))
     # Is this icon already in the buffer
     if not icons.has_key(id):
@@ -28,6 +28,19 @@ def new_icon_gtk(id):
     else:
         # If we have this icon buffered, return its reference
         return icons[id]
+
+    if not enone:
+        try:
+            if not icons.has_key('file_broken'):
+                img = gtk.Image()
+                img.set_from_file(image_file)
+                # Add the new icon to the buffer
+                icons['file_broken'] = img.get_pixbuf()
+                return icons['file_broken']
+            else:
+                return icons['file_broken']
+        except:
+            pass
     return None
 
 def new_icon_none(id):

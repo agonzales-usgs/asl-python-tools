@@ -26,6 +26,7 @@ import gtk
 from jtk.Logger import Logger
 from jtk.gtk.Calendar import Calendar
 from jtk.StatefulClass import StatefulClass
+from jtk.file.utils import dir_from_file_path
 from jtk.gtk.utils import select_file
 from jtk.gtk.utils import select_save_file
 from jtk.gtk.Dialog import Dialog
@@ -47,6 +48,10 @@ class Monitor(StatefulClass):
             self.store_value('port', '80')
         if not self.recall_value('path'):
             self.store_value('path', 'uptime/upgrade/telmon.txt')
+        if not self.recall_value('file'):
+            self.store_value('file', 'telmon.txt')
+        if not self.recall_value('use-file'):
+            self.store_value('use-file', 'FALSE')
 
         self.path = LISSPath()
 
@@ -201,65 +206,133 @@ class Monitor(StatefulClass):
         dialog.add_button_left("OK", self.callback_server_ok, focus=True)
         dialog.add_button_right("Cancel")
 
-        dialog_hbox = gtk.HBox()
-        dialog_label = gtk.Label('http://')
+        dialog.hbox_uri = gtk.HBox()
+        dialog.radio_uri   = gtk.RadioButton(group=None, label='http://')
         dialog.entry_host  = gtk.Entry()
-        dialog_label_colon = gtk.Label(':')
+        dialog.label_colon = gtk.Label(':')
         dialog.entry_port  = gtk.Entry()
-        dialog_label_slash = gtk.Label('/')
+        dialog.label_slash = gtk.Label('/')
         dialog.entry_path  = gtk.Entry()
+
+        dialog.hbox_file = gtk.HBox()
+        dialog.radio_file = gtk.RadioButton(group=dialog.radio_uri, label='File:')
+        dialog.entry_file = gtk.Entry()
+        dialog.button_file = gtk.Button(label='...')
 
         dialog.entry_host.set_width_chars(20)
         dialog.entry_port.set_width_chars(5)
         dialog.entry_path.set_width_chars(30)
+        dialog.entry_file.set_width_chars(60)
 
         host = self.recall_value('host')
         port = self.recall_value('port')
         path = self.recall_value('path')
+        file = self.recall_value('file')
         dialog.entry_host.set_text(host)
         dialog.entry_port.set_text(str(port))
         dialog.entry_path.set_text(path)
+        dialog.entry_file.set_text(file)
 
-        dialog_hbox.pack_start(dialog_label,       False, False, 5)
-        dialog_hbox.pack_start(dialog.entry_host,  False, False, 5)
-        dialog_hbox.pack_start(dialog_label_colon, False, False, 5)
-        dialog_hbox.pack_start(dialog.entry_port,  False, False, 5)
-        dialog_hbox.pack_start(dialog_label_slash, False, False, 5)
-        dialog_hbox.pack_start(dialog.entry_path,  False, False, 5)
+        dialog.hbox_uri.pack_start(dialog.radio_uri,   False, False, 5)
+        dialog.hbox_uri.pack_start(dialog.entry_host,  False, False, 5)
+        dialog.hbox_uri.pack_start(dialog.label_colon, False, False, 5)
+        dialog.hbox_uri.pack_start(dialog.entry_port,  False, False, 5)
+        dialog.hbox_uri.pack_start(dialog.label_slash, False, False, 5)
+        dialog.hbox_uri.pack_start(dialog.entry_path,  False, False, 5)
 
-        dialog.vbox.pack_end(dialog_hbox)
-        dialog_hbox.show_all()
+        dialog.hbox_file.pack_start(dialog.radio_file,  False, False, 5)
+        dialog.hbox_file.pack_start(dialog.entry_file,  False, False, 5)
+        dialog.hbox_file.pack_start(dialog.button_file, False, False, 5)
+
+        dialog.vbox.pack_end(dialog.hbox_file)
+        dialog.vbox.pack_end(dialog.hbox_uri)
+
+        dialog._connect(dialog.radio_uri,   'toggled', self.callback_server_radio_toggle, None, 'FALSE')
+        dialog._connect(dialog.radio_file,  'toggled', self.callback_server_radio_toggle, None, 'TRUE')
+        dialog._connect(dialog.button_file, 'clicked', self.callback_server_select_file,  None)
+        dialog.radio_uri._master = dialog
+        dialog.radio_file._master = dialog
+        dialog.button_file._master = dialog
+
+        if self.recall_value('use-file').lower() == 'true':
+            dialog.radio_file.set_active(True)
+        else:
+            dialog.radio_uri.set_active(True)
+
+        dialog.hbox_uri.show_all()
+        dialog.hbox_file.show_all()
 
         response = dialog.run()
         return
+
+    def callback_server_select_file(self, widget, event, data=None):
+        dialog = widget._master
+        current_dir = dir_from_file_path(dialog.entry_file.get_text())
+        if os.path.isdir(current_dir):
+            dialog.entry_file.set_text(select_file(current_dir))
+        else:
+            dialog.entry_file.set_text(select_file())
+
+    def callback_server_radio_toggle(self, widget, event, data):
+        dialog = widget._master
+        if data.lower() == 'true':
+            dialog.entry_host.set_sensitive(False)
+            dialog.entry_port.set_sensitive(False)
+            dialog.entry_path.set_sensitive(False)
+            dialog.entry_file.set_sensitive(True)
+        else:
+            dialog.entry_host.set_sensitive(True)
+            dialog.entry_port.set_sensitive(True)
+            dialog.entry_path.set_sensitive(True)
+            dialog.entry_file.set_sensitive(False)
 
     def callback_server_ok(self, widget, event, data):
         host = widget.entry_host.get_text()
         port = widget.entry_port.get_text()
         path = widget.entry_path.get_text()
+        file = widget.entry_file.get_text()
+        use_file = widget.radio_file.get_active()
         del widget
 
-        if host == '':
-            dialog = Dialog(title='Select Host: Invalid Host', message='Invalid Host')
-            dialog.set_icon(asl.new_icon('network'))
-            dialog.add_button_right('OK', focus=True)
-            dialog.run()
-            return
+        if use_file:
+            if (file == ''):
+                dialog = Dialog(title='Select File: Invalid File', message='Invalid File')
+                dialog.set_icon(asl.new_icon('network'))
+                dialog.add_button_right('OK', focus=True)
+                dialog.run()
+                return
+            if not os.path.isfile(file):
+                dialog = Dialog(title='Select File: No Such File', message='File \'%s\' does not exist' % file)
+                dialog.set_icon(asl.new_icon('network'))
+                dialog.add_button_right('OK', focus=True)
+                dialog.run()
+                return
+            self.store_value('file', file)
+            self.store_value('use-file', 'TRUE')
 
-        try:
-            port = int(port)
-            assert port > 0
-            assert port < 65536
-        except:
-            dialog = Dialog(title='Select Host: Invalid Port', message='Invalid Port')
-            dialog.set_icon(asl.new_icon('network'))
-            dialog.add_button_right('OK', focus=True)
-            dialog.run()
-            return
+        else:
+            if host == '':
+                dialog = Dialog(title='Select Host: Invalid Host', message='Invalid Host')
+                dialog.set_icon(asl.new_icon('network'))
+                dialog.add_button_right('OK', focus=True)
+                dialog.run()
+                return
 
-        self.store_value('host', host)
-        self.store_value('port', str(port))
-        self.store_value('path', path.lstrip('/'))
+            try:
+                port = int(port)
+                assert port > 0
+                assert port < 65536
+            except:
+                dialog = Dialog(title='Select Host: Invalid Port', message='Invalid Port')
+                dialog.set_icon(asl.new_icon('network'))
+                dialog.add_button_right('OK', focus=True)
+                dialog.run()
+                return
+
+            self.store_value('host', host)
+            self.store_value('port', str(port))
+            self.store_value('path', path.lstrip('/'))
+            self.store_value('use-file', 'False')
 
     def callback_new_database(self, widget, event, data=None):
         database_file = select_save_file()
@@ -418,8 +491,8 @@ class Monitor(StatefulClass):
 
             for item in self.data:
                 name  = "%s_%s" % (item[0], item[1])
-                delay = item[4]
-                if (delay >= self.warn_threshold) or (delay <= 24.0):
+                downtime = item[4]
+                if (downtime >= self.warn_threshold) or (downtime <= 24.0):
                     new_list.append(name)
 
             if len(self.stations):
@@ -462,6 +535,12 @@ class Monitor(StatefulClass):
 
     def current_time(self):
         return time.mktime(time.gmtime())
+
+    def use_file(self):
+        return self.recall_value('use-file').lower() == 'true'
+
+    def get_file(self):
+        return self.recall_value('file')
 
     def get_uri(self):
         return "http://%(host)s:%(port)s/%(path)s" % self.keep_dict
@@ -545,7 +624,12 @@ class Core(threading.Thread):
             if self.check_queue:
                 del self.check_queue
             self.check_queue = mp.Queue()
-            args = [self.check_queue, self.queue, self.gui.get_uri()]
+            use_file = self.gui.use_file()
+            if use_file:
+                uri = self.gui.get_file()
+            else:
+                uri = self.gui.get_uri()
+            args = [self.check_queue, self.queue, uri, use_file]
             self.check_process = mp.Process(target=check, args=args)
             self.check_process.start()
             self.last_check = calendar.timegm(time.gmtime())
@@ -579,10 +663,17 @@ class Core(threading.Thread):
 #/*}}}*/
 
 # === Check Function /*{{{*/
-def check(check_queue, master_queue, uri):
-    reader = urllib.urlopen(uri)
-    lines = reader.readlines()
-    reader.close()
+def check(check_queue, master_queue, uri, is_file=False):
+    lines = []
+    try:
+        if is_file:
+            reader = open(uri, 'r')
+        else:
+            reader = urllib.urlopen(uri)
+        lines = reader.readlines()
+        reader.close()
+    except:
+        if not lines: lines = []
     results = []
 
     # find the problem stations
@@ -590,18 +681,25 @@ def check(check_queue, master_queue, uri):
         if line[0] == '#':
             continue
         try:
-            s,n,l,c,t,d = tuple(map(lambda s:s.strip(), line.split(',')))
-            results.append((n,s,l,c,t,d))
+            s,n,l,c,t,d,y = tuple(map(lambda s:s.strip(), line.split(',')))
         except:
-            pass
+            try:
+                s,n,l,c,t,y,d = tuple(map(lambda s:s.strip(), line.split(',', 6)) + [0])
+            except:
+                continue
+        finally:
+            try:
+                results.append((n,s,l,c,t,d,y))
+            except:
+                pass
 
     if len(results):
         results = sorted(results, st_cmp)
         timestamp = results[-1][4]
-        delay = results[-1][5]
-        if delay > 0:
+        downtime = results[-1][6]
+        if downtime > 0:
             try:
-                timestamp = time.strftime('%Y %j %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(timestamp, '%Y %j %H:%M:%S')) + (int(delay) * 60))))
+                timestamp = time.strftime('%Y %j %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(timestamp, '%Y %j %H:%M:%S')) + (int(downtime) * 60))))
             except:
                 pass
 
@@ -635,8 +733,9 @@ class Viewer(GtkClass):
       # Widget Data 
         self.treestore = gtk.TreeStore( gobject.TYPE_STRING , # Station Name
                                         gobject.TYPE_STRING , # Channel Name
+                                        gobject.TYPE_STRING , # Data Timestamp
+                                        gobject.TYPE_STRING , # Latency
                                         gobject.TYPE_STRING , # Downtime
-                                        gobject.TYPE_STRING , # Outage Start Timestamp
                                         gobject.TYPE_BOOLEAN) # Checkbutton
         self.treestore = self.treestore.filter_new()
 
@@ -658,8 +757,9 @@ class Viewer(GtkClass):
         self.checkbutton_refresh   = gtk.CheckButton('Auto Refresh')
         self.treeviewcol_station   = gtk.TreeViewColumn( "Station" )
         self.treeviewcol_channel   = gtk.TreeViewColumn( "Channel" )
-        self.treeviewcol_delay     = gtk.TreeViewColumn( "Delay (Hours)" )
         self.treeviewcol_timestamp = gtk.TreeViewColumn( "Outage Timestamp" )
+        self.treeviewcol_latency   = gtk.TreeViewColumn( "Latency (Hours)" )
+        self.treeviewcol_downtime  = gtk.TreeViewColumn( "Downtime (Hours)" )
         self.treeviewcol_viewed    = gtk.TreeViewColumn( "Viewed" )
 
         self.button_refresh = gtk.Button(stock=None, use_underline=True)
@@ -699,8 +799,9 @@ class Viewer(GtkClass):
 
         self.crtext_station   = gtk.CellRendererText()
         self.crtext_channel   = gtk.CellRendererText()
-        self.crtext_delay     = gtk.CellRendererText()
         self.crtext_timestamp = gtk.CellRendererText()
+        self.crtext_latency   = gtk.CellRendererText()
+        self.crtext_downtime  = gtk.CellRendererText()
         self.crtoggle_viewed  = gtk.CellRendererToggle()
         self.crtoggle_viewed.set_property('activatable', True)
         self._connect(self.crtoggle_viewed, 'toggled', self.callback_toggled, None)
@@ -730,8 +831,9 @@ class Viewer(GtkClass):
         self.scrollwindow.add(self.treeview)
         self.treeview.append_column(self.treeviewcol_station)
         self.treeview.append_column(self.treeviewcol_channel)
-        self.treeview.append_column(self.treeviewcol_delay)
         self.treeview.append_column(self.treeviewcol_timestamp)
+        self.treeview.append_column(self.treeviewcol_latency)
+        self.treeview.append_column(self.treeviewcol_downtime)
         self.treeview.append_column(self.treeviewcol_viewed)
 
 # ===== Attribute Configuration ===========================================
@@ -743,12 +845,15 @@ class Viewer(GtkClass):
         self.treeviewcol_channel.pack_start(self.crtext_channel, True)
         self.treeviewcol_channel.add_attribute(self.crtext_channel, 'text', 1)
         self.treeviewcol_channel.set_cell_data_func(self.crtext_channel, self.cdf_format_channel, None)
-        self.treeviewcol_delay.pack_start(self.crtext_delay, True)
-        self.treeviewcol_delay.add_attribute(self.crtext_delay, 'text', 2)
-        self.treeviewcol_delay.set_cell_data_func(self.crtext_delay, self.cdf_format_delay, None)
         self.treeviewcol_timestamp.pack_start(self.crtext_timestamp, True)
-        self.treeviewcol_timestamp.add_attribute(self.crtext_timestamp, 'text', 3)
+        self.treeviewcol_timestamp.add_attribute(self.crtext_timestamp, 'text', 2)
         self.treeviewcol_timestamp.set_cell_data_func(self.crtext_timestamp, self.cdf_format_timestamp, None)
+        self.treeviewcol_latency.pack_start(self.crtext_latency, True)
+        self.treeviewcol_latency.add_attribute(self.crtext_latency, 'text', 3)
+        self.treeviewcol_latency.set_cell_data_func(self.crtext_latency, self.cdf_format_latency, None)
+        self.treeviewcol_downtime.pack_start(self.crtext_downtime, True)
+        self.treeviewcol_downtime.add_attribute(self.crtext_downtime, 'text', 4)
+        self.treeviewcol_downtime.set_cell_data_func(self.crtext_downtime, self.cdf_format_downtime, None)
         self.treeviewcol_viewed.pack_start(self.crtoggle_viewed, True)
         self.treeviewcol_viewed.set_cell_data_func(self.crtoggle_viewed, self.cdf_format_viewed, None)
 
@@ -831,46 +936,54 @@ class Viewer(GtkClass):
 
 # ===== Cell Data Methods ============================================
     def cdf_format_station(self, column, cell, model, iter, data=None):
-        delay = float(model.get_value(iter, 2))
-        station = model.get_value(iter, 0)
-        if delay > 1.0:
+        downtime = float(model.get_value(iter, 4))
+        if downtime > 1.0:
             cell.set_property("foreground", "#bb0000")
         else:
             cell.set_property("foreground", "#00bb00")
 
     def cdf_format_channel(self, column, cell, model, iter, data=None):
-        delay = float(model.get_value(iter, 2))
-        station = model.get_value(iter, 1)
-        if delay > 1.0:
+        downtime = float(model.get_value(iter, 4))
+        if downtime > 1.0:
             cell.set_property("foreground", "#bb0000")
         else:
             cell.set_property("foreground", "#00bb00")
 
-    def cdf_format_delay(self, column, cell, model, iter, data=None):
-        delay = float(model.get_value(iter, 2))
-        if delay > (7.0 * 24.0):
+    def cdf_format_latency(self, column, cell, model, iter, data=None):
+        latency = float(model.get_value(iter, 3))
+        if latency > (7.0 * 24.0):
             cell.set_property("background", "#cc0000")
-        elif delay > 24.0:
+        elif latency > 24.0:
             cell.set_property("background", "#ff6600")
-        elif delay > 1.0:
+        elif latency > 1.0:
+            cell.set_property("background", "#ffcc00")
+        else:
+            cell.set_property("background", "#ffffff")
+
+    def cdf_format_downtime(self, column, cell, model, iter, data=None):
+        downtime = float(model.get_value(iter, 4))
+        if downtime > (7.0 * 24.0):
+            cell.set_property("background", "#cc0000")
+        elif downtime > 24.0:
+            cell.set_property("background", "#ff6600")
+        elif downtime > 1.0:
             cell.set_property("background", "#ffcc00")
         else:
             cell.set_property("background", "#ffffff")
 
     def cdf_format_timestamp(self, column, cell, model, iter, data=None):
-        delay = float(model.get_value(iter, 2))
-        timestamp = model.get_value(iter, 3)
-        if delay > (7.0 * 24.0):
+        latency = float(model.get_value(iter, 3))
+        if latency > (7.0 * 24.0):
             cell.set_property("background", "#cc0000")
-        elif delay > 24.0:
+        elif latency > 24.0:
             cell.set_property("background", "#ff6600")
-        elif delay > 1.0:
+        elif latency > 1.0:
             cell.set_property("background", "#ffcc00")
         else:
             cell.set_property("background", "#ffffff")
 
     def cdf_format_viewed(self, column, cell, model, iter, data=None):
-        cell.set_active(model.get_value(iter, 4))
+        cell.set_active(model.get_value(iter, 5))
 
 # ===== Callback Methods =============================================
     def callback_close(self, widget, event, data=None):
@@ -912,7 +1025,7 @@ class Viewer(GtkClass):
         filter_iter = self.treestore.iter_nth_child(None, int(path))
         iter = self.treestore.convert_iter_to_child_iter(filter_iter)
         model = self.treestore.get_model()
-        value = model.get_value(iter, 4)
+        value = model.get_value(iter, 5)
         ns = model.get_value(iter, 0)
         lc = model.get_value(iter, 1)
         n_s = ns.strip().split('_',1)
@@ -929,10 +1042,10 @@ class Viewer(GtkClass):
             l,c = l_c
         key = '%s-%s-%s-%s' % (n,s,l,c)
         if value:
-            model.set_value(iter, 4, False)
+            model.set_value(iter, 5, False)
             self.master.store_value(key, 'False')
         else:
-            model.set_value(iter, 4, True)
+            model.set_value(iter, 5, True)
             self.master.store_value(key, 'True')
 
     def callback_filter_changed(self, widget, event, data=None):
@@ -1095,10 +1208,10 @@ class Viewer(GtkClass):
         #    if not model.get_value(iter, 4):
         #        return False
         if self.hscale_checked.get_value() < 0.66:
-            if model.get_value(iter, 4):
+            if model.get_value(iter, 5):
                 return False
         if self.hscale_checked.get_value() > 1.33:
-            if not model.get_value(iter, 4):
+            if not model.get_value(iter, 5):
                 return False
         if self.regex_network:
             parts = model.get_value(iter, 0).split('_', 1)
@@ -1133,21 +1246,22 @@ class Viewer(GtkClass):
         if data:
             self._data = data
             self.treestore.get_model().clear()
-            for (n,s,l,c,t,d) in data:
+            for (n,s,l,c,t,d,y) in data:
                 name = "%s_%s" % (n,s)
                 if not l:
                     channel = c
                 else:
                     channel = "%s-%s" % (l,c)
-                #delay = "%s (%0.2f)" % (d, int(d)/60.0)
-                delay = "%0.2f" % (int(d)/60.0,)
+                #downtime = "%s (%0.2f)" % (d, int(d)/60.0)
+                downtime = "%0.2f" % (int(d)/60.0,)
+                latency = "%0.2f" % (int(y)/60.0,)
                 timestamp = t
                 key = "%s-%s-%s-%s" % (n,s,l,c)
                 checked = False
                 if self.master.recall_value(key):
                     if self.master.recall_value(key).upper() == 'TRUE':
                         checked = True
-                self.treestore.get_model().append(None, [name, channel, delay, timestamp, checked])
+                self.treestore.get_model().append(None, [name, channel, timestamp, latency, downtime, checked])
 
     def set_time(self, time):
         #print "setting time"

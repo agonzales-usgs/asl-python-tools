@@ -218,6 +218,9 @@ class FileOperation(Thread):
 
         self.window.show_all()
 
+        self.last_pulse = 0
+        self.pulse_interval = 0.025
+
         self.context     = context
         self.action      = action
         self.files       = files
@@ -290,7 +293,9 @@ class FileOperation(Thread):
         gobject.idle_add(gobject.GObject.emit, self.hbutton_progress_update, 'clicked')
 
     def pulse_progress(self):
-        gobject.idle_add(gobject.GObject.emit, self.hbutton_progress_pulse, 'clicked')
+        if (time.time() - self.last_pulse) >= self.pulse_interval:
+            gobject.idle_add(gobject.GObject.emit, self.hbutton_progress_pulse, 'clicked')
+            self.last_pulse = time.time()
 
     def _pre(self):
         print "waiting on lock"

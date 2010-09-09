@@ -279,6 +279,7 @@ class ArchiveIcon:
         signal.signal(signal.SIGTERM, self.halt_now)
 
         self._address = address
+        self._menu_visible = False
 
         self.status_icon = gtk.StatusIcon()
         self.status_icon.set_from_pixbuf(asl.new_icon('box'))
@@ -291,7 +292,7 @@ class ArchiveIcon:
         self.menu = gtk.Menu()
         self.menu.set_title("Archive Monitor")
 
-        self.menuitem_delay = gtk.MenuItem("Delay: 0 seconds")
+        self.menuitem_delay = gtk.MenuItem("Delay: Unknown")
         self.menu.append(self.menuitem_delay)
 
         self.image_restart = gtk.Image()
@@ -397,16 +398,24 @@ class ArchiveIcon:
         self.comm_thread.set_address(self._address)
 
     def callback_menu(self, widget, button, activate_time, data=None):
-        self.menu.popup(None, None, None, button, activate_time, data)
+        if self._menu_visible:
+            self.menu.popdown()
+        else:
+            self.menu.popup(None, None, None, button, activate_time, data)
 
     def callback_activate(self, widget, event, data=None):
-        self.menu2.popup(None, None, None, button, calendar.timegm(time.gmtime()), data)
+        if self._menu_visible:
+            self.menu.popdown()
+    #    self.menu2.popup(None, None, None, button, calendar.timegm(time.gmtime()), data)
 
     def callback_update_time(self, widget, event, data=None):
         #print "%s::callback_update_time()" % self.__class__.__name__
         delay = calendar.timegm(time.gmtime()) - self.comm_thread.get_last_activity()
         #print "delay is %d seconds" % delay
-        self.menuitem_delay.set_label("Delay: %d seconds" % delay)
+        try:
+            self.menuitem_delay.set_label("Delay: %d seconds" % delay)
+        except:
+            pass
         if delay >= self.warn_delay:
             self.status_icon.set_from_pixbuf(asl.new_icon('box'))
         else:
