@@ -63,6 +63,7 @@ class Monitor(StatefulClass):
 
         self.menu = gtk.Menu()
         self.menu.set_title("LISS Monitor")
+        self.menu.connect("selection-done", self.callback_selection_done, None)
 
         menu_list = [
             ('check',         'Check Now',        'add',          self.callback_check,           True),
@@ -173,6 +174,9 @@ class Monitor(StatefulClass):
         print "===== GARBAGE ======================================"
         print "===================================================="
         print gc.garbage
+
+    def callback_selection_done(self, menushell, data=None):
+        self.menu_visible = False
     
     def callback_menu_selection(self, widget, event, data=None):
         self.menu_visible = False
@@ -445,6 +449,8 @@ class Monitor(StatefulClass):
 
     def callback_activate(self, wiget, event, data=None):
         #print "status icon activated"
+        self.menu.popdown()
+        self.menu_visible = False
         if self.viewer.is_dead():
             del self.viewer
             self.new_viewer()

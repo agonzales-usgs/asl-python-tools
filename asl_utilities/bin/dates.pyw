@@ -389,6 +389,7 @@ class DateIcon(StatefulClass):
 
             self.menu = gtk.Menu()
             self.menu.set_title("Dates")
+            self.menu.connect("selection-done", self.callback_selection_done, None)
 
             self.image_today = gtk.Image()
             self.image_today.set_from_pixbuf(asl.new_icon('arrow_down').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
@@ -430,7 +431,12 @@ class DateIcon(StatefulClass):
             self.menu.popup( None, None, None, button, activate_time, data )
             self.menu_visible = True
 
+    def callback_selection_done(self, menushell, data=None):
+        self.menu_visible = False
+
     def callback_activate(self, widget, event, data=None):
+        self.menu.popdown()
+        self.menu_visible = False
         self.dates.toggle()
 
 # ===== Methods ======================================================

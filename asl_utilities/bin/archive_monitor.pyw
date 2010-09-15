@@ -279,7 +279,7 @@ class ArchiveIcon:
         signal.signal(signal.SIGTERM, self.halt_now)
 
         self._address = address
-        self._menu_visible = False
+        self.menu_visible = False
 
         self.status_icon = gtk.StatusIcon()
         self.status_icon.set_from_pixbuf(asl.new_icon('box'))
@@ -291,6 +291,7 @@ class ArchiveIcon:
 
         self.menu = gtk.Menu()
         self.menu.set_title("Archive Monitor")
+        self.menu.connect("selection-done", self.callback_selection_done, None)
 
         self.menuitem_delay = gtk.MenuItem("Delay: Unknown")
         self.menu.append(self.menuitem_delay)
@@ -398,14 +399,20 @@ class ArchiveIcon:
         self.comm_thread.set_address(self._address)
 
     def callback_menu(self, widget, button, activate_time, data=None):
-        if self._menu_visible:
+        if self.menu_visible:
             self.menu.popdown()
+            self.menu_visible = False
         else:
             self.menu.popup(None, None, None, button, activate_time, data)
+            self.menu_visible = True
+
+    def callback_selection_done(self, menushell, data=None):
+        self.menu_visible = False
 
     def callback_activate(self, widget, event, data=None):
-        if self._menu_visible:
+        if self.menu_visible:
             self.menu.popdown()
+            self.menu_visible = False
     #    self.menu2.popup(None, None, None, button, calendar.timegm(time.gmtime()), data)
 
     def callback_update_time(self, widget, event, data=None):

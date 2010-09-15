@@ -1,5 +1,6 @@
 import os
 import Queue
+import stat
 import sys
 import time
 
