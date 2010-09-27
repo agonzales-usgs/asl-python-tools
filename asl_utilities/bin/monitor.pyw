@@ -694,6 +694,7 @@ def check(check_queue, master_queue, uri, is_file=False):
             except:
                 continue
         finally:
+            t = time.strftime('%Y/%m/%d (%j) %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(t, '%Y %j %H:%M:%S')))))
             try:
                 results.append((n,s,l,c,t,d,y))
             except:
@@ -705,7 +706,7 @@ def check(check_queue, master_queue, uri, is_file=False):
         downtime = results[-1][6]
         if downtime > 0:
             try:
-                timestamp = time.strftime('%Y %j %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(timestamp, '%Y %j %H:%M:%S')) + (int(downtime) * 60))))
+                timestamp = time.strftime('%Y/%m/%d (%j) %H:%M:%S', time.gmtime(float(calendar.timegm(time.strptime(timestamp, '%Y/%m/%d (%j) %H:%M:%S')) + (int(downtime) * 60))))
             except:
                 pass
 
@@ -1707,7 +1708,7 @@ class History(object):
                 status = 'disconnected'
                 if not connected:
                     status = status[3:]
-                filtered.append( (time.strftime("%Y-%j %H:%M:%S", time.gmtime(event_time)), status, "%.2f" % (float(duration) / 3600.0)) )
+                filtered.append( (time.strftime("%Y/%m/%d %H:%M:%S", time.gmtime(event_time)), status, "%.2f" % (float(duration) / 3600.0)) )
             last_time = liss_time
         filtered.reverse()
         return filtered
@@ -1738,8 +1739,8 @@ class History(object):
 #/*}}}*/
 
 def st_cmp(arr1, arr2):
-    val1 = calendar.timegm(time.strptime(arr1[4], '%Y %j %H:%M:%S'))
-    val2 = calendar.timegm(time.strptime(arr2[4], '%Y %j %H:%M:%S'))
+    val1 = calendar.timegm(time.strptime(arr1[4], '%Y/%m/%d (%j) %H:%M:%S'))
+    val2 = calendar.timegm(time.strptime(arr2[4], '%Y/%m/%d (%j) %H:%M:%S'))
     if val1 == val2:
         return cmp(arr1[0]+arr1[1]+arr1[2]+arr1[3], arr2[0]+arr2[1]+arr2[2]+arr2[3])
     return cmp(val1, val2)
