@@ -223,23 +223,25 @@ class RestartThread(Thread):
         #print "got message %s" % message
         if message == 'RESTART':
             try:
-                pid_file = os.path.abspath(self.archive_path + '/' + archive.pid)
+                pid_file = os.path.abspath(self._master.archive_path + '/archive.pid')
+                print "PID file is", pid_file
                 tpid = '' 
                 if os.path.exists(pid_file):
                     tpid = open(pid_file).read(32).strip()
-                if os.path.exists('/tmp/archive.pid'):
+                elif os.path.exists('/tmp/archive.pid'):
                     tpid = open('/tmp/archive.pid', 'r').read(32).strip()
+                print "PID is", tpid
                 if tpid and self._find_proc(tpid):
-                        #print "archive.py process [%s] found" % tpid
-                        restart_file = os.path.abspath("%s/restart.%s" % (archive.pid, tpid))
-                        try:
-                            fh = open(restart_file, 'w+')
-                            fh.write(tpid)
-                            fh.close()
-                        except:
-                            self._kill_proc()
+                    #print "archive.py process [%s] found" % tpid
+                    restart_file = os.path.abspath("%s/restart.%s" % (self._master.archive_path, tpid))
+                    try:
+                        fh = open(restart_file, 'w+')
+                        fh.write(tpid)
+                        fh.close()
+                    except:
+                        self._kill_proc()
             except Exception, e:
-                #print "%s::_run() caught exception: %s" % (self.__class__.__name__,str(e))
+                print "%s::_run() caught exception: %s" % (self.__class__.__name__,str(e))
                 pass
 
     def _kill_proc(self, tpid):
@@ -477,9 +479,10 @@ def main():
         parser = optparse.OptionParser(option_list=option_list, usage=use_message)
         options, args = parser.parse_args()
 
+        pid_path = ''
         host = ''
         port = -1
-        configuration = []
+        configuration = {}
         config_file = ''
         if options.config_file:
             config_file = options.config_file
@@ -527,7 +530,7 @@ def main():
         if not host:
             host = default_host
 
-        app = ArchiveIcon(address=(host,port))
+        app = ArchiveIcon(address=(host,port), archive_path=pid_path)
         gtk.main()
     except KeyboardInterrupt:
         pass
