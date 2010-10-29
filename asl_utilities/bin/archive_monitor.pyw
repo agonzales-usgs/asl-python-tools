@@ -223,12 +223,17 @@ class RestartThread(Thread):
         #print "got message %s" % message
         if message == 'RESTART':
             try:
+                pid_file = os.path.abspath(self.archive_path + '/' + archive.pid)
+                tpid = '' 
+                if os.path.exists(pid_file):
+                    tpid = open(pid_file).read(32).strip()
                 if os.path.exists('/tmp/archive.pid'):
                     tpid = open('/tmp/archive.pid', 'r').read(32).strip()
-                    if self._find_proc(tpid):
+                if tpid and self._find_proc(tpid):
                         #print "archive.py process [%s] found" % tpid
+                        restart_file = os.path.abspath("%s/restart.%s" % (archive.pid, tpid))
                         try:
-                            fh = open('/opt/var/archive/restart/%s' % tpid, 'w+')
+                            fh = open(restart_file, 'w+')
                             fh.write(tpid)
                             fh.close()
                         except:
@@ -275,11 +280,12 @@ class RestartThread(Thread):
 
 # === ArchiveIcon Class /*{{{*/
 class ArchiveIcon:
-    def __init__(self, address=('127.0.0.1', 4000)):
+    def __init__(self, address=('127.0.0.1', 4000), archive_path=''):
         signal.signal(signal.SIGTERM, self.halt_now)
 
         self._address = address
         self.menu_visible = False
+        self.archive_path = archive_path
 
         self.status_icon = gtk.StatusIcon()
         self.status_icon.set_from_pixbuf(asl.new_icon('box'))
@@ -489,6 +495,8 @@ def main():
                 fh = open(config_file, 'r')
                 lines = fh.readlines()
                 for line in lines:
+                    if line.strip() == '':
+                        continue
                     if line[0] == '#':
                         continue
                     line = line.split('#',1)[0]
@@ -499,6 +507,8 @@ def main():
                     configuration[k] = v
                 if configuration.has_key('status-port'):
                     port = int(configuration['status-port'])
+                if configuration.has_key('archive-path'):
+                    pid_path = configuration['archive-path']
             except:
                 pass
         if options.port:

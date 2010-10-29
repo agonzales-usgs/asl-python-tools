@@ -168,3 +168,16 @@
 2010-08-12 08:21:58,338  INFO Parsing /home/jdedwards/DATA/wci/2010_223/00BH11008110000.seed
 2010-08-12 08:21:58,338  INFO Parsing /home/jdedwards/DATA/wci/2010_223/00BH11008110000.seed
 2010-08-12 13:14:47,927  WARN can't load class FilterBP, plug-in {PluginDescriptor: uid=com.isti.xmax.core@1.0.0} is not activated yet
+2010-10-05 11:07:46,261  WARN Unknown file format: MA2.IU.BHZ.10.D.2010.276.0000
+2010-10-05 11:07:47,721 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2010-10-05 11:28:08,653 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2010-10-07 08:33:15,862 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2010-10-07 08:33:17,942 ERROR File XX_HSS_00_HHZ.seed: Can't decompress data of block 432, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Number of samples decompressed doesn't match number in header: 639 != 667
+2010-10-07 08:54:20,053 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2010-10-07 08:54:20,627 ERROR File XX_HSS_00_HHZ.seed: Can't decompress data of block 432, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Number of samples decompressed doesn't match number in header: 639 != 667
+2010-10-13 08:16:16,782  WARN Deleting PlotDataProvider: XX/HSS//ACE due to absence of data
+2010-10-13 08:16:16,800  WARN Deleting PlotDataProvider: XX/HSS//OCF due to absence of data
+2010-10-13 08:16:18,484 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2010-10-13 08:16:27,873 ERROR File XX_HSS__LOG.seed: Can't decompress data of block 14, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2010-10-22 08:18:09,801 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2010-10-22 15:12:19,666 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file

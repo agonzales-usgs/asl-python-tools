@@ -566,7 +566,7 @@ class Main(Class):
             if os.path.isfile(pid_file):
                 tpid = open(pid_file, 'r').read(32).strip()
                 if find_proc(tpid):
-                    restart_path = os.path.abspath("%s/restart/%s" % (archive_path,tpid))
+                    restart_path = os.path.abspath("%s/restart.%s" % (archive_path,tpid))
                     running = True
                     if os.path.exists(restart_path):
                         if os.path.isfile(restart_path):
