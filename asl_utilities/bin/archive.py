@@ -147,11 +147,17 @@ class LissThread(Thread):
         self.address = ('127.0.0.1', 4000)
         self.buffer = None
         self.address_changed = False
+        self.status_port_changed = False
         self.status_port = status_port
+        self.status = Status(self,self.status_port)
         self._last_packet_received = 0
+
+    def get_status_port(self):
+        return self.status.getsockname()[1]
 
     def set_status_port(self, port):
         self.status_port = port
+        self.status_port_changed = True
 
     def get_address(self):
         return self.address
@@ -203,7 +209,6 @@ class LissThread(Thread):
 
     def run(self):
         self.notifier = Notifier()
-        self.status   = Status(self,self.status_port)
 
         self.running = True
         while self.running:
@@ -247,6 +252,10 @@ class LissThread(Thread):
                     pass
                 del self.socket
                 self.socket = None
+            # If the status port has been modified, attempt to bind to the new port
+            if self.status_port_changed:
+                self.status = Status(self,self.status_port)
+                self.status_port_changed = False
 
         self.read_queue.put(('DONE', None))
 # /*}}}*/
@@ -503,13 +512,13 @@ class Main(Class):
             log_path = ''
             try: # Check for log directory
                 log_path = os.path.abspath(configuration['log-path'])
-                self._log("log directory is '%s'" % log_path)
+                #self._log("log directory is '%s'" % log_path)
             except Exception, e:
                 self._log("Config [log]:> %s" % (str(e),))
 
             try: # Check for archive directory
                 archive_path = os.path.abspath(configuration['archive-path'])
-                self._log("archive directory is '%s'" % archive_path)
+                #self._log("archive directory is '%s'" % archive_path)
             except Exception, e:
                 self._log("Config [log]:> %s" % (str(e),))
 
@@ -527,36 +536,36 @@ class Main(Class):
 
             self.context['log'].logger.set_log_path(log_path)
 
-            self._log("Configuration file is '%s'" % (config_file,))
+            #self._log("Configuration file is '%s'" % (config_file,))
             #self._log("Configuration contents: %s" % (str(configuration),))
 
             try: # Check for screen logging
                 if configuration['log-to-screen'].lower() == 'true':
                     self.context['log'].logger.set_log_to_screen(True)
-                    self._log("Screen logging enabled")
+                    str_screen_logging = "Enabled"
                 else:
                     self.context['log'].logger.set_log_to_screen(False)
-                    self._log("Screen logging disabled")
+                    str_screen_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-to-screen]:> %s" % (str(e),))
 
             try: # Check for file logging
                 if configuration['log-to-file'].lower() == 'true':
                     self.context['log'].logger.set_log_to_file(True)
-                    self._log("File logging enabled")
+                    str_file_logging = "Enabled"
                 else:
                     self.context['log'].logger.set_log_to_file(False)
-                    self._log("File logging disabled")
+                    str_file_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-to-file]:> %s" % (str(e),))
 
             try: # Check for debug logging
                 if configuration['log-debug'].lower() == 'true':
                     self.context['log'].logger.set_log_debug(True)
-                    self._log("Debug logging enabled")
+                    str_debug_logging = "Enabled"
                 else:
                     self.context['log'].logger.set_log_debug(False)
-                    self._log("Debug logging disabled")
+                    str_debug_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-debug]:> %s" % (str(e),))
 
@@ -589,7 +598,6 @@ class Main(Class):
                 port = int(configuration['liss-port'])
                 if 0 < port < 65536:
                     self.context['liss'].set_port(port)
-                self._log("liss port = %s" % str(port))
             except Exception, e:
                 self._log("Config [liss-port]:> %s" % (str(e),))
 
@@ -598,7 +606,6 @@ class Main(Class):
                 host = configuration['liss-host']
                 host = socket.gethostbyname(host)
                 self.context['liss'].set_host(host)
-                self._log("liss host = %s" % str(host))
             except Exception, e:
                 self._log("Config [liss-host]:> %s" % (str(e),))
 
@@ -607,20 +614,26 @@ class Main(Class):
                 status_port = int(configuration['status-port'])
                 if 0 < port < 65536:
                     self.context['liss'].set_status_port(status_port)
-                self._log("status port = %s" % str(status_port))
             except Exception, e:
                 self._log("Config [status-port]:> %s" % (str(e),))
 
             self.context['write'].set_target_dir(archive_path)
 
-            self._log("Archive directory is '%s'" % (archive_path,))
             self._log("LISS archive process for host %s:%d" % self.context['liss'].get_address())
+            self._log("Configuration:     %s" % (config_file,))
+            self._log("Archive directory: %s" % (archive_path,))
+            self._log("Log directory:     %s" % log_path)
+            self._log("Screen logging:    %s" % str_screen_logging)
+            self._log("File logging:      %s" % str_file_logging)
+            self._log("Debug logging:     %s" % str_debug_logging)
 
             self.context['write'].start()
             self.context['read'].start()
             self.context['liss'].start()
 
             self.context['running'] = True
+
+            self._log("Status port:       %s" % str(self.context['liss'].get_status_port()))
 
             while self.context['running']:
                 try: 
