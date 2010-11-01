@@ -147,17 +147,15 @@ class LissThread(Thread):
         self.address = ('127.0.0.1', 4000)
         self.buffer = None
         self.address_changed = False
-        self.status_port_changed = False
-        self.status_port = status_port
-        self.status = Status(self,self.status_port)
+        self.status = Status(self,status_port)
         self._last_packet_received = 0
 
     def get_status_port(self):
         return self.status.getsockname()[1]
 
     def set_status_port(self, port):
-        self.status_port = port
-        self.status_port_changed = True
+        if self.get_status_port() != port:
+            self.status = Status(self,port)
 
     def get_address(self):
         return self.address
@@ -252,10 +250,6 @@ class LissThread(Thread):
                     pass
                 del self.socket
                 self.socket = None
-            # If the status port has been modified, attempt to bind to the new port
-            if self.status_port_changed:
-                self.status = Status(self,self.status_port)
-                self.status_port_changed = False
 
         self.read_queue.put(('DONE', None))
 # /*}}}*/
@@ -609,7 +603,7 @@ class Main(Class):
             except Exception, e:
                 self._log("Config [liss-host]:> %s" % (str(e),))
 
-            status_port = 0
+            status_port = 4000
             try: # Get Status port
                 status_port = int(configuration['status-port'])
                 if 0 < port < 65536:
