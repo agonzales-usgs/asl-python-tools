@@ -33,7 +33,10 @@ def replace(src, dst):
 def update(src, dst):
     print "Updating: %s -> %s" % (src, dst) 
     if not os.path.exists(dst):
-        shutil.copytree(src, dst)
+        if os.path.isfile(src):
+            shutil.copy(src, dst)
+        else:
+            shutil.copytree(src, dst)
     elif os.path.isfile(dst):
         os.remove(dst)
         shutil.copy(src, dst)

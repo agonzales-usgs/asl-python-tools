@@ -6,7 +6,7 @@ import signal
 
 class Interval(object):
     # Create Timer Object
-    def __init__(self, interval, function, use_signals, *args, **kwargs):
+    def __init__(self, interval, function, use_signals=False, *args, **kwargs):
         self.__lock = thread.allocate_lock()
         self.__interval = interval
         self.__function = function
