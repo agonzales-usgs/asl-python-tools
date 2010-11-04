@@ -181,3 +181,4 @@
 2010-10-13 08:16:27,873 ERROR File XX_HSS__LOG.seed: Can't decompress data of block 14, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
 2010-10-22 08:18:09,801 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
 2010-10-22 15:12:19,666 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2010-11-03 10:00:20,946 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file

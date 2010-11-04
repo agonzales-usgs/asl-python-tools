@@ -329,7 +329,7 @@ class Crypt:
         return ""
 
     def set_key(self, key):
-        self.key = struct.pack("!H", len(key) + key
+        self.key = struct.pack("!H", len(key) + key)
         
     def set_input(self, filename):
         self.in_file = filename

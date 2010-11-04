@@ -86,7 +86,10 @@ if not os.path.isdir(python_path):
     sys.exit(1)
 
 if platform.system() == 'Linux':
-    aescrypt_bin = os.path.abspath(path + '/utils/aescrypt/aescrypt.linux')
+    if platform.architecture()[0] == '64bit':
+        aescrypt_bin = os.path.abspath(path + '/utils/aescrypt/aescrypt.linux64')
+    else:
+        aescrypt_bin = os.path.abspath(path + '/utils/aescrypt/aescrypt.linux')
 elif platform.system() == 'FreeBSD':
     aescrypt_bin = os.path.abspath(path + '/utils/aescrypt/aescrypt.bsd')
 else:
