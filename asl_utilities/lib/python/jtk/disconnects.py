@@ -5,17 +5,23 @@ import sys
 import time
 import string
 import dircache
-from log import Logger
+from Logger import Logger
 
 class DisconnectParser:
-    def __init__(self):
-        self.logger = Logger()
-        self.logger.set_log_file( "parse-test.log" )
+    def __init__(self, log_file='', log_to_screen=False):
         self.summaries = {}
-        self.logger.set_log_to_screen(True)
-        self.logger.set_log_to_file(True)
+        self.logger = Logger()
+        self.logger.set_log_to_screen(log_to_screen)
+        self.logger.set_log_to_file(False)
+        self.enable_logging = False
+        if log_file != '':
+            self.enable_logging = True
+            self.logger.set_log_file(log_file)
+            self.logger.set_log_to_file(True)
 
     def _log(self, str, category="info"):
+        if not self.enable_logging:
+            return
         if category == "":
             self.logger.log( str )
         else:
