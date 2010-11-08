@@ -19,7 +19,7 @@ def _compact(text):
     results = ''
     matches = regex.findall(text)
     for (name, location, channel, time_start, time_end, records, index, gap) in matches:
-        format = '5sB3slHlHLL'
+        format = '5sB3siHiHII'
         result = ''
         result = struct.pack(format, padded(name,5), int(location), channel,
                     int(time.mktime(time.strptime(time_start[:-5], "%Y,%j,%H:%M:%S"))),
@@ -35,7 +35,7 @@ def expand(buffer):
     return _expand(dec64(buffer))
 
 def _expand(buffer):
-    format = '5sB3slHlHLL'
+    format = '5sB3siHiHII'
     struct_len = struct.calcsize(format)
     buffer_len = len(buffer)
     results = []
