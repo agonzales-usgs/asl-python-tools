@@ -640,7 +640,7 @@ class Station680(Station):
 
         # Check free RAM compared to available
         reg_ram_total = re.compile( "Total RAM at startup:\s+(\d{1,5})[.]\d{2}" )
-        reg_ram_used = re.compile( "Current total free RAM:\s+(\d{1,5})[.]\d{2}" )
+        reg_ram_free = re.compile( "Current total free RAM:\s+(\d{1,5})[.]\d{2}" )
 
         ram_total = 0
         matches = reg_ram_total.findall( lines )
