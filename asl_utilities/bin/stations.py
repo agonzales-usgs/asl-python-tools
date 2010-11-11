@@ -531,9 +531,9 @@ class Main:
         self.parser = optparse.OptionParser(option_list=option_list)
         self.parser.set_usage("""Usage: %s [options] <action>
 
-    action: 
-      update - update station software 
-      check  - check station health""" % (sys.argv[0].split('/')[-1],))
+action: 
+  update - update station software 
+  check  - check station health""" % (sys.argv[0].split('/')[-1],))
 
     def usage(self, message=''):
         if message != '':
