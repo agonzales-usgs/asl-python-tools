@@ -236,7 +236,6 @@ def mode_to_text(mode):
 class Main:
     def __init__(self):
         option_list = []
-        epilog_text = "The control_mask is a three character mask with positions mapping to rwx with each character being one of (D,E,I,P) where D disables the permission, E enables the permission, I ignores parent permissions (keeps current permission), P propogates the permission of the next highest privilege level. For example, if the user supplies the option --other=EIP, the read permission will always be enabled, the write permission will use the existing will not change, and the execute permission will be the same as that of the group."
         option_list.append(optparse.make_option("-A", "--all-types", dest="all_types", action="store_true", help="change file objects of any type (includes devices)"))
         option_list.append(optparse.make_option("-d", "--depth", dest="depth", action="store", type="int", help="recurse this many levels (includes current level)"))
         option_list.append(optparse.make_option("-D", "--directories-only", dest="directories_only", action="store_true", help="only change permissions on directories"))
@@ -247,8 +246,16 @@ class Main:
         option_list.append(optparse.make_option("-S", "--smart-all", dest="smart_all", action="store_true", help="use smart options (mask 'PIP') for group and other"))
         option_list.append(optparse.make_option("-u", "--user", dest="user", action="store", metavar="control_mask", help="control_mask for the owner"))
         option_list.append(optparse.make_option("-v", dest="verbosity", action="count", help="specify multiple times to increase verbosity"))
-        self.parser = optparse.OptionParser(option_list=option_list, epilog=epilog_text)
-        self.parser.set_usage("Usage: %prog [options] <action>")
+        self.parser = optparse.OptionParser(option_list=option_list)
+        self.parser.set_usage("""Usage: %prog [options] <action>
+
+The control_mask is a three character mask with positions mapping to rwx with 
+each character being one of (D,E,I,P) where D disables the permission, 
+E enables the permission, I ignores parent permissions (keeps current 
+permission), P propogates the permission of the next highest privilege level. 
+For example, if the user supplies the option --other=EIP, the read permission 
+will always be enabled, the write permission will use the existing will not 
+change, and the execute permission will be the same as that of the group.""")
 
     def usage(self, message=''):
         if message != '':
