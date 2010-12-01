@@ -1,1 +1,1 @@
-java -Xmx512M -Dsun.java2d.d3d=false -jar xmax.jar -t -f 3
+java -Xmx512M -Dsun.java2d.d3d=false -jar xmax.jar -f 3
