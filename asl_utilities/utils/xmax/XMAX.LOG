@@ -1,0 +1,9 @@
+2011-01-25 23:04:43,185  WARN Unknown file format: AZdisplay.class
+2011-01-25 23:04:43,213  WARN Unknown file format: .project
+2011-01-25 23:04:43,213  WARN Unknown file format: ByteBlock.class
+2011-01-25 23:04:43,224  WARN Unknown file format: AZdisplay.java
+2011-01-25 23:04:51,959  WARN Unknown file format: AZdisplay.class
+2011-01-25 23:04:51,967  WARN Unknown file format: .project
+2011-01-25 23:04:51,968  WARN Unknown file format: ByteBlock.class
+2011-01-25 23:04:51,968  WARN Unknown file format: AZdisplay.java
+2011-01-25 23:05:10,318 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
