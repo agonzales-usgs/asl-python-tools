@@ -170,18 +170,12 @@ class LissThread(Thread):
     def set_port(self, new_port):
         host,port = self.address
         if port != new_port:
-            self.address = (host,new_port)
-            self.address_changed = True
-            if self.running:
-                self.notifier.notify()
+            self.set_address((host,new_port))
 
     def set_host(self, new_host):
         host,port = self.address
         if host != new_host:
-            self.address = (new_host,port)
-            self.address_changed = True
-            if self.running:
-                self.notifier.notify()
+            self.set_address((new_host,port))
 
     def halt_now(self):
         self.halt()
@@ -242,6 +236,7 @@ class LissThread(Thread):
                 except:
                     pass
                 self.address_changed = False
+                time.sleep(0.1)
             # If the socket has been disconnected, prepare it for replacement.
             if not self.socket._connected:
                 try:
@@ -250,6 +245,7 @@ class LissThread(Thread):
                     pass
                 del self.socket
                 self.socket = None
+                time.sleep(0.1)
 
         self.read_queue.put(('DONE', None))
 # /*}}}*/

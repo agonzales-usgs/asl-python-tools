@@ -63,8 +63,11 @@ class Permissions(object):
         if not os.path.exists(path):
             print "%s: path not found" % path
         if os.path.isdir(path):
-            for extension in os.listdir(path):
-                self._process_path(os.path.abspath(path + '/' + extension), depth - 1)
+            try:
+                for extension in os.listdir(path):
+                    self._process_path(os.path.abspath(path + '/' + extension), depth - 1)
+            except OSError, e:
+                print "%s: cannot read directory contents, permission denied" % path
         self._edit_permissions(path)
 
     def _edit_permissions(self, path):
@@ -198,10 +201,13 @@ class Permissions(object):
             if self._verbosity > 0:
                 print "Mode [%s] is unchanged for '%s'" % (mode_to_text(mode), path)
         else:
+            new_imode = stat.S_IMODE(new_mode)
+            try:
+                os.chmod(path, new_imode)
+            except OSError, e:
+                print "Cannot not change mode for '%s', permission denied" % path
             if self._verbosity > 0:
                 print "Mode changed from [%s] to [%s] for '%s'" % (mode_to_text(mode), mode_to_text(new_mode), path)
-            new_imode = stat.S_IMODE(new_mode)
-            os.chmod(path, new_imode)
 
 def mode_to_text(mode):
     mode_str = ''
