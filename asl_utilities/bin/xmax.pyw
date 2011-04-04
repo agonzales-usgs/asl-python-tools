@@ -60,6 +60,20 @@ class XmaxGui:
         if not os.path.exists(self.xmax_directory):
             self.xmax_directory = self.home_directory
 
+        self.xmax_config = ''
+        if os.environ.has_key('XMAX_CONFIG'):
+            self.xmax_config = os.environ['XMAX_CONFIG']
+        if not os.path.exists(self.xmax_config):
+            self.xmax_config = '/etc/xmax.xml'
+        if not os.path.exists(self.xmax_config):
+            self.xmax_config = '/opt/etc/xmax.xml'
+        if not os.path.exists(self.xmax_config):
+            self.xmax_config = os.path.abspath('%s/etc/xmax.xml' % self.home_directory)
+        if not os.path.exists(self.xmax_config):
+            self.xmax_config = os.path.abspath('%s/opt/etc/xmax.xml' % self.home_directory)
+        if not os.path.exists(self.xmax_config):
+            self.xmax_config = ''
+
         self.archive_directory = ''
         if os.environ.has_key('SEED_ARCHIVE_DIRECTORY'):
             self.archive_directory = os.environ['SEED_ARCHIVE_DIRECTORY']
@@ -395,6 +409,7 @@ class XmaxGui:
         self.update_interface()
 
     def callback_select_data_dir(self, widget, event, data=None):
+        last_location = self.entry_data_file.get_text()
         current_dir = self.entry_data_dir.get_text()
         if not os.path.isdir(current_dir):
             current_dir = dir_from_file_path(current_dir)
@@ -403,10 +418,11 @@ class XmaxGui:
         else:
             self.entry_data_dir.set_text(select_directory())
         if self.entry_data_dir.get_text() == '':
-            self.entry_data_dir.set_text(self.archive_directory)
+            self.entry_data_dir.set_text(last_location)
         self.update_interface()
 
     def callback_select_data_file(self, widget, event, data=None):
+        last_location = self.entry_data_file.get_text()
         current_dir = self.entry_data_file.get_text()
         if not os.path.isdir(current_dir):
             current_dir = dir_from_file_path(current_dir)
@@ -415,7 +431,7 @@ class XmaxGui:
         else:
             self.entry_data_file.set_text(select_file(filter_id='seed'))
         if self.entry_data_file.get_text() == '':
-            self.entry_data_file.set_text(self.archive_directory)
+            self.entry_data_file.set_text(last_location)
         self.update_interface()
 
     def callback_select_picks(self, widget, event, data=None):
@@ -605,6 +621,9 @@ class XmaxGui:
         if arg_config:
             option_list.append('-g')
             option_list.append(arg_config)
+        elif self.xmax_config:
+            option_list.append('-g')
+            option_list.append(self.xmax_config)
 
         arg_description = self.entry_description.get_text()
         if arg_description:

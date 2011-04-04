@@ -253,7 +253,7 @@ class Main:
         option_list.append(optparse.make_option("-u", "--user", dest="user", action="store", metavar="control_mask", help="control_mask for the owner"))
         option_list.append(optparse.make_option("-v", dest="verbosity", action="count", help="specify multiple times to increase verbosity"))
         self.parser = optparse.OptionParser(option_list=option_list)
-        self.parser.set_usage("""Usage: %prog [options] <action>
+        self.parser.set_usage("""Usage: %prog [options] [path1 [path2 ...]]
 
 The control_mask is a three character mask with positions mapping to rwx with 
 each character being one of (D,E,I,P) where D disables the permission, 

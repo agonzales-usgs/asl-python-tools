@@ -14,32 +14,7 @@ from jtk.gtk.utils import LEFT
 from jtk.gtk.utils import RIGHT
 from jtk.file.utils import dir_from_file_path
 from jtk.gtk.utils import select_file
-
-def get_hash_engine(key):
-    engine = None
-    if key == 'MD5':
-        engine = hashlib.md5()
-    elif key == 'SHA-1':
-        engine = hashlib.sha1()
-    elif key == 'SHA-224':
-        engine = hashlib.sha224()
-    elif key == 'SHA-256':
-        engine = hashlib.sha256()
-    elif key == 'SHA-384':
-        engine = hashlib.sha384()
-    elif key == 'SHA-512':
-        engine = hashlib.sha512()
-    return engine
-
-def hashsum(filename, key):
-    engine = get_hash_engine(key)
-    digest = ''
-    if engine is not None:
-        with open(filename,'rb') as f:
-            for chunk in iter(lambda: f.read(engine.block_size), ''):
-                engine.update(chunk)
-        digest = engine.hexdigest()
-    return digest
+from jtk import hashsum
 
 class HashGui:
     def __init__(self):
@@ -122,7 +97,7 @@ class HashGui:
         self.clipboard = gtk.Clipboard()
 
 # ===== Widget Configurations ======================================
-        for h in ('MD5', 'SHA-1', 'SHA-224', 'SHA-256', 'SHA-384', 'SHA-512'):
+        for h in sorted(hashsum.get_engine_list()):
             self.combobox_hash.append_text(h)
         self.combobox_hash.set_active(0)
         self.entry_digest.set_editable(False)
@@ -167,7 +142,7 @@ class HashGui:
         digest = ''
         if os.path.isfile(filename):
             try:
-                digest = hashsum(filename, self.combobox_hash.get_active_text())
+                digest = hashsum.sum(filename, self.combobox_hash.get_active_text())
             except:
                 pass
         self.entry_digest.set_text(digest)

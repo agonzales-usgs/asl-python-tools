@@ -9,6 +9,7 @@ import Queue
 import re
 import signal
 import socket
+import stat
 import sys
 import threading
 import time
@@ -238,6 +239,7 @@ class RestartThread(Thread):
                         fh = open(restart_file, 'w+')
                         fh.write(tpid)
                         fh.close()
+                        os.chmod(restart_file, stat.S_IMODE(os.stat(path)[stat.ST_MODE] | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH))
                     except:
                         self._kill_proc()
             except Exception, e:
@@ -280,6 +282,33 @@ class RestartThread(Thread):
 
 # /*}}}*/
 
+# === UpdateThread Class /*{{{*/
+class UpdateThread(Thread):
+    def __init__(self, master, log_queue=None):
+        Thread.__init__(self, queue_max=1024, log_queue=log_queue)
+        self.daemon = True
+        self._master = master
+        self._running = False
+
+    def _run(self, message, data):
+        #print "got message %s" % message
+        if message == 'UPDATE':
+            try:
+                update_file = os.path.abspath("%s/update" % self._master.archive_path)
+                try:
+                    fh = open(update_file, 'w+')
+                    fh.write('UPDATE')
+                    fh.close()
+                    os.chmod(update_file, stat.S_IMODE(os.stat(path)[stat.ST_MODE] | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH))
+                except:
+                    # TODO: add log message
+                    raise
+            except Exception, e:
+                print "%s::_run() caught exception: %s" % (self.__class__.__name__,str(e))
+                pass
+
+# /*}}}*/
+
 # === ArchiveIcon Class /*{{{*/
 class ArchiveIcon:
     def __init__(self, address=('127.0.0.1', 4000), archive_path=''):
@@ -311,6 +340,13 @@ class ArchiveIcon:
         self.menuitem_restart.connect("activate", self.callback_restart, None)
         self.menu.append(self.menuitem_restart)
 
+        self.image_update = gtk.Image()
+        self.image_update.set_from_pixbuf(asl.new_icon('usb').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.menuitem_update = gtk.ImageMenuItem("Update", "Update")
+        self.menuitem_update.set_image(self.image_update)
+        self.menuitem_update.connect("activate", self.callback_update, None)
+        self.menu.append(self.menuitem_update)
+
         self.image_server = gtk.Image()
         self.image_server.set_from_pixbuf(asl.new_icon('network').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
         self.menuitem_server = gtk.ImageMenuItem("Server", "Server")
@@ -328,6 +364,7 @@ class ArchiveIcon:
         self.menu.show()
         self.menuitem_delay.show()
         self.menuitem_restart.show()
+        self.menuitem_update.show()
         self.menuitem_server.show()
         self.menuitem_exit.show()
 
@@ -339,11 +376,13 @@ class ArchiveIcon:
         self.comm_thread    = CommThread(self)
         self.status_thread  = StatusThread(self)
         self.restart_thread = RestartThread(self)
+        self.update_thread  = UpdateThread(self)
 
         #print "Starting Threads..."
         self.comm_thread.start()
         self.status_thread.start()
         self.restart_thread.start()
+        self.update_thread.start()
 
 # ===== Callback Methods =============================================
     def callback_quit(self, widget, event, data=None):
@@ -351,6 +390,9 @@ class ArchiveIcon:
 
     def callback_restart(self, widget, event, data=None):
         self.restart_thread.queue.put(('RESTART', None))
+
+    def callback_update(self, widget, event, data=None):
+        self.update_thread.queue.put(('UPDATE', None))
 
     def callback_server(self, widget, event, data=None):
         dialog = Dialog(title="Archive Status Server")
@@ -446,6 +488,9 @@ class ArchiveIcon:
 
         self.restart_thread.halt_now()
         self.restart_thread.join()
+
+        self.update_thread.halt_now()
+        self.update_thread.join()
 
         gtk.main_quit()
         return False
