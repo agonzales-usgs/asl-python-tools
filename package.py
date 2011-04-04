@@ -61,4 +61,11 @@ def zip_write(factory, path):
         factory.write(path)
 
 if __name__ == '__main__':
+    try:
+        import psyco
+        psyco.profile()
+        print "Psyco JIT enabled."
+    except ImportError:
+        pass
     package()
+
