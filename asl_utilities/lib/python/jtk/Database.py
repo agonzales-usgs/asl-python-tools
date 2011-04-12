@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 import hashlib
 import base64
-from pysqlite2 import dbapi2 as sqlite
+try:
+    import sqlite3 as sqlite
+except ImportError, e:
+    from pysqlite2 import dbapi2 as sqlite
 
 class Database:
     def __init__(self):

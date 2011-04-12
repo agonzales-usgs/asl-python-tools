@@ -1,4 +1,7 @@
-from pysqlite2 import dbapi2 as sqlite
+try:
+    import sqlite3 as sqlite
+except ImportError, e:
+    from pysqlite2 import dbapi2 as sqlite
 
 class Persistence(object):
     def __init__(self):
