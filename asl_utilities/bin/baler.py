@@ -1,5 +1,8 @@
 #!/usr/bin/env python
-import asl
+try:
+    import asl
+except:
+    print "module 'asl' not found, continuing without"
 
 import base64
 import calendar
@@ -218,11 +221,21 @@ class Baler(object):
             #print '[%d] %s' % (len(raw), self.build_url(wfdisc))
             #self.format_bytes(struct.unpack('>64B', raw[0:64]))
 
+            temp_file = "wfdisc.tmp.gz"
+            tfh = open(temp_file, 'w+')
+            tfh.write(raw)
+            tfh.close()
+
             retry = self._max_tries
             backoff = 0.2
             while retry:
                 print 'Decompress Attempt #%d' % (self._max_tries - retry + 1,)
-                page = self._zlib.decompress(raw)
+                #page = self._zlib.decompress(raw)
+                #page = self._gzip.decompress(raw)
+                gh = gzip.open(temp_file, 'rb')
+                page = gh.read()
+                gh.close()
+
                 if len(page):
                     break
                 time.sleep(backoff)
