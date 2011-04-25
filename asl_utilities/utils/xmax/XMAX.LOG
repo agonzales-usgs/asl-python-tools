@@ -259,3 +259,23 @@
 2011-03-16 08:21:57,166 ERROR File 92_LOG.512.seed: Can't decompress data of block 56, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
 2011-03-16 08:21:57,166 ERROR File 92_LOG.512.seed: Can't decompress data of block 57, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
 2011-03-16 08:21:57,166 ERROR File 92_LOG.512.seed: Can't decompress data of block 58, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-04-07 09:12:21,150  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_BHZ.512.seed
+2011-04-07 09:12:21,150  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_BHZ.512.seed
+2011-04-07 09:12:21,945  INFO Parsing /home/jdedwards/DATA/2011_097/majo/00_BH1.512.seed
+2011-04-07 09:12:21,945  INFO Parsing /home/jdedwards/DATA/2011_097/majo/00_BH1.512.seed
+2011-04-07 09:12:22,118  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_HH1.512.seed
+2011-04-07 09:12:22,118  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_HH1.512.seed
+2011-04-07 09:12:22,149  INFO Parsing /home/jdedwards/DATA/2011_097/majo/00_BH2.512.seed
+2011-04-07 09:12:22,149  INFO Parsing /home/jdedwards/DATA/2011_097/majo/00_BH2.512.seed
+2011-04-07 09:12:22,216  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_BH1.512.seed
+2011-04-07 09:12:22,216  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_BH1.512.seed
+2011-04-07 09:12:22,398  INFO Parsing /home/jdedwards/DATA/2011_097/majo/00_BHZ.512.seed
+2011-04-07 09:12:22,398  INFO Parsing /home/jdedwards/DATA/2011_097/majo/00_BHZ.512.seed
+2011-04-07 09:12:22,472  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_HH2.512.seed
+2011-04-07 09:12:22,472  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_HH2.512.seed
+2011-04-07 09:12:22,504  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_BH2.512.seed
+2011-04-07 09:12:22,504  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_BH2.512.seed
+2011-04-07 09:12:22,663  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_HHZ.512.seed
+2011-04-07 09:12:22,663  INFO Parsing /home/jdedwards/DATA/2011_097/majo/10_HHZ.512.seed
+2011-04-07 09:12:23,493 ERROR Can't save channel: java.io.FileNotFoundException: /home/jdedwards/dev/asl_package/asl_utilities/utils/xmax/DATA_TEMP/IU.MAJO.10.HHZ.SER (No such file or directory)
+2011-04-07 09:12:23,493 ERROR Can't save channel: java.io.FileNotFoundException: /home/jdedwards/dev/asl_package/asl_utilities/utils/xmax/DATA_TEMP/IU.MAJO.10.HHZ.SER (No such file or directory)

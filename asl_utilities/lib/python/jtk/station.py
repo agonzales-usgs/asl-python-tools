@@ -601,6 +601,11 @@ class Station680(Station):
         if not lines:
             lines = self.output
 
+        s_type    = "Q680-LOCAL"
+        s_name    = self.name[3:]
+        s_uptime  = 0
+        s_outages = [] 
+
         # TODO:
         # We should now parse through the content of the 'output' file
         # and flag various warnings:
@@ -619,6 +624,7 @@ class Station680(Station):
             message = "uptime: %d days" % days
             self._log( message )
             self.summary += message  + "\n"
+            s_uptime = days
 
         # Check disk space (determine a good threshold)
         reg_disk_space = re.compile( "(\d{1,12}) of (\d{1,12}) bytes \(\d{1,10}[.]\d{2} of \d{1,10}[.]\d{2} Mb\) free on media" )
@@ -748,6 +754,7 @@ class Station680(Station):
                 message = "%(link)s: %(delay)d seconds since last good packet received." % {"link": comlink_name, "delay": delay}
                 self._log( message )
                 self.summary += message + "\n"
+            s_type = "Q680-REMOTE"
         else:
                 message = "No information available on packet delays."
                 self._log( message )
@@ -801,10 +808,18 @@ class Station680(Station):
                     message = "%s outages [%s] %d disconnects totaling %.2f hours" % (key, date, count, float(duration / 3600.0))
                     self._log( message )
                     self.summary += message + "\n"
+                    s_outages.append("%s - %.2f" % (date[5:],float(duration/3600.0)))
         if count <= 0:
             message = "No outages encountered."
             self._log( message )
             self.summary += message + "\n"
+
+        s_summary = ''
+        if s_type == 'Q680-LOCAL':
+            s_summary =  "[%s]%s: Running %d days. %s\n\n" % (s_type, s_name, s_uptime, ", ".join(s_outages))
+        elif s_type == 'Q680-REMOTE':
+            s_summary = "[%s]%s: DP running %d days, DA running ?? days. %s\n\n" % (s_type, s_name, s_uptime, ", ".join(s_outages))
+        self.summary = "%s%s" % (s_summary, self.summary)
 
 """-
 Evaluate health of a Q330 based station
@@ -836,6 +851,7 @@ class Station330(Station):
                 [ # Sources
                     'Quasar.tar.bz2',
                     'CnC.tar.bz2',
+                    'baler.py',
                     'checks.py',
                     'dlc.py',
                     'falcon.py',
@@ -851,6 +867,7 @@ class Station330(Station):
         self.install_path = '/opt/util'
 
         self.script_list = [
+            'baler.py',
             'checks.py',
             'dlc.py',
             'falcon.py',

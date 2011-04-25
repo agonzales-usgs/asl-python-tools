@@ -190,7 +190,7 @@ class Baler(object):
             self._wfdiscs.append(match)
 
     def get_data(self):
-        min_time_offset =  4 * 60 * 60  #  4 hours
+        min_time_offset =  12 * 60 * 60  #  4 hours
         is_last = False
         wfdisc_name_regex = re.compile('_[0-9]-([0-9]{14})')
 
@@ -200,7 +200,7 @@ class Baler(object):
                 break
             print "PROCESSING", wfdisc
             w_time = calendar.timegm(time.strptime(wfdisc_name_regex.search(wfdisc).groups()[0], '%Y%m%d%H%M%S'))
-            if self._start_time > (w_time - min_time_offset):
+            if self._start_time > (w_time + min_time_offset):
                 print "skipping wfdisc '%s' which is outside of the date range (%s - %s)" % (wfdisc, time.strftime("%Y/%m/%d (%j) %H:%M:%S", time.gmtime(self._start_time)), time.strftime("%Y/%m/%d (%j) %H:%M:%S", time.gmtime(self._end_time)))
                 continue
             if self._end_time < (w_time - min_time_offset):

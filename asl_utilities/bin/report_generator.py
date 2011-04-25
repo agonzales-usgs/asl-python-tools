@@ -31,11 +31,30 @@ class Main:
         self.options, self.args = self.parser.parse_args()
 
     def q330_line(self, station, uptime, q330_times):
-        line = "%s: Slate running ?? days, Q330 #1 boot time:" % (station, uptime)
+        line = "%s: Slate running %d days, " % (station, uptime)
         q330_lines = []
         for (id, startup) in q330_times:
             q330_lines.append("Q330 #%d boot time: %s" % (id, startup))
-        line += ','.join(q330_lines) + '.'
+        line += ', '.join(q330_lines) + '.'
+        return line
+
+    def q680_remote_line(self, station, dp_uptime, da_uptime, outages):
+        line = "%s: DP running %d days, DA running %d days. %s" % self.outage_string(outages)
+        return line
+
+    def q680_local_line(self, station, uptime, outages):
+        line = "%s: Running %d days. %s" % self.outage_string(outages)
+        return line
+
+    def outage_string(self, outages):
+        result_str = ""
+        if len(outages):
+            result_str = "Network outages: "
+            strings = []
+            for date,time in outages:
+                strings.append("%s: %s hours" % (date,time))
+            result_str += ', '.join(strings)
+        return result_str
 
 if __name__ == '__main__':
     try:
