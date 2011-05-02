@@ -297,7 +297,7 @@ class UpdateThread(Thread):
                 update_file = os.path.abspath("%s/update" % self._master.archive_path)
                 try:
                     fh = open(update_file, 'w+')
-                    fh.write('UPDATE')
+                    fh.write('UPDATE\n')
                     fh.close()
                     os.chmod(update_file, stat.S_IMODE(os.stat(path)[stat.ST_MODE] | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH))
                 except:

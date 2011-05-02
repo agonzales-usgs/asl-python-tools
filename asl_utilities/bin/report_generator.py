@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import asl
+import calendar
 import optparse
 import os
 import sys
@@ -55,53 +56,62 @@ class Main:
             print "Could not open database '%s'" % self.db_file
             sys.exit(1)
 
-        stations = self.db.get_stations()
+        station_groups = []
+        station_groups.append(('IMS',  self.db.get_stations_by_subset('CTBTO', False)))
+        station_groups.append(('OTHER', self.db.get_stations_by_subset('CTBTO', True)))
         report_file = time.strftime("gsn-stations-%Y%j%m-%H%M%S.report")
         oh = open(report_file, 'w+')
 
-        for (_,network,station) in stations:
-            now = time.gmtime()
-            now_str = time.strftime("%Y,%j,%m,%d,%H,%M,%S", now)
-            year,jday,month,mday,hour,minute,second = now_str.split(',')
-            dir = os.path.abspath("%s/%s_%s/%s/%s" % (self.summary_path,network,station,year,jday))
-            newest = None 
-            report_line = ""
-            try:
-                for file in os.listdir(dir):
-                    if (len(file) == 10) and (file[-4:] == '.chk'):
-                        try: 
-                            int(file[:-4])
-                            if (newest is not None) and (int(newest[:-4]) < file[:-4]):
-                                newest = file
-                        except:
-                            pass
-                if newest is not None:
-                    file_path = dir + "/" + newest
-                    print now_str
-                    print dir
-                    print file_path
-                    fh = open(file_path, 'r')
-                    line = fh.readline()
-                    fh.close()
-                    line_code = line.split(']')[0].strip('[')
-                    if line_code == 'Q330':
-                        report_line = line.split(']', 1)[1]
-                        report_line += self.q330_summary(file_path, network, station)
-                    elif line_code == 'Q680-LOCAL':
-                        report_line = line.split(']', 1)[1]
-                        report_line += self.q330_summary(file_path, network, station)
-                    elif line_code == 'Q680-REMOTE':
-                        report_line = line.split(']', 1)[1]
-                        report_line += self.q330_summary(file_path, network, station)
-                    else:
-                        report_line = ""
-            except OSError, e:
-                print "Exception> %s" % str(e)
+        max_days = 4
+        for subset,stations in station_groups:
+            oh.write("%s INTERNET STATIONS (%s)\n.\n" % (subset, time.strftime("%Y/%m/%d")))
+            for (_,network,station) in stations:
+                now = time.gmtime()
+                report_line = ""
+                for i in range(0, max_days):
+                    now_str = time.strftime("%Y,%j,%m,%d,%H,%M,%S", now)
+                    year,jday,month,mday,hour,minute,second = now_str.split(',')
+                    dir = os.path.abspath("%s/%s_%s/%s/%s" % (self.summary_path,network,station,year,jday))
 
-            if report_line == "":
-                report_line = "%s_%s: No summary found" % (network,station)
-            print report_line
-            oh.write(report_line + "\n.\n")
+                    try:
+                        print "files: ", os.listdir(dir)
+                        for file in sorted(filter(lambda f: (len(f) == 10) and (f[-4:] == '.chk'), os.listdir(dir)), reverse=True):
+                            file_path = dir + "/" + file
+                            print now_str
+                            print dir
+                            print file_path
+                            print "opening:", file_path
+                            fh = open(file_path, 'r')
+                            line = ""
+                            for line in fh:
+                                if (len(line) > 1) and (line[0] == '['):
+                                    break
+                            fh.close()
+                            line = line.strip()
+                            line_code = line.split(']')[0].strip('[')
+                            if line_code == 'Q330':
+                                report_line = line.split(']', 1)[1]
+                                report_line += self.q330_summary(file_path, network, station)
+                            elif line_code == 'Q680-LOCAL':
+                                report_line = line.split(']', 1)[1]
+                                report_line += self.q330_summary(file_path, network, station)
+                            elif line_code == 'Q680-REMOTE':
+                                report_line = line.split(']', 1)[1]
+                                report_line += self.q330_summary(file_path, network, station)
+                            else:
+                                print "line_code '%s' did not match" % line_code
+                    except OSError, e:
+                        print "Exception> %s" % str(e)
+
+                    if report_line != '':
+                        break
+
+                    now = time.gmtime(calendar.timegm(now) - 86400)
+
+                if report_line == "":
+                    report_line = "%s_%s: No summary found" % (network,station)
+                print report_line
+                oh.write(report_line + "\n.\n")
 
         oh.close()
 
@@ -121,10 +131,12 @@ class Main:
         return problems
 
     def q680_channels(self, file, network, station):
-        channels = self.db.get_channels(network=network, station=station)
+        #channels = self.db.get_channels(network=network, station=station)
+        pass
 
     def q330_channels(self, file, network, station):
-        channels = self.db.get_channels(network=network, station=station)
+        #channels = self.db.get_channels(network=network, station=station)
+        pass
 
     def outage_string(self, outages):
         result_str = ""

@@ -22,11 +22,13 @@ class Main(Class):
         self.context['log'].start()
         self.log_queue = self.context['log'].queue
         self.metadata_path = ''
+        self.archive_path = ''
 
     def start(self):
         try:
             use_message = """usage: %prog [options]"""
             option_list = []
+            option_list.append(optparse.make_option("-c", "--config-file", dest="config_file", action="store", help="use this configuration file instead of the default"))
             option_list.append(optparse.make_option("-m", "--metadata-directory", dest="metadata_directory", action="store", help="Place metadata in this directory instead of the default."))
             parser = optparse.OptionParser(option_list=option_list, usage=use_message)
             options, args = parser.parse_args()
@@ -39,24 +41,59 @@ class Main(Class):
                 raise IOError("%s: path does not exist" % self.metadata_path)
             if not os.path.isdir(self.metadata_path):
                 raise IOError("%s: path is not a directory" % self.metadata_path)
-                
+
+            self.archive_path = ''
+            configuration = {}
+            config_file = ''
+            if options.config_file:
+                config_file = options.config_file
+            if not os.path.exists(config_file):
+                if os.environ.has_key('SEED_ARCHIVE_CONFIG'):
+                    config_file = os.environ['SEED_ARCHIVE_CONFIG']
+            if not os.path.exists(config_file):
+                config_file = 'archive.config'
+            if not os.path.exists(config_file):
+                config_file = '/opt/etc/archive.config'
+            if os.path.isfile(config_file):
+                try:
+                    fh = open(config_file, 'r')
+                    lines = fh.readlines()
+                    for line in lines:
+                        if line.strip() == '':
+                            continue
+                        if line[0] == '#':
+                            continue
+                        line = line.split('#',1)[0]
+                        parts = tuple(map(lambda p: p.strip(), line.split('=',1)))
+                        if len(parts) != 2:
+                            continue
+                        k,v = parts
+                        configuration[k] = v
+                    if configuration.has_key('archive-path'):
+                        self.archive_path = configuration['archive-path']
+                except:
+                    pass
+            if not os.path.exists(self.archive_path):
+                self.archive_path = '/data/archive'
+
             self.context['log'].logger.set_log_path(self.metadata_path)
             self.context['log'].logger.set_log_to_screen(False)
             self.context['log'].logger.set_log_to_file(True)
             self.context['log'].logger.set_log_debug(False)
             # INFO: Should use the self._log() method after this point only  
 
-            self._log("Logging has begun")
+            #self._log("Logging has begun")
 
             update_file = os.path.abspath('%s/update' % self.metadata_path)
             update = False
             if os.path.exists(update_file):
                 if os.path.isfile(update_file):
+                    self._log("Update was requested.")
                     update = True
                 else:
                     self._log("Invalid type for update file %s" % update_file)
             if not update:
-                raise KeyboardInterrupt
+                raise KeyboardInterrupt()
 
             self._run_update()
             os.remove(update_file)
@@ -79,14 +116,14 @@ class Main(Class):
             return
 
         update_dir = drive + "/metadata"
-        update_file = metadata_dir + "/.effective"
+        update_file = update_dir + "/.effective"
         metadata_file = self.metadata_path + "/.effective"
 
         if self._should_update(metadata_file, update_file):
             self._log("Updating metadata..." % drive)
 
             self._log("  removing old metadata..." % drive)
-            for file in os.listdir(self.metadat_path):
+            for file in os.listdir(self.metadata_path):
                 path = self.metadata_path + "/" + file
                 shutil.rmtree(path)
 
@@ -96,6 +133,8 @@ class Main(Class):
                 dst = self.metadata_path + "/" + file
                 shutil.copytree(src, dst)
             self._log("Metadata update complete." % drive)
+        else:
+            self._log("Metadata is already up to date.")
 
         # The update module included with the flash drive performs the upgrade
         sys.path.insert(0, drive)
@@ -115,8 +154,8 @@ class Main(Class):
             return False
         if not os.path.isfile(existing):
             return True
-        update_effective   = time.mktime(time.strptime(open(update_file).readline().strip(), "%Y/%m/%d %H:%M:%S"))
-        metadata_effective = time.mktime(time.strptime(open(metadata_file).readline().strip(), "%Y/%m/%d %H:%M:%S"))
+        update_effective   = time.mktime(time.strptime(open(newer).readline().strip(), "%Y/%m/%d %H:%M:%S"))
+        metadata_effective = time.mktime(time.strptime(open(existing).readline().strip(), "%Y/%m/%d %H:%M:%S"))
         if update_effective > metadata_effective:
             return True
         return False
@@ -141,6 +180,7 @@ class Main(Class):
                 self.log("_update_content(): Source '%s' is a file but destination '%s' is not" % (src, dst))
             else:
                 # replace with new content only
+                # diff between the files on the flash-drive and those on the system
                 pass
 
     def halt(self, now=False):

@@ -64,13 +64,11 @@ class XmaxGui:
         if os.environ.has_key('XMAX_CONFIG'):
             self.xmax_config = os.environ['XMAX_CONFIG']
         if not os.path.exists(self.xmax_config):
-            self.xmax_config = '/etc/xmax.xml'
+            self.xmax_config = os.path.abspath('%s/.xmax/config.xml' % self.home_directory)
         if not os.path.exists(self.xmax_config):
-            self.xmax_config = '/opt/etc/xmax.xml'
+            self.xmax_config = '/etc/xmax/config.xml'
         if not os.path.exists(self.xmax_config):
-            self.xmax_config = os.path.abspath('%s/etc/xmax.xml' % self.home_directory)
-        if not os.path.exists(self.xmax_config):
-            self.xmax_config = os.path.abspath('%s/opt/etc/xmax.xml' % self.home_directory)
+            self.xmax_config = '/opt/etc/xmax/config.xml'
         if not os.path.exists(self.xmax_config):
             self.xmax_config = ''
 

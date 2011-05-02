@@ -1,119 +1,161 @@
 #!/usr/bin/env python
 import asl
 
-from jtk.StationDatabase import StationDatabase
+from jtk import StationDatabase
 
 database = "stations.db"
 
-station_list = """CU_ANWB
-CU_BBGH
-CU_BCIP
-CU_GRGR
-CU_GRTK
-CU_GTBY
-CU_MTDJ
-CU_SDDR
-CU_TGUH
-IC_BJT
-IC_ENH
-IC_HIA
-IC_KMI
-IC_LSA
-IC_MDJ
-IC_QIZ
-IC_SSE
-IC_WMQ
-IC_XAN
-IU_ADK
-IU_AFI
-IU_ANMO
-IU_ANTO
-IU_BBSR
-IU_BILL
-IU_CASY
-IU_CCM
-IU_CHTO
-IU_COLA
-IU_COR
-IU_CTAO
-IU_DAV
-IU_DWPF
-IU_FUNA
-IU_FURI
-IU_GNI
-IU_GRFO
-IU_GUMO
-IU_HKT
-IU_HNR
-IU_HRV
-IU_INCN
-IU_JOHN
-IU_KBS
-IU_KBL
-IU_KEV
-IU_KIEV
-IU_KIP
-IU_KMBO
-IU_KNTN
-IU_KONO
-IU_KOWA
-IU_LCO
-IU_LSZ
-IU_LVC
-IU_MA2
-IU_MACI
-IU_MAJO
-IU_MAKZ
-IU_MBWA
-IU_MIDW
-IU_MSKU
-IU_NWAO
-IU_OTAV
-IU_PAB
-IU_PAYG
-IU_PET
-IU_PMG
-IU_PMSA
-IU_POHA
-IU_PTCN
-IU_PTGA
-IU_QSPA
-IU_RAO
-IU_RAR
-IU_RCBR
-IU_RSSD
-IU_SAML
-IU_SBA
-IU_SDV
-IU_SFJD
-IU_SJG
-IU_SLBS
-IU_SNZO
-IU_SSPA
-IU_TARA
-IU_TATO
-IU_TEIG
-IU_TIXI
-IU_TRIS
-IU_TRQA
-IU_TSUM
-IU_TUC
-IU_ULN
-IU_WAKE
-IU_WCI
-IU_WVT
-IU_XMAS
-IU_YAK
-IU_YSS"""
+subsets = {
+"AFRICA"    : "Africa",
+"ALL"       : "All Stations",
+"ANSS"      : "ANSS (Advanced National Seismic System)",
+"ANTARCTIC" : "Antarctica",
+"ASIA"      : "Asia",
+"ATLANTIC"  : "Atlantic",
+"AUSTRALIA" : "Australia",
+"CAMERICA"  : "Central America",
+"CARIBBEAN" : "Caribbean",
+"CDSN"      : "CDSN (China Digital Seismograph Network)",
+"CHINA"     : "People's Republic of China",
+"CU"        : "CU (Caribbean/USGS)",
+"EUROPE"    : "Europe",
+"GCI"       : "CTBTO GCI Link Hosted",
+"CTBTO"     : "CTBTO Shared Data",
+"GSRAS"     : "GSRAS (Geophysical Survey Russian Academy of Sciences)",
+"IC"        : "IC (IRIS/China)",
+"IU"        : "IU (IRIS/USGS)",
+"MPINT"     : "MP Intergral",
+"NAMERICA"  : "North America",
+"PACIFIC"   : "Pacific",
+"PTWC"      : "PTWC (Pacific Tsunami Warning Center)",
+"RUSSIA"    : "Russia",
+"SAMERICA"  : "South America",
+"USA"       : "United States of America",
+}
 
-stations = []
-for st in station_list.split():
-    stations.append(st.split('_'))
-    
-print stations
+stations = {
+    'CU_ANWB' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT'],
+    'CU_BBGH' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT'], 
+    'CU_BCIP' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT', 'CAMERICA'], 
+    'CU_GRGR' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT'], 
+    'CU_GRTK' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT'], 
+    'CU_GTBY' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT'], 
+    'CU_MTDJ' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT'], 
+    'CU_SDDR' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT'], 
+    'CU_TGUH' : ['ALL', 'CU', 'CARIBBEAN', 'MPINT', 'CAMERICA'],
+    'IC_BJT'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA', 'CTBTO'],
+    'IC_ENH'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA'],
+    'IC_HIA'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA'],
+    'IC_KMI'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA', 'CTBTO'],
+    'IC_LSA'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA'],
+    'IC_MDJ'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA'],
+    'IC_QIZ'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA'],
+    'IC_SSE'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA', 'CTBTO'],
+    'IC_WMQ'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA'],
+    'IC_XAN'  : ['ALL', 'IC', 'CDSN', 'CHINA', 'ASIA', 'CTBTO'],
+    'IU_ADK'  : ['ALL', 'IU', 'USA'], 
+    'IU_AFI'  : ['ALL', 'IU', 'PTWC', 'PACIFIC', 'CTBTO'],
+    'IU_ANMO' : ['ALL', 'IU', 'USA', 'NAMERICA', 'CTBTO'],
+    'IU_ANTO' : ['ALL', 'IU', 'EUROPE'],
+    'IU_BBSR' : ['ALL', 'IU', 'ATLANTIC'],
+    'IU_BILL' : ['ALL', 'IU', 'GSRAS', 'RUSSIA', 'ASIA', 'CTBTO'],
+    'IU_CASY' : ['ALL', 'IU', 'ANTARCTIC'],
+    'IU_CCM'  : ['ALL', 'IU', 'ANSS', 'USA', 'NAMERICA'],
+    'IU_CHTO' : ['ALL', 'IU', 'ASIA'],
+    'IU_COLA' : ['ALL', 'IU', 'USA', 'NAMERICA'],
+    'IU_COR'  : ['ALL', 'IU', 'ANSS', 'USA', 'NAMERICA'],
+    'IU_CTAO' : ['ALL', 'IU', 'CTBTO', 'AUSTRALIA'],
+    'IU_DAV'  : ['ALL', 'IU', 'CTBTO', 'GCI'],
+    'IU_DWPF' : ['ALL', 'IU', 'ANSS', 'USA', 'NAMERICA'],
+    'IU_FUNA' : ['ALL', 'IU', 'PTWC', 'PACIFIC'],
+    'IU_FURI' : ['ALL', 'IU', 'CTBTO', 'AFRICA'],
+    'IU_GRFO' : ['ALL', 'IU', 'EUROPE'],
+    'IU_GNI'  : ['ALL', 'IU', 'CTBTO', 'GCI', 'ASIA'],
+    'IU_GUMO' : ['ALL', 'IU', 'PACIFIC', 'CTBTO'],
+    'IU_HKT'  : ['ALL', 'IU', 'ANSS', 'USA', 'NAMERICA'],
+    'IU_HNR'  : ['ALL', 'IU', 'CTBTO', 'GCI'],
+    'IU_HRV'  : ['ALL', 'IU', 'USA', 'NAMERICA'],
+    'IU_INCN' : ['ALL', 'IU', 'ASIA'],
+    'IU_JOHN' : ['ALL', 'IU', 'PTWC', 'PACIFIC'],
+    'IU_KBL'  : ['ALL', 'IU', 'ASIA'],
+    'IU_KBS'  : ['ALL', 'IU'],
+    'IU_KEV'  : ['ALL', 'IU', 'EUROPE'],
+    'IU_KIEV' : ['ALL', 'IU', 'EUROPE'],
+    'IU_KIP'  : ['ALL', 'IU', 'PTWC', 'USA', 'PACIFIC'],
+    'IU_KMBO' : ['ALL', 'IU', 'CTBTO', 'GCI', 'AFRICA'],
+    'IU_KNTN' : ['ALL', 'IU', 'PTWC', 'PACIFIC'],
+    'IU_KONO' : ['ALL', 'IU', 'EUROPE'],
+    'IU_KOWA' : ['ALL', 'IU', 'AFRICA', 'CTBTO'],
+    'IU_LCO'  : ['ALL', 'IU', 'SAMERICA'],
+    'IU_LSZ'  : ['ALL', 'IU', 'CTBTO', 'GCI', 'AFRICA'],
+    'IU_LVC'  : ['ALL', 'IU', 'CTBTO', 'GCI', 'SAMERICA'],
+    'IU_MA2'  : ['ALL', 'IU', 'GSRAS', 'RUSSIA', 'ASIA', 'CTBTO'],
+    'IU_MACI' : ['ALL', 'IU', 'AFRICA'],
+    'IU_MAJO' : ['ALL', 'IU', 'ASIA'],
+    'IU_MAKZ' : ['ALL', 'IU', 'ASIA'],
+    'IU_MBWA' : ['ALL', 'IU', 'AUSTRALIA'],
+    'IU_MIDW' : ['ALL', 'IU', 'PTWC', 'PACIFIC'],
+    'IU_MSKU' : ['ALL', 'IU', 'CTBTO', 'GCI', 'AFRICA'],
+    'IU_NWAO' : ['ALL', 'IU', 'CTBTO', 'AUSTRALIA'],
+    'IU_OTAV' : ['ALL', 'IU', 'SAMERICA', 'MPINT'],
+    'IU_PAB'  : ['ALL', 'IU', 'EUROPE'],
+    'IU_PAYG' : ['ALL', 'IU', 'PACIFIC', 'MPINT'],
+    'IU_PET'  : ['ALL', 'IU', 'GSRAS', 'RUSSIA', 'ASIA'],
+    'IU_PMG'  : ['ALL', 'IU', 'PTWC', 'CTBTO'],
+    'IU_PMSA' : ['ALL', 'IU', 'ANTARCTIC', 'CTBTO'],
+    'IU_POHA' : ['ALL', 'IU', 'PTWC', 'USA', 'PACIFIC'],
+    'IU_PTCN' : ['ALL', 'IU', 'PACIFIC'],
+    'IU_PTGA' : ['ALL', 'IU', 'CTBTO', 'GCI', 'SAMERICA'],
+    'IU_QSPA' : ['ALL', 'IU', 'ANTARCTIC', 'CTBTO'],
+    'IU_RAO'  : ['ALL', 'IU', 'CTBTO', 'GCI', 'PACIFIC'],
+    'IU_RAR'  : ['ALL', 'IU', 'CTBTO', 'GCI', 'PACIFIC'],
+    'IU_RCBR' : ['ALL', 'IU', 'CTBTO', 'GCI', 'SAMERICA'],
+    'IU_RSSD' : ['ALL', 'IU', 'ANSS', 'USA', 'NAMERICA'],
+    'IU_SAML' : ['ALL', 'IU', 'SAMERICA', 'MPINT'],
+    'IU_SBA'  : ['ALL', 'IU', 'ANTARCTIC'],
+    'IU_SDV'  : ['ALL', 'IU', 'CTBTO', 'GCI', 'SAMERICA'],
+    'IU_SFJD' : ['ALL', 'IU', 'CTBTO', 'GCI'],
+    'IU_SJG'  : ['ALL', 'IU', 'CARIBBEAN', 'CTBTO'],
+    'IU_SLBS' : ['ALL', 'IU', 'CAMERICA', 'MPINT'],
+    'IU_SNZO' : ['ALL', 'IU'],
+    'IU_SSPA' : ['ALL', 'IU', 'ANSS', 'USA', 'NAMERICA'],
+    'IU_TARA' : ['ALL', 'IU', 'PTWC', 'PACIFIC'],
+    'IU_TATO' : ['ALL', 'IU', 'ASIA'],
+    'IU_TEIG' : ['ALL', 'IU', 'CTBTO', 'GCI', 'CAMERICA'],
+    'IU_TIXI' : ['ALL', 'IU', 'GSRAS', 'RUSSIA', 'ASIA', 'CTBTO'],
+    'IU_TRIS' : ['ALL', 'IU', 'CTBTO', 'GCI', 'ATLANTIC'],
+    'IU_TRQA' : ['ALL', 'IU', 'SAMERICA', 'MPINT'],
+    'IU_TSUM' : ['ALL', 'IU', 'CTBTO', 'GCI', 'AFRICA'],
+    'IU_TUC'  : ['ALL', 'IU', 'USA', 'NAMERICA'],
+    'IU_ULN'  : ['ALL', 'IU', 'ASIA'],
+    'IU_WAKE' : ['ALL', 'IU', 'PTWC', 'PACIFIC'],
+    'IU_WCI'  : ['ALL', 'IU', 'ANSS', 'USA', 'NAMERICA'],
+    'IU_WVT'  : ['ALL', 'IU', 'ANSS', 'USA', 'NAMERICA'],
+    'IU_XMAS' : ['ALL', 'IU', 'PTWC', 'PACIFIC'],
+    'IU_YAK'  : ['ALL', 'IU', 'GSRAS', 'RUSSIA', 'ASIA', 'CTBTO'],
+    'IU_YSS'  : ['ALL', 'IU', 'GSRAS', 'RUSSIA', 'ASIA', 'CTBTO']
+}
 
-db = StationDatabase()
+subset_list  = []
+station_list = []
+station_subset_pairs = []
+
+for (k,v) in subsets.items():
+    subset_list.append((k,v))
+
+for (k,v) in stations.items():
+    net,name = k.strip().split('_')
+    id = StationDatabase.create_station_hash(net, name)
+    station_list.append((net,name))
+    for s in v:
+        if s not in (subsets.keys()):
+            print s, "not recognized"
+        station_subset_pairs.append((id,s))
+
+db = StationDatabase.StationDatabase()
 db.select_database(database)
 db.init()
-db.add_stations(stations)
+db.add_subsets(subset_list)
+db.add_stations(station_list)
+db.add_station_subsets(station_subset_pairs)
 

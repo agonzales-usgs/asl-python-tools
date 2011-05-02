@@ -71,7 +71,10 @@ class Permissions(object):
         self._edit_permissions(path)
 
     def _edit_permissions(self, path):
-        file_stat = os.stat(path)
+        try:
+            file_stat = os.stat(path)
+        except:
+            print "%s: cannot get permissions, permission denied" % path
         mode = file_stat[stat.ST_MODE]
         if stat.S_ISDIR(mode):
             if (self._type == TYPE_FILE):
