@@ -3,6 +3,7 @@ import asl
 
 from jtk import StationDatabase
 
+channel_file = "allchan.txt"
 database = "stations.db"
 
 subsets = {
@@ -139,18 +140,40 @@ stations = {
 subset_list  = []
 station_list = []
 station_subset_pairs = []
+channel_list = []
+station_channel_pairs = []
 
 for (k,v) in subsets.items():
     subset_list.append((k,v))
 
 for (k,v) in stations.items():
     net,name = k.strip().split('_')
-    id = StationDatabase.create_station_hash(net, name)
+    id = StationDatabase.create_station_key(net, name)
     station_list.append((net,name))
     for s in v:
         if s not in (subsets.keys()):
             print s, "not recognized"
         station_subset_pairs.append((id,s))
+
+rh = open(channel_file, 'r')
+for line in rh:
+    if len(line.strip()) == 0:
+        continue
+    parts = map(lambda l: l.strip(), line.split())
+    if len(parts) == 2:
+        s,c = parts
+        n = ""
+        l = ""
+    if len(parts) == 3:
+        s,n,c = parts
+        l = ""
+    else:
+        s,n,c,l = parts
+    description = ""
+    channel_list.append((l,c,description))
+    st_id = StationDatabase.create_station_key(n,s)
+    ch_id = StationDatabase.create_channel_key(l,c)
+    station_channel_pairs.append((st_id, ch_id, "", ""))
 
 db = StationDatabase.StationDatabase()
 db.select_database(database)
@@ -158,4 +181,7 @@ db.init()
 db.add_subsets(subset_list)
 db.add_stations(station_list)
 db.add_station_subsets(station_subset_pairs)
+db.add_channels(channel_list)
+db.add_station_channels(station_channel_pairs)
+
 

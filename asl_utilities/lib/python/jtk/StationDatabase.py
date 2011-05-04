@@ -16,7 +16,7 @@ class StationDatabase(Database):
   # INSERT Operations
     def add_station(self, network, station):
         query = """INSERT OR REPLACE INTO Station(id,network,name) VALUES(?,?,?)"""
-        self.cur.execute(query, (create_station_hash(network, station), network, station))
+        self.cur.execute(query, (create_station_key(network, station), network, station))
         self.db.commit()
 
     def add_stations(self, foreign_iterator):
@@ -24,34 +24,36 @@ class StationDatabase(Database):
         self.cur.executemany(query, self._iterate_stations(foreign_iterator))
         self.db.commit()
 
-    def add_channel(self, location, channel, sample_rate):
-        query = """INSERT OR REPLACE INTO Station(id,location,name,sample_rate) VALUES(?,?,?,?)"""
-        self.cur.execute(query, (create_station_hash(network, station), network, station))
+    def add_channel(self, location, channel, description):
+        query = """INSERT OR REPLACE INTO Channel(id,location,name,description) VALUES(?,?,?,?)"""
+        self.cur.execute(query, (create_channel_key(network, station), network, station, description))
         self.db.commit()
 
     def add_channels(self, foreign_iterator):
-        query = """INSERT OR REPLACE INTO Channel(id,location,name,sample_rate) VALUES(?,?,?,?)"""
+        query = """INSERT OR REPLACE INTO Channel(id,location,name,description) VALUES(?,?,?,?)"""
         self.cur.executemany(query, self._iterate_channels(foreign_iterator))
         self.db.commit()
 
-    def add_station_channel(self, station_id, channel_id, source):
+    def add_station_channel(self, station_id, channel_id, source, sample_rate):
         query = """
-            INSERT OR IGNORE INTO StationChannel(station_id,channel_id,source)
+            INSERT OR REPLACE INTO StationChannel(station_id,channel_id,source,sample_rate)
             VALUES (
                 (SELECT (Station.id) from Station where Station.id = ?),
                 (SELECT (Channel.id) from Channel where Channel.id = ?),
+                ?,
                 ?
             )
         """
-        self.cur.execute(query, (source, station_id, channel_id))
+        self.cur.execute(query, (station_id, channel_id, source, sample_rate))
         self.db.commit()
 
     def add_station_channels(self, foreign_iterator):
         query = """
-            INSERT OR IGNORE INTO StationChannel(station_id,channel_id,source)
+            INSERT OR REPLACE INTO StationChannel(station_id,channel_id,source,sample_rate)
             VALUES (
                 (SELECT (Station.id) from Station where Station.id = ?),
                 (SELECT (Channel.id) from Channel where Channel.id = ?),
+                ?,
                 ?
             )
         """
@@ -74,7 +76,7 @@ class StationDatabase(Database):
 
     def add_station_subset(self, station_id, subset_id):
         query = """
-            INSERT OR IGNORE INTO StationSubset(station_id,subset_id)
+            INSERT OR REPLACE INTO StationSubset(station_id,subset_id)
             VALUES (
                 (SELECT (Station.id) from Station where Station.id = ?),
                 (SELECT (Subset.id) from Subset where Subset.id = ?)
@@ -85,7 +87,7 @@ class StationDatabase(Database):
         
     def add_station_subsets(self, foreign_iterator):
         query = """
-            INSERT OR FAIL INTO StationSubset(station_id,subset_id)
+            INSERT OR REPLACE INTO StationSubset(station_id,subset_id)
             VALUES (
                 (SELECT (Station.id) from Station where Station.id = ?),
                 (SELECT (Subset.id) from Subset where Subset.id = ?)
@@ -132,7 +134,7 @@ class StationDatabase(Database):
                     Station.name,
                     Channel.location,
                     Channel.name,
-                    Channel.sample_rate)
+                    Channel.description)
             FROM Station 
             INNER JOIN StationChannel
                 ON Station.id = StationChannel.station_id
@@ -157,6 +159,22 @@ class StationDatabase(Database):
         reqs = []
         return self._get(query, reqs)
 
+    def get_subsets_by_station(self, station, network=None):
+        query = """
+            SELECT * 
+            FROM Subset 
+            INNER JOIN StationSubset
+                ON Subset.id = StationSubset.subset_id
+            INNER JOIN Station
+                ON StationSubset.station_id = Station.id
+            """
+        reqs = []
+        reqs.append(("Station.name = ?", station))
+        if network is not None:
+            reqs.append(("Station.network = ?", station))
+
+        return self._get(query, reqs)
+
 
     def init(self):
         result = self.cur.executescript("""
@@ -164,7 +182,7 @@ CREATE TABLE IF NOT EXISTS Channel (
     id TEXT NOT NULL,
     location TEXT,
     name TEXT NOT NULL,
-    sample_rate REAL,
+    description TEXT,
     PRIMARY KEY (id)
 );
 
@@ -178,7 +196,9 @@ CREATE TABLE IF NOT EXISTS Station (
 CREATE TABLE IF NOT EXISTS StationChannel (
     station_id TEXT NOT NULL REFERENCES Station (id) ON DELETE CASCADE,
     channel_id TEXT NOT NULL REFERENCES Channel (id) ON DELETE CASCADE,
-    source TEXT
+    source TEXT,
+    sample_rate REAL,
+    PRIMARY KEY (station_id,channel_id)
 );
 
 CREATE TABLE IF NOT EXISTS Subset (
@@ -189,9 +209,10 @@ CREATE TABLE IF NOT EXISTS Subset (
 
 CREATE TABLE IF NOT EXISTS StationSubset (
     station_id TEXT NOT NULL REFERENCES Station (id) ON DELETE CASCADE,
-    subset_id TEXT NOT NULL REFERENCES Subset (id) ON DELETE CASCADE
+    subset_id TEXT NOT NULL REFERENCES Subset (id) ON DELETE CASCADE,
+    PRIMARY KEY (station_id,subset_id)
 );
-        """)
+""")
 
 
   # Support Methods
@@ -215,17 +236,17 @@ CREATE TABLE IF NOT EXISTS StationSubset (
 
     def _iterate_stations(self, foreign_iterator):
         for (network,station) in foreign_iterator:
-            id = create_station_hash(network,station)
+            id = create_station_key(network,station)
             yield (id,network,station)
 
     def _iterate_channels(self, foreign_iterator):
-        for (location,channel,sample_rate) in foreign_iterator:
-            id = create_channel_hash(location,channel,sample_rate)
-            yield (id,location,channel,sample_rate)
+        for (location,channel,description) in foreign_iterator:
+            id = create_channel_key(location,channel)
+            yield (id,location,channel,description)
 
     def _iterate_station_channels(self, foreign_iterator):
-        for (station_id,channel_id,source) in foreign_iterator:
-            yield (source,station_id,channel_id)
+        for (station_id,channel_id,source,sample_rate) in foreign_iterator:
+            yield (station_id,channel_id,source,sample_rate)
 
     def _iterate_subsets(self, foreign_iterator):
         for (id,description) in foreign_iterator:
@@ -236,11 +257,14 @@ CREATE TABLE IF NOT EXISTS StationSubset (
             yield (station_id,subset_id)
 
 
-def create_station_hash(network, name):
-    return create_hash((network, name))
+def create_station_key(network, name):
+    return create_key((network, name))
 
-def create_channel_hash(location, name, sample_rate):
-    return create_hash((location, name, "%0.6f" % sample_rate))
+def create_channel_key(location, name):
+    return create_key((location, name))
+
+def create_key(parts):
+    return ''.join(list(map(lambda p: p.strip(), parts)))
 
 def create_hash(parts):
     return base64.urlsafe_b64encode(hashlib.sha1(''.join(list(map(lambda p: p.strip(), parts)))).digest())
