@@ -808,17 +808,28 @@ class Station680(Station):
                     message = "%s outages [%s] %d disconnects totaling %.2f hours" % (key, date, count, float(duration / 3600.0))
                     self._log( message )
                     self.summary += message + "\n"
-                    s_outages.append("%s - %.2f" % (date[5:],float(duration/3600.0)))
+                    s_outages.append((date[5:],float(duration/3600.0)))
         if count <= 0:
             message = "No outages encountered."
             self._log( message )
             self.summary += message + "\n"
 
+        outage_string = ""
+        for d,o in s_outages:
+            if o >= 1.0:
+                if outage_string == "":
+                    outage_string = " Network outages: "
+                else:
+                    outage_string += ", "
+                outage_string += "%s - %.2f hours" % (d,o)
+        if len(outage_string) > 0:
+            outage_string += '.'
+
         s_summary = ''
         if s_type == 'Q680-LOCAL':
-            s_summary =  "[%s]%s: Running %d days. %s\n\n" % (s_type, s_name, s_uptime, ", ".join(s_outages))
+            s_summary =  "[%s]%s: Running %d days.%s\n\n" % (s_type, s_name, s_uptime, outage_string)
         elif s_type == 'Q680-REMOTE':
-            s_summary = "[%s]%s: DP running %d days, DA running ?? days. %s\n\n" % (s_type, s_name, s_uptime, ", ".join(s_outages))
+            s_summary = "[%s]%s: DP running %d days.%s\n\n" % (s_type, s_name, s_uptime, outage_string)
         self.summary = "%s%s" % (s_summary, self.summary)
 
 """-

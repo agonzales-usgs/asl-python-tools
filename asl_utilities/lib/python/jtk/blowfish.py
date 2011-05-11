@@ -493,6 +493,56 @@ class Blowfish:
         return chars
 
 
+  # ==== CBC Mode ====
+    def initCBC(self, iv=0):
+        """Initializes CBC mode of the cypher"""
+        assert struct.calcsize("Q") == self.block_size()
+        self.cbc_iv = struct.pack("Q", iv)
+
+    def encryptCBC(self, data):
+        """
+        Encrypts a buffer of data using CBC mode. Multiple successive buffers
+        (belonging to the same logical stream of buffers) can be encrypted
+        with this method one after the other without any intermediate work.
+        Each buffer must be a multiple of 8-octets (64-bits) in length.
+        """
+        if type(data) != types.StringType:
+            raise RuntimeError, "Can only work on 8-bit strings"
+        if (len(data) % 8) != 0:
+            raise RuntimeError, "Can only work with data in 64-bit multiples in CBC mode"
+
+        xor = lambda t: ord(t[0]) ^ ord(t[1])
+        result = ''
+        block_size = self.block_size()
+        for i in range(0, len(data), block_size):
+            p_block = data[i:i+block_size]
+            pair = zip(p_block, self.cbc_iv)
+            j_block = ''.join(map(chr, map(xor, pair)))
+            c_block = self.encrypt(j_block)
+            result += c_block
+            self.cbc_iv = c_block
+        return result
+
+    def decryptCBC(self, data):
+        if type(data) != types.StringType:
+            raise RuntimeError, "Can only work on 8-bit strings"
+        if (len(data) % 8) != 0:
+            raise RuntimeError, "Can only work with data in 64-bit multiples in CBC mode"
+
+        xor = lambda t: ord(t[0]) ^ ord(t[1])
+        result = ''
+        block_size = self.block_size()
+        for i in range(0, len(data), block_size):
+            c_block = data[i:i+block_size]
+            j_block = self.decrypt(c_block)
+            pair = zip(j_block, self.cbc_iv)
+            p_block = ''.join(map(chr, map(xor, pair)))
+            result += p_block
+            self.cbc_iv = c_block
+        return result
+
+
+  # ==== CTR Mode ====
     def initCTR(self, iv=0):
         """Initializes CTR mode of the cypher"""
         assert struct.calcsize("Q") == self.block_size()
@@ -523,7 +573,7 @@ class Blowfish:
         with this method one after the other without any intermediate work.
         """
         if type(data) != types.StringType:
-            raise RuntimeException, "Can only work on 8-bit strings"
+            raise RuntimeError, "Can only work on 8-bit strings"
         result = []
         for ch in data:
             result.append(chr(ord(ch) ^ self._nextCTRByte()))
@@ -578,6 +628,17 @@ if __name__ == '__main__':
     cipher.initCTR()
     decrypted = cipher.decryptCTR(crypted)
     print "\tDecrypted:\t", decrypted
+
+    print "Testing CBC encrypt:"
+    cipher.initCBC()
+    text = "Owen's Ornery Old Oryx Obstructed Olga's Optics."
+    print "\tText:\t\t", text
+    crypted = cipher.encryptCBC(text)
+    print "\tEncrypted:\t", repr(crypted)
+    cipher.initCBC()
+    decrypted = cipher.decryptCBC(crypted)
+    print "\tDecrypted:\t", decrypted
+
 
     print "Testing speed"
     from time import time

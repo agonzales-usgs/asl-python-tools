@@ -3,10 +3,11 @@ import asl
 import calendar
 import optparse
 import os
+import re
 import sys
 import time
 
-from jtk.StationDatabase import StationDatabase
+from jtk import StationDatabase
 
 class Main:
     def __init__(self):
@@ -26,7 +27,7 @@ class Main:
         self.parser = optparse.OptionParser(option_list=option_list)
         self.parser.set_usage("""Usage: %prog [options] [path]""")
 
-        self.db = StationDatabase()
+        self.db = StationDatabase.StationDatabase()
         self.db_file = "stations.db"
         self.summary_path = ""
         if os.environ.has_key('HOME'):
@@ -68,6 +69,7 @@ class Main:
             for (_,network,station) in stations:
                 now = time.gmtime()
                 report_line = ""
+                line_code = ""
                 for i in range(0, max_days):
                     now_str = time.strftime("%Y,%j,%m,%d,%H,%M,%S", now)
                     year,jday,month,mday,hour,minute,second = now_str.split(',')
@@ -104,12 +106,34 @@ class Main:
                         print "Exception> %s" % str(e)
 
                     if report_line != '':
+                        expected_channels = self.db.get_channels(network, station)
+                        channels = {}
+                        channel_list = []
+                        for (_,_,location,channel,_) in expected_channels:
+                            key = StationDatabase.create_channel_key(location,channel)
+                            channels[key] = "Not Found"
+
+                        # Parse file for channel information.
+                        if line_code[0:4] == 'Q330':
+                            matches = re.compile("\d+\s+(\w{3}\s+\d{2}:\d{2}\s+(?:\d{1,2}_)?\w{1,3})[.]buf\s*?$").findall(line, re.M)
+                            print "CHANNEL LINES:", matches
+                            for match in matches:
+                                month,day,timestamp,channel = match[0].split() 
+                                l,c = channel.split('_')
+                                channel_list.append((l,c,"OKAY"))
+                        elif line_code[0:4] == 'Q680':
+                            # implement this logic
+                            pass
+                        for location,channel,state in channel_list:
+                            key = StationDatabase.create_channel_key(location,channel)
+                            channels[key] = state
+
                         break
 
                     now = time.gmtime(calendar.timegm(now) - 86400)
 
                 if report_line == "":
-                    report_line = "%s_%s: No summary found" % (network,station)
+                    report_line = "%s: No summary found." % station
                 print report_line
                 oh.write(report_line + "\n.\n")
 

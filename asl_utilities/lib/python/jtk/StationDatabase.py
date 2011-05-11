@@ -107,7 +107,7 @@ class StationDatabase(Database):
         if station is not None :
             reqs.append(("Station.name = ?", station))
 
-        return self._get(query, reqs)
+        return self._get(query, reqs, "Station.name")
 
     def get_stations_by_subset(self, subset_id, exclude=False):
         query = """
@@ -122,19 +122,19 @@ class StationDatabase(Database):
                     ON Station.id = StationSubset.station_id
                 WHERE StationSubset.subset_id = ?
             )
+            ORDER BY Station.name
         """
-        print query
         self.cur.execute(query, (subset_id,))
         return self.cur.fetchall()
 
 
     def get_channels(self, network=None, station=None, location=None, channel=None):
         query = """
-            SELECT (Station.network,
-                    Station.name,
-                    Channel.location,
-                    Channel.name,
-                    Channel.description)
+            SELECT Station.network,
+                   Station.name,
+                   Channel.location,
+                   Channel.name,
+                   Channel.description
             FROM Station 
             INNER JOIN StationChannel
                 ON Station.id = StationChannel.station_id
@@ -152,12 +152,12 @@ class StationDatabase(Database):
         if channel is not None :
             reqs.append(("Channel.name = ?", channel))
 
-        return self._get(query, reqs)
+        return self._get(query, reqs, "Channel.location,Channel.name")
 
     def get_subsets(self):
         query = "SELECT * FROM Subset"
         reqs = []
-        return self._get(query, reqs)
+        return self._get(query, reqs, "Subset.description")
 
     def get_subsets_by_station(self, station, network=None):
         query = """
@@ -173,7 +173,51 @@ class StationDatabase(Database):
         if network is not None:
             reqs.append(("Station.network = ?", station))
 
-        return self._get(query, reqs)
+        return self._get(query, reqs, "Subset.description")
+
+
+  # Support Methods
+    def _get(self, base_query, reqs, order=""):
+        query = base_query
+        order_by = ""
+        if len(order) > 0:
+            order_by = " ORDER BY %s" % order
+        if len(reqs):
+            args = []
+            first = True
+            for (string,value) in reqs:
+                joiner = " AND "
+                if first:
+                    first = False
+                    joiner = " WHERE "
+                query += joiner + string
+                args.append(value)
+            self.cur.execute(query + order_by, tuple(args))
+        else:
+            self.cur.execute(query + order_by)
+        return self.cur.fetchall()
+
+    def _iterate_stations(self, foreign_iterator):
+        for (network,station) in foreign_iterator:
+            id = create_station_key(network,station)
+            yield (id,network,station)
+
+    def _iterate_channels(self, foreign_iterator):
+        for (location,channel,description) in foreign_iterator:
+            id = create_channel_key(location,channel)
+            yield (id,location,channel,description)
+
+    def _iterate_station_channels(self, foreign_iterator):
+        for (station_id,channel_id,source,sample_rate) in foreign_iterator:
+            yield (station_id,channel_id,source,sample_rate)
+
+    def _iterate_subsets(self, foreign_iterator):
+        for (id,description) in foreign_iterator:
+            yield (id,description)
+
+    def _iterate_station_subsets(self, foreign_iterator):
+        for (station_id,subset_id) in foreign_iterator:
+            yield (station_id,subset_id)
 
 
     def init(self):
@@ -213,49 +257,6 @@ CREATE TABLE IF NOT EXISTS StationSubset (
     PRIMARY KEY (station_id,subset_id)
 );
 """)
-
-
-  # Support Methods
-    def _get(self, base_query, reqs):
-        query = base_query
-        if len(reqs):
-            args = []
-            first = False
-            for (string,value) in reqs:
-                joiner = " AND "
-                if first:
-                    first = False
-                    joiner = " WHERE "
-                query += joiner + string
-                args.append(value)
-            print query
-            self.cur.execute(query, tuple(args))
-        else:
-            self.cur.execute(query)
-        return self.cur.fetchall()
-
-    def _iterate_stations(self, foreign_iterator):
-        for (network,station) in foreign_iterator:
-            id = create_station_key(network,station)
-            yield (id,network,station)
-
-    def _iterate_channels(self, foreign_iterator):
-        for (location,channel,description) in foreign_iterator:
-            id = create_channel_key(location,channel)
-            yield (id,location,channel,description)
-
-    def _iterate_station_channels(self, foreign_iterator):
-        for (station_id,channel_id,source,sample_rate) in foreign_iterator:
-            yield (station_id,channel_id,source,sample_rate)
-
-    def _iterate_subsets(self, foreign_iterator):
-        for (id,description) in foreign_iterator:
-            yield (id,description)
-
-    def _iterate_station_subsets(self, foreign_iterator):
-        for (station_id,subset_id) in foreign_iterator:
-            yield (station_id,subset_id)
-
 
 def create_station_key(network, name):
     return create_key((network, name))
