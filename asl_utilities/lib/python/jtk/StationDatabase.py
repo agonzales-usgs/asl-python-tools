@@ -234,6 +234,9 @@ CREATE TABLE IF NOT EXISTS Station (
     id TEXT NOT NULL,
     network TEXT,
     name TEXT NOT NULL,
+    description TEXT,
+    latitude REAL,
+    longitude REAL,
     PRIMARY KEY (id)
 );
 

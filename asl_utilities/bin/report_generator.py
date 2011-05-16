@@ -60,7 +60,7 @@ class Main:
         station_groups = []
         station_groups.append(('IMS',  self.db.get_stations_by_subset('CTBTO', False)))
         station_groups.append(('OTHER', self.db.get_stations_by_subset('CTBTO', True)))
-        report_file = time.strftime("gsn-stations-%Y%j%m-%H%M%S.report")
+        report_file = time.strftime("gsn-stations-%Y%m%d-%H%M%S.report")
         oh = open(report_file, 'w+')
 
         max_days = 4
