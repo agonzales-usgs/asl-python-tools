@@ -269,9 +269,18 @@ class Station:
         self.ready()
 
         # If we have to go through a proxy, connect now
-        # XXX: This isn't going to work, we are just creating two separate
-        #      connections, neither going through the other.
+        # XXX:  This isn't going to work, we are just creating two separate
+        #       connections, neither going through the other.
+        #      
+        #       We need to re-work this a bit seeing as an SSH tunnel proxy
+        #       requires that the station thread actually connect to the
+        #       proxy which is pointing to the station, rather than to the
+        #       station itself.
+        #
         if self.proxy:
+            # We need to mess around with credentials here...
+            # The proxy really needs to be a separate thread with which
+            # we can communicate to let it know when we are done.
             self.proxy.connect()
 
         if self.protocol == "telnet":

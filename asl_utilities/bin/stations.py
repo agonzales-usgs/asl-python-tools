@@ -34,12 +34,14 @@ import traceback
 from jtk import pexpect      # expect lib
 from jtk import Crypt        # wrapper for aescrypt
 
-from jtk.Interval import Interval   # time based poller
+from jtk.Interval import Interval # time based poller
+from jtk.Logger import Logger     # logging mechanism
+from jtk.permissions import Permissions # UNIX permissions
 from jtk.station import Station680 # for diagnosing Q680 systems
 from jtk.station import Station330 # for diagnosing Q330 systems
 from jtk.station import Proxy
 from jtk.station import SecureProxy
-from jtk.Logger import Logger
+
 
 # Station exceptions
 from jtk.station import ExStationTypeNotRecognized
@@ -171,14 +173,13 @@ class StationLoop:
         self.output_directory = None
         self.version_directory = None
 
+
         if not self.output_directory:
             self.output_directory  = "%(HOME)s/stations" % os.environ
         if not os.path.exists(self.output_directory):
             try:
                 os.makedirs(self.output_directory)
-                permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
-                if os.stat(self.output_directory).st_mode != permissions:
-                    os.chmod(self.output_directory, permissions)
+                Permissions("EEEEEEEIE", 1).process([self.output_directory])
             except:
                 raise Exception, "CheckLoop::init_dir() could not create storage directory: %s" % self.output_directory
 
@@ -186,9 +187,7 @@ class StationLoop:
         if not os.path.exists(self.output_directory):
             try:
                 os.makedirs(self.output_directory)
-                permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
-                if os.stat(self.output_directory).st_mode != permissions:
-                    os.chmod(self.output_directory, permissions)
+                Permissions("EEEEEEEIE", 1).process([self.output_directory])
             except:
                 raise Exception, "CheckLoop::init_dir() could not create storage directory: %s" % self.output_directory
 
@@ -196,9 +195,7 @@ class StationLoop:
         if not os.path.exists(self.version_directory):
             try:
                 os.makedirs(self.version_directory)
-                permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
-                if os.stat(self.version_directory).st_mode != permissions:
-                    os.chmod(self.version_directory, permissions)
+                Permissions("EEEEEEEIE", 1).process([self.version_directory])
             except:
                 raise Exception, "CheckLoop::init_dir() could not create version directory: %s" % self.version_directory
         self.version_logger.set_log_path(self.version_directory)
@@ -289,18 +286,14 @@ class StationLoop:
         if not os.path.exists(ydir):
             try:
                 os.makedirs(ydir)
-                permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
-                if os.stat(ydir).st_mode != permissions:
-                    os.chmod(ydir, permissions)
+                Permissions("EEEEEEEIE", 1).process([ydir])
             except:
                 station._log("could not create directory %s" % ydir)
                 return
         if not os.path.exists(dir):
             try:
                 os.makedirs(dir)
-                permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
-                if os.stat(dir).st_mode != permissions:
-                    os.chmod(dir, permissions)
+                Permissions("EEEEEEEIE", 1).process([dir])
             except:
                 station._log("could not create directory %s" % dir)
                 return
@@ -318,9 +311,7 @@ class StationLoop:
             fd.write( station.output )
             fd.write( station.log_messages )
             fd.close()
-            permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH
-            if os.stat(summary_file).st_mode != permissions:
-                os.chmod(summary_file, permissions)
+            Permissions("EEIEEIEII", 1).process([summary_file])
         except Exception, e:
             station._log("CheckLoop::record() failed to record data to file. Exception: %s" % str(e))
 
@@ -392,27 +383,26 @@ class StationLoop:
                     self.prep_station(station, station_info)
                     self.find_proxies(station, station_info)
 
-                    permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
                     date = time.gmtime()
 
                     dir = self.output_directory + '/' + station.name
                     try:
                         if not os.path.exists(dir): os.makedirs(dir)
-                        if os.stat(dir).st_mode != permissions: os.chmod(dir, permissions)
+                        Permissions("EEEEEEEIE", 1).process([dir])
                     except:
                         raise Exception, "CheckLoop::init_dir() could not create directory: %s" % dir
 
                     dir += time.strftime("/%Y", date)
                     try:
                         if not os.path.exists(dir): os.makedirs(dir)
-                        if os.stat(dir).st_mode != permissions: os.chmod(dir, permissions)
+                        Permissions("EEEEEEEIE", 1).process([dir])
                     except:
                         raise Exception, "CheckLoop::init_dir() could not create directory: %s" % dir
 
                     dir += time.strftime("/%j", date)
                     try:
                         if not os.path.exists(dir): os.makedirs(dir)
-                        if os.stat(dir).st_mode != permissions: os.chmod(dir, permissions)
+                        Permissions("EEEEEEEIE", 1).process([dir])
                     except:
                         raise Exception, "CheckLoop::init_dir() could not create directory: %s" % dir
 
@@ -476,9 +466,7 @@ class StationLoop:
            property = [name, value]
               name in [station, type, address, username, password, netserv, server]
         -"""
-        permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH
-        if os.stat(self.station_file).st_mode != permissions:
-            os.chmod(self.station_file, permissions)
+        Permissions("EEIEEIEII", 1).process([self.station_file])
 
         lines = ""
         if self.station_file_encrypted:
