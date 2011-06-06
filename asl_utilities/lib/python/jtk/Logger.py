@@ -5,6 +5,7 @@ import sys
 import time
 
 from Thread import Thread
+from permissions import Permissions
 
 class Logger(object):
     def __init__(self, directory='.', prefix='', postfix='', extension='log', note='', yday=False):
@@ -20,6 +21,7 @@ class Logger(object):
         self._pid           = str(os.getpid())
         self._file_name     = ''
         self._file_set      = False
+        self._file_changed  = False
 
         self.categories = {
             'dbg'     : 'DEBUG',
@@ -98,13 +100,15 @@ class Logger(object):
 
     def set_log_path(self, path=''):
         self.log_context['directory'] = path
+        self._file_changed = True
 
     def set_log_file(self, name=''):
         if name == '':
-            self._file_set  = False
+            self._file_set = False
         else:
             self._file_set  = True
             self._file_name = name
+        self._file_changed = True
 
     def set_log_note(self, note=''):
         self._note = note
@@ -162,9 +166,7 @@ class Logger(object):
             raise IOError("Path '%s' exists, but is not a regular file." % self._file_name)
         self.log_fh = open( self._file_name, 'a' )
 
-        permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH
-        if os.stat(self._file_name).st_mode != permissions:
-            os.chmod(self._file_name, permissions)
+        Permissions("EEIEEIEII", 1).process([self._file_name])
 
     def _close_log(self):
         if self.log_fh:
@@ -172,9 +174,10 @@ class Logger(object):
         self.log_fh = None
 
     def _prepare_log(self, file_date):
-        if (file_date == self.log_context['date']) and self.log_fh:
+        if (not self._file_changed) and (file_date == self.log_context['date']) and self.log_fh:
             return
         else:
+            self._file_changed = False
             self.log_context['date'] = file_date
             self._close_log()
             self._open_log()

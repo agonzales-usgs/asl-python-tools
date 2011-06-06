@@ -668,8 +668,8 @@ class XmaxGui:
 
     def run_unix(self, option_list):
         executable = '/usr/bin/xterm'
-        arguments  = ['xterm', '-T', '\"XMAX\"', '-sl', '10240', '-e', "\"cd %s; java -Xms512M -Xmx512M -jar xmax.jar %s && read -n 1 -p 'Press any key to continue...'\"" % (self.xmax_directory, ' '.join(option_list))]
-        #print "Command:", ' '.join(arguments)
+        arguments  = ['xterm', '-T', '\"XMAX\"', '-sl', '10240', '-e', "\". ~/.bash_profile; . ~/.bashrc; cd %s; java -version; java -Xms1024M -Xmx1024M -jar xmax.jar %s && read -n 1 -p 'Press any key to continue...'\"" % (self.xmax_directory, ' '.join(option_list))]
+        print "Command:", ' '.join(arguments)
         os.popen(' '.join(arguments))
         return None
         #process = subprocess.Popen(arguments)

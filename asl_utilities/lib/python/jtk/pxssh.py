@@ -179,7 +179,8 @@ class pxssh (spawn):
         not reset then this will disable the prompt() method unless you
         manually set the PROMPT attribute. """
 
-        ssh_options = '-q'
+        #ssh_options = '-q' # XXX: This is preventing feedback from the ssh> command prompt
+        ssh_options = '' 
         if self.force_password:
             ssh_options = ssh_options + ' ' + self.SSH_OPTS
         if port is not None:

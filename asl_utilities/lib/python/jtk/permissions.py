@@ -63,6 +63,9 @@ class Permissions(object):
         if not os.path.exists(path):
             print "%s: path not found" % path
         if os.path.isdir(path):
+            if os.path.basename(path) == ".ssh":
+                print "%s: skipping SSH config directory " % path
+                print "  (if you want this changed, do it yourself)"
             try:
                 for extension in os.listdir(path):
                     self._process_path(os.path.abspath(path + '/' + extension), depth - 1)
@@ -75,6 +78,7 @@ class Permissions(object):
             file_stat = os.stat(path)
         except:
             print "%s: cannot get permissions, permission denied" % path
+            return
         mode = file_stat[stat.ST_MODE]
         if stat.S_ISDIR(mode):
             if (self._type == TYPE_FILE):
@@ -304,23 +308,24 @@ change, and the execute permission will be the same as that of the group.""")
         if self.options.other:
             arg_other = self.options.other
             if len(arg_other) != 3:
-                self.usage()
+                self.usage("Wrong size mask for others")
             if not regex_mask.match(arg_other):
-                self.usage()
+                self.usage("Invalid mask for others")
 
         if self.options.group:
             arg_group = self.options.group
             if len(arg_group) != 3:
-                self.usage()
+                self.usage("Wrong size mask for group")
             if not regex_mask.match(arg_group):
                 self.usage()
+                self.usage("Invalid mask for group")
 
         if self.options.user:
             arg_user = self.options.user
             if len(arg_user) != 3:
-                self.usage()
+                self.usage("Wrong size mask for owner")
             if not regex_mask.match(arg_user):
-                self.usage()
+                self.usage("Invalid mask for owner")
         
         mask = arg_user + arg_group + arg_other
 

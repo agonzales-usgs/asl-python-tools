@@ -40,7 +40,6 @@ from jtk.permissions import Permissions # UNIX permissions
 from jtk.station import Station680 # for diagnosing Q680 systems
 from jtk.station import Station330 # for diagnosing Q330 systems
 from jtk.station import Proxy
-from jtk.station import SecureProxy
 
 
 # Station exceptions
@@ -71,20 +70,20 @@ class ExLoopDone(ExceptionLoop):
     """raised when all checks are complete"""
 
 
-class ThreadStation:
+class StationThread:
     def __init__(self, action):
         self.station = None
         self.thread  = None
         self.start_time = None
         self.action = action
 
-        self.lock_thread = thread.allocate_lock()
+        self.thread_lock = thread.allocate_lock()
         self.station_info = None
 
     def start(self):
         if not self.station:
-            raise Exception, "ThreadStation::start() empty station object"
-        if not self.lock_thread.acquire(0):
+            raise Exception, "StationThread::start() empty station object"
+        if not self.thread_lock.acquire(0):
             return 0
         self.thread = threading.Thread(None, self.station.run, args=[self.action])
         self.thread.start()
@@ -93,10 +92,19 @@ class ThreadStation:
 
     def stop(self):
         #self.thread.terminate()
-        self.lock_thread.release()
+        self.station.halt()
+        # XXX: This join() may be a bad idea as it could lockup the thread.
+        #      Then again, we already have trouble with lockups.
+        self.thread.join()
+        self.thread_lock.release()
 
-    def is_alive(self):
-        return self.thread.isAlive()
+    def is_done(self):
+        alive = False
+        try:
+            alive = self.thread.is_alive()
+        except:
+            alive = self.thread.isAlive()
+        return not alive
 
     def set_info(self, station_info):
         self.station_info = station_info
@@ -111,6 +119,7 @@ class ThreadStation:
 
 class StationLoop:
     def __init__(self, action, max_threads=10):
+        self.socks             = [] # list of socks proxies to setup
         self.proxies           = [] # list of proxies needed by some stations
         self.stations          = [] # initial list of stations
         self.stations_retry    = [] # checks failed, try again
@@ -134,14 +143,19 @@ class StationLoop:
         self.poll_interval = 0.10 # seconds
         self.poller = Interval(self.poll_interval, self.poll)
 
-        self.lock_poll = thread.allocate_lock()
+        self.poll_lock = thread.allocate_lock()
         self.done = False
         self.continuity_only = False
         self.versions_only = False
 
         self.version_logger = Logger(prefix='deviations_')
         self.version_queue  = Queue.Queue()
+        self.version_thread = None
         self.version_files  = []
+
+        self.socks_queue    = Queue.Queue()
+        self.socks_logger   = Logger(prefix="socks_proxies_")
+        self.socks_threads  = []
 
     def is_done(self):
         return self.done
@@ -200,14 +214,34 @@ class StationLoop:
                 raise Exception, "CheckLoop::init_dir() could not create version directory: %s" % self.version_directory
         self.version_logger.set_log_path(self.version_directory)
 
+        self.socks_logger.set_log_path(self.output_directory)
+
 # ===== Long Running Threads =====================================
     def start_threads(self):
         self.version_thread = threading.Thread(target=self._version_log_thread)
         self.version_thread.start()
+        self.proxy_log_thread = threading.Thread(target=self._proxy_log_thread)
+        self.proxy_log_thread.start()
+        self.start_socks_proxies()
 
     def stop_threads(self):
+        self.stop_socks_proxies()
+        self.socks_queue.put(("HALT",))
+        self.proxy_log_thread.join()
         self.version_queue.put('HALT')
         self.version_thread.join()
+
+    def start_socks_proxies(self):
+        for proxy_info in self.socks:
+            thread = Proxy(socks_tunnel=True, log_queue=self.socks_queue)
+            self.prep_proxy(thread, proxy_info)
+            thread.start()
+            self.socks_threads.append(thread)
+
+    def stop_socks_proxies(self):
+        for thread in self.socks_threads:
+            thread.halt()
+            thread.join()
 
     def _version_log_thread(self):
         run = True
@@ -220,7 +254,28 @@ class StationLoop:
                 if (len(parts) == 2) and (4 < len(parts[0]) < 9):
                     self.version_logger.set_log_note(parts[0])
                     self.version_logger.log(parts[1])
+                else:
+                    self.version_logger.set_log_note("")
+                    self.version_logger.log(parts[0])
 
+    def _proxy_log_thread(self):
+        run = True
+        while run:
+            message = self.socks_queue.get()
+            if message[0] == "HALT":
+                run = False
+            else:
+                if len(message) > 2:
+                    self.socks_logger.set_log_note(message[0])
+                    self.socks_logger.log(message[1], message[2])
+                elif len(message) > 1:
+                    self.socks_logger.set_log_note(message[0])
+                    self.socks_logger.log(message[1])
+                else:
+                    self.socks_logger.set_log_note("")
+                    self.socks_logger.log(message[0])
+
+    # Read in the contents of the version file
     def read_version_file(self):
         version_file = './software_versions'
         if os.path.exists(version_file) and os.path.isfile(version_file):
@@ -232,6 +287,7 @@ class StationLoop:
                     file = parts[1]
                     self.version_files.append((file, hash))
 
+    # start the loop with the appropriate action
     def start(self):
         if self.action == 'update':
             self.start_update()
@@ -242,6 +298,7 @@ class StationLoop:
     def start_update(self):
         self.init_dir()
         self.parse_configuration()
+        self.start_threads()
         self.poller.start()
 
     # initialize the check process
@@ -252,7 +309,37 @@ class StationLoop:
         self.start_threads()
         self.poller.start()
 
+    def prep_proxy(self, proxy, info, station=None):
+        if info.has_key('type'):
+            proxy.type = info['type']
+        if info.has_key('station'):
+            proxy.set_name(info['station'])
+        if info.has_key('address'):
+            proxy.set_address(info['address'])
+        if info.has_key('port'):
+            proxy.set_port(info['port'])
+        if info.has_key('username'):
+            proxy.set_username(info['username'])
+        if info.has_key('password'):
+            proxy.set_password(info['password'])
+        if info.has_key('prompt'):
+            proxy.prompt_shell = info['prompt']
+        if info.has_key('local-address'):
+            proxy.local_address = info['local-address']
+        else:
+            proxy.local_address = "127.0.0.1"
+        if info.has_key('local-port'):
+            proxy.local_port = info['local-port']
+        if info.has_key('socks-port'):
+            proxy.socks_port = info['socks-port']
+        if station is not None:
+            proxy.station_address = station.address
+            proxy.station_port = station.port
+        proxy.info=info
+
     def prep_station(self, station, info):
+        if info.has_key('type'):
+            station.type = info['type']
         if info.has_key('station'):
             station.set_name(info['station'])
         if info.has_key('address'):
@@ -263,6 +350,8 @@ class StationLoop:
             station.set_username(info['username'])
         if info.has_key('password'):
             station.set_password(info['password'])
+        if info.has_key('prompt'):
+            station.prompt_shell = info['prompt']
         if info.has_key('netserv'):
             list = info['netserv'].split(',')
             for item in list:
@@ -271,6 +360,7 @@ class StationLoop:
             list = info['server'].split(',')
             for item in list:
                 station.add_server_log(item)
+        station.info = info
 
     def record(self, station):
         if not station:
@@ -317,22 +407,24 @@ class StationLoop:
 
 
     def poll(self):
-        if not self.lock_poll.acquire( 0 ):
+        if not self.poll_lock.acquire( 0 ):
             print "%s::poll() could not acquire lock" % self.__class__.__name__
             return
 
         try:
             # check for completed threads
-            for thread in self.threads:
-                if not thread:
-                    self.threads.remove( thread )
-                elif not thread.is_alive():
-                    station = thread.get_station()
+            for station in self.threads:
+                if not station:
+                    self.threads.remove(station)
+                elif station.is_done():
                     if station:
                         station._log( "Wrapping up thread (" + str(len(self.threads) - 1) + " threads remaining)" )
                         if self.action == 'check':
-                            self.record( station )
-                    self.threads.remove( thread )
+                            self.record(station)
+                    self.threads.remove(station)
+                    if (station.proxy is not None) and (not station.proxy.is_done()):
+                        station.proxy.halt()
+                        station.proxy.join()
 
             # check for failed threads
             while len(self.threads) < self.max_threads:
@@ -347,7 +439,7 @@ class StationLoop:
                     self.summarize()
                     self.poller.stop()
                     self.done = True
-                    #self.lock_poll.release()
+                    #self.poll_lock.release()
                     raise ExLoopDone, "No stations remaining."
                 else:
                     # This occurs when we have no stations
@@ -379,8 +471,11 @@ class StationLoop:
                             station.set_version_queue(self.version_queue)
                             station.set_version_files(self.version_files)
                     else:
-                        raise ExStationTypeNotRecognized, "Station type not recognized"
+                        raise ExStationTypeNotRecognized, "Station type '%(type)s' not recognized" % station_info
                     self.prep_station(station, station_info)
+                    station._log("Finished prep_station()")
+                    station._log("  address = %s" % str(station.address))
+                    station._log("  port    = %s" % str(station.port))
                     self.find_proxies(station, station_info)
 
                     date = time.gmtime()
@@ -411,20 +506,26 @@ class StationLoop:
                     elif self.action == 'update':
                         file = dir + '/update.log'
 
+                    print "log file: ", file
                     station.log_file_name(file)
                     station.log_to_file()
                     station.log_to_screen()
                     station.set_output_directory(self.output_directory + '/' + station.name)
 
-
                     if not station.min_info():
                         self.stations_partial.append(station_info)
-                    thread = ThreadStation(self.action)
-                    thread.set_station( station )
-                    thread.set_info( station_info )
-                    station._log( "Starting thread" )
-                    thread.start()
-                    self.threads.append(thread)
+
+                    if station.proxy is not None:
+                        proxy = station.proxy
+                        proxy.log_file_name(dir + '/proxy.log')
+                        proxy.log_to_file()
+                        proxy.log_to_screen()
+                        proxy.set_output_directory(self.output_directory + '/' + station.name)
+                        station._log("Starting proxy thread...")
+                        proxy.start()
+                    station._log("Starting station thread...")
+                    station.start()
+                    self.threads.append(station)
                 except Exception, e:
                     if station:
                         print "%s::poll() failed to create thread. Exception: %s" % (self.__class__.__name__, str(e))
@@ -437,7 +538,7 @@ class StationLoop:
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
 
-        self.lock_poll.release()
+        self.poll_lock.release()
 
 
     def find_proxies(self, station, station_info):
@@ -446,13 +547,18 @@ class StationLoop:
                 if proxy_info.has_key('station') and (proxy_info['station'] == station_info['proxy']):
                     if proxy_info['type'] == 'Proxy':
                         proxy = Proxy()
-                    elif proxy_info['type'] == 'SecureProxy':
-                        proxy = SecureProxy()
                     else:
-                        raise ExProxyTypeNotRecognized, "Station type not recognized"
-                    self.prep_station(proxy, proxy_info)
-                    self.find_proxies(proxy, proxy_info)
-                    station.add_proxy(proxy)
+                        raise ExProxyTypeNotRecognized, "Proxy type '%(type)s' not recognized" % proxy_info
+                    self.prep_proxy(proxy, proxy_info, station)
+                    station.proxy = proxy
+                    station.proxy_info = proxy_info
+
+                    # At this time we are not allowing nested proxies
+                    # In order to do so, we will need to modify the actual SSH
+                    # connect command rather than setting up the tunnel after
+                    # the connection has been made. We do not have a need for this
+                    # so far.
+                    #self.find_proxies(proxy, proxy_info)
 
     def summarize(self):
         # build a summary
@@ -464,7 +570,7 @@ class StationLoop:
            stations = [station1, station2, ..., stationN]
            station  = [property1, property2, ..., propertyN]
            property = [name, value]
-              name in [station, type, address, username, password, netserv, server]
+              name in [station, type, address, username, password, netserv, server, port, socks-port]
         -"""
         Permissions("EEIEEIEII", 1).process([self.station_file])
 
@@ -484,7 +590,7 @@ class StationLoop:
             fh.close()
 
         reg_stations   = re.compile('<\s*((\s*\[[^>\]]+\]\s*)+)\s*>')
-        reg_properties = re.compile('\[([\w]+)[:]([^\]]+)\]')
+        reg_properties = re.compile('\[([^:]+)[:]([^\]]+)\]')
 
         matches = reg_stations.findall(lines)
         for match in matches:
@@ -495,8 +601,10 @@ class StationLoop:
                     dict[pair[0]] = pair[1]
                 if ((not self.selection) or (self.selection.count(dict['station']))) and ((not self.types) or (self.types.count(dict['type']))) and ((not self.exclusion) or (not self.exclusion.count(dict['station']))):
                     self.stations.append(dict)
-                elif dict.has_key('type') and (dict['type'] in ['Proxy', 'SecureProxy']):
+                elif dict.has_key('type') and (dict['type'] in ['Proxy']):
                     self.proxies.append(dict)
+                elif dict.has_key('type') and (dict['type'] in ['Socks']):
+                    self.socks.append(dict)
 
 
 class Main:
@@ -577,8 +685,7 @@ action:
             loop.start()
             while not loop.is_done():
                 time.sleep(1)
-            if arg_action == 'check':
-                loop.stop_threads()
+            loop.stop_threads()
 
         else:
             """Run check on one station only"""

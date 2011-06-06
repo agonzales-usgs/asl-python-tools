@@ -26,13 +26,18 @@ try:
     import pxssh    # ssh extension to pexepect
     import re       # regular expression parser
     import os       # file operations
+    import Queue    # thread-safe communication queue
+    import random   # random number generation
     import stat     # file modes
     import sys      # arguments
     import time     # to get UTC current time
+    import thread   # provides a lock
+    import threading
     import traceback
 
     from disconnects import DisconnectParser
     from Logger import Logger
+    from permissions import Permissions
     import dlc
 except ImportError, e:
     raise ImportError (str(e) + """
@@ -60,6 +65,9 @@ class ExceptionStation(Exception):
             return True
         else:
             return False
+
+class ExHaltRequest(ExceptionStation):
+    """Raised when a request has been sent to halt a station thread."""
 
 class ExTimeout(ExceptionStation):
     """Raised when a station conneciton times out."""
@@ -99,30 +107,38 @@ class ExStationDisabled(ExceptionStation):
 class ExProxyTypeNotRecognized(ExceptionStation):
     """Raised when the proxy type is not recognized"""
 
-class Station:
+class Station(threading.Thread):
     def __init__(self, action):
+        threading.Thread.__init__(self)
+
         # timeouts
         self.spawn_timeout    = 5
-        self.comm_timeout     = 1800
+        self.comm_timeout     = 900 # was 1800, but this is better for re-tries
         self.check_timeout    = self.comm_timeout
         self.parse_timeout    = self.comm_timeout
         self.search_timeout   = self.comm_timeout * 2
         self.transfer_timeout = self.comm_timeout * 2
         self.launch_timeout   = self.comm_timeout
 
+        self.start_time = None
+
+        self.type     = None
         self.name     = None
         self.address  = None
         self.port     = None
         self.username = None
         self.password = None
+        self.ssh_options = None
 
-        # must go through this proxy
-        self.proxy     = None
-        self.action   = action
+        self.info       = {}
+        self.proxy      = None
+        self.proxy_info = None
+
+        self.action = action
 
         self.com_app   = None
         self.protocol  = None
-        self.connected = None
+        self.connected = False
 
         # expected prompts
         self.prompt_pass  = None
@@ -134,7 +150,7 @@ class Station:
 
         # new logging mechanism
         self.logger = Logger()
-        self.logger.set_log_to_screen(True)
+        self.logger.set_log_to_screen(False)
         self.parser = DisconnectParser()
 
         self.output_directory = ""
@@ -166,13 +182,32 @@ class Station:
         if os.path.isdir(directory):
             self.output_directory = directory
 
-    def run(self, action):
+    def halt(self, now=False):
+        self._halt(now)
+
+    def _halt(self, now):
+        pass
+
+    def is_done(self):
+        alive = False
         try:
-            if action == 'check':
+            alive = self.is_alive()
+        except:
+            alive = self.isAlive()
+        return not alive
+
+    def run(self):
+        if self.proxy is not None:
+            if self.proxy.wait_for_ready() == False:
+                raise ExConnectFailed("Could not establish proxy connection to '%s' for station '%s' " % (self.proxy.name, self.name))
+            self.start_time = time.mktime( time.gmtime() )
+            self._log("Proxy connection established.")
+        try:
+            if self.action == 'check':
                 self.run_check()
-            elif action == 'update':
+            elif self.action == 'update':
                 self.run_update()
-            elif action == 'proxy':
+            elif self.action == 'proxy':
                 self.run_proxy()
             else:
                 self._log("Invalid action for station(s): '%s'" % action)
@@ -213,6 +248,8 @@ class Station:
     def run_proxy(self):
         self.ready()
         self.connect()
+        self.construct()
+        self.proxy_loop()
         self.disconnect()
 
     def check(self):
@@ -251,10 +288,6 @@ class Station:
     def set_com_app(self, com_app):
         self.com_app = com_app 
 
-    def add_proxy(self, proxy):
-        if proxy:
-            self.proxy = proxy
-
     def ready(self):
         if self.name == "":
             self.name = "anonamous"
@@ -267,29 +300,13 @@ class Station:
 
     def connect(self):
         self.ready()
-
-        # If we have to go through a proxy, connect now
-        # XXX:  This isn't going to work, we are just creating two separate
-        #       connections, neither going through the other.
-        #      
-        #       We need to re-work this a bit seeing as an SSH tunnel proxy
-        #       requires that the station thread actually connect to the
-        #       proxy which is pointing to the station, rather than to the
-        #       station itself.
-        #
-        if self.proxy:
-            # We need to mess around with credentials here...
-            # The proxy really needs to be a separate thread with which
-            # we can communicate to let it know when we are done.
-            self.proxy.connect()
-
         if self.protocol == "telnet":
             self.telnet_connect()
         elif self.protocol == "ssh":
             self.ssh_connect()
         else:
             raise ExProtocolUnknown, "The chosen protocol is not supported"
-        self.connected = 1
+        self.connected = True
 
     def disconnect(self):
         if not self.reader:
@@ -301,11 +318,7 @@ class Station:
             self.ssh_disconnect()
         else:
             raise ExProtocolUnknown, "The chosen protocol is not supported"
-        self.connected = 0
-
-        # If we are using a proxy, close the connection now
-        if self.proxy and self.proxy.connected:
-            self.proxy.disconnect()
+        self.connected = False
 
     def telnet_connect(self):
         # spawn the telnet program
@@ -327,7 +340,7 @@ class Station:
             self._log( "opening connection to station" )
             match = self.reader.expect( [self.prompt_user], timeout=self.comm_timeout )
         except:
-            raise ExConnectFailed, "Unable to open connection to " + self.address
+            raise ExConnectFailed, "Unable to telnet to station " + self.address
 
         # enter the username
         self.reader.sendline( self.username )
@@ -363,14 +376,25 @@ class Station:
             raise ExLaunchFailed, "Failed to spawn ssh process"
 
         try:
-            prompt = "\[" + self.username + "[@]" + self.name[3:] + "[:][~]\][$]"
+            # This didn't work for some reason. Probaby best to just leave it alone anyway...
+            #prompt = ""
+            #if self.prompt_shell is None:
+            #    name = self.name
+            #    if name[2] == '_':
+            #        name = self.name[3:]
+            #    prompt = "\[" + self.username + "[@]" + self.name[3:] + "[:][~]\][$]"
+            #else:
+            #    prompt = self.prompt_shell
+            if (self.proxy is not None) and (self.proxy.connected):
+                self.address = self.proxy.local_address
+                self.port = self.proxy.local_port
+            self._log("address = %s" % str(self.address))
+            self._log("port    = %s" % str(self.port))
+            prompt = "[$#>]"
+            if self.prompt_shell is not None:
+                prompt = self.prompt_shell
             self._log( "opening ssh connection" )
-            if ( self.port ):
-                #self._log( "opening ssh connection to: " + self.username + "@" + self.address + ":" + self.port )
-                self.reader.login( self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port )
-            else:
-                #self._log( "opening ssh connection to: " + self.username + "@" + self.address )
-                self.reader.login( self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout )
+            self.reader.login( self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port )
         except Exception, e:
             self._log( "exception details: %s" % str(e) )
             raise ExConnectFailed, "Failed to ssh to station: %s" % str(e)
@@ -383,32 +407,162 @@ class Station:
             #self._log( "Station::ssh_disconnect() caught exception while trying to close ssh connection: %s" % e.__str__(), "error" )
             raise ExDisconnectFailed, "Disconnect Failed: %s" % str(e)
 
-class SecureProxy(Station):
-    def __init__(self):
+class Proxy(Station):
+    def __init__(self, socks_tunnel=False, log_queue=None):
         Station.__init__(self, 'proxy')
 
         self.prompt_pass = ""
         self.protocol = "ssh"
+        self.socks_tunnel = socks_tunnel
+        self.socks_port = None
 
-        self.output = ""        # results of the checks script
-        self.log_messages = ""  # purpose TBD
+        self.output = ""
+        self.log_messages = ""
         self.summary = ""
 
-    def check(self):
-        pass
+        self.queue = Queue.Queue()
+        self.running = False
 
-class Proxy(Station):
-    def __init__(self):
-        Station.__init__(self, 'proxy')
+        self.log_queue = log_queue
 
-        self.com_app     = os.popen('which telnet').read().strip()
-        self.prompt_user = "User name\?:"
-        self.prompt_pass = "Password:"
-        self.protocol    = "telnet"
+        self.local_address = None
+        self.local_port = None
 
-        self.output = ""        # results of the checks script
-        self.log_messages = ""  # purpose TBD
-        self.summary = ""
+        self.station_address = None
+        self.station_port = None
+
+        self.address = None
+        self.port = None
+        self.username = None
+        self.password = None
+        self.tunnel_ready = False
+
+        self.proxy_connect_lock = thread.allocate_lock()
+        self.proxy_connect_lock.acquire(0)
+
+    def _log(self, str, category="info"):
+        if self.log_queue != None:
+            message = [self.name, str]
+            if category:
+                message.append(category)
+            self.log_queue.put(tuple(message))
+        else:
+            Station._log(self, str, category)
+    
+    def construct(self):
+        try:
+            self.tunnel_ready = False
+            attempts = 10 
+            attempt  = 0
+            while (not self.tunnel_ready) and ((attempts - attempt) > 0):
+                self.halt_check()
+                attempt += 1
+                random.seed()
+                if self.local_port is None:
+                    self.local_port = random.randint(10001, 65001)
+                bind_address = ""
+                if self.local_address is not None:
+                    bind_address = self.local_address + ":"
+                if self.station_port == None:
+                    self.station_port = 22
+                self._log("bind_address    = %s" % str(bind_address))
+                self._log("local_port      = %s" % str(self.local_port))
+                self._log("station_address = %s" % str(self.station_address))
+                self._log("station_port    = %s" % str(self.station_port))
+                if not self.socks_tunnel:
+                    tunnel_command = "-L%s%s:%s:%s" % (bind_address, str(self.local_port), self.station_address, str(self.station_port))
+                else:
+                    tunnel_command = "-D%s%s" % (bind_address, str(self.local_port))
+
+                self._log("Proxy forwarding attempt #%d: %s" % (attempt, tunnel_command))
+
+                self.halt_check()
+                self._log("opening SSH command line...")
+                self.reader.sendline()
+                self.reader.send("~C")
+                try:
+                    self.reader.expect("ssh>", timeout=10)
+                except Exception, e:
+                    self._log("Could not open SSH command interface: %s" % str(e))
+                    continue
+                response = self.reader.before
+                caught   = self.reader.after
+
+                self._log("before: %s" % response)
+                self._log("after:  %s" % caught)
+
+                self.halt_check()
+                self._log("sending port forward command...")
+                self.reader.sendline(tunnel_command)
+                try:
+                    self.reader.expect("Forwarding port.", timeout=10)
+                    #if not self.reader.prompt(timeout=10):
+                    #    raise ExTimeout("timeout on port forwarding operation.")
+                except Exception, e:
+                    self._log("No port forwarding feedback: %s" % str(e))
+                    self._log("before: %s" % self.reader.before)
+                    self._log("after:  %s" % self.reader.after)
+                    continue
+                response = self.reader.before
+                caught   = self.reader.after
+
+                self._log("before: %s" % response)
+                self._log("after:  %s" % caught)
+
+                self.halt_check()
+                if re.compile("channel_setup_fwd_listener: cannot listen to port: %s" % str(self.local_port)).search(response):
+                    self._log("Forwarding attempt #%d failed." % attempt)
+                    continue
+
+                self._log("Proxy forwarding tunnel established on port %s." % str(self.local_port))
+                self.tunnel_ready = True
+
+        except ExHaltRequest, e:
+            self._log("Received a halt request, halting proxy connection attempt.")
+        except Exception, e:
+            self._log("Caught unexpected exception while attempting to open proxy tunnel.\n Exception: %s" % str(e))
+
+        self.proxy_connect_lock.release()
+        if not self.tunnel_ready:
+            raise ExConnectFailed("Failed to set up proxy connection: %s" % str(e))
+
+    def proxy_loop(self):
+        self.running = True
+        while self.running:
+            try:
+                self.reader.sendline()
+                try:
+                    self.reader.prompt( timeout=10 )
+                except Exception, e:
+                    pass
+                response = self.reader.before
+                self.halt_check(300)
+            except ExHaltRequest, e:
+                self._log("Received a halt request, terminating proxy connection.")
+                self.running = False
+
+    def halt_proxy(self):
+        self.queue.put('HALT')
+
+    def halt_check(self, timeout=0):
+        start = time.time()
+        while timeout >= 0:
+            try:
+                request = self.queue.get(timeout)
+                if request == 'HALT':
+                    raise ExHaltRequest("HALT")
+            except Queue.Empty:
+                pass
+            timeout = timeout - (time.time() - start)
+
+    def _halt(self, now):
+        self.halt_proxy()
+
+    def wait_for_ready(self, timeout=None):
+        self.proxy_connect_lock.acquire(1)
+        if self.tunnel_ready:
+            return True
+        return False
 
     def check(self):
         pass
@@ -425,6 +579,7 @@ class Station680(Station):
         self.prompt_user = "User name\?:"
         self.prompt_pass = "Password:"
         self.protocol    = "telnet"
+        self.port = 23
 
         self.output = ""      # results of the checks script
         self.log_glance = ""  # quick glimpse at first 20 records
@@ -853,6 +1008,7 @@ class Station330(Station):
 
         self.prompt_pass = ""
         self.protocol = "ssh"
+        self.port = 22
 
         self.output = ""        # results of the checks script
         self.log_messages = ""  # purpose TBD
@@ -932,7 +1088,8 @@ class Station330(Station):
     def update(self):
         self._log("cd %s" % self.install_path)
         self.reader.sendline("cd %s" % self.install_path)
-        self.reader.prompt( timeout=self.comm_timeout )
+        if not self.reader.prompt( timeout=self.comm_timeout ):
+            raise ExTimeout("timeout on update first cd command")
         self._log(self.reader.before)
 
         for (id, file_name) in self.install_list:
@@ -944,7 +1101,8 @@ class Station330(Station):
 
             self.reader.sendline("(which md5sum &> /dev/null && md5sum %s) || (which md5 &> /dev/null && md5 %s)" % (file_name, file_name))
             try:
-                self.reader.prompt( timeout=self.comm_timeout )
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout on md5 command")
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "command failed"
@@ -962,7 +1120,8 @@ class Station330(Station):
             #self._log("tar xjf %s 2> /dev/null" % file_name)
             self.reader.sendline("tar xjf %s 2> /dev/null" % file_name)
             try:
-                self.reader.prompt( timeout=self.comm_timeout )
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout on extract command")
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "command failed"
@@ -971,7 +1130,8 @@ class Station330(Station):
             #self._log("cd %s/%s" % (self.install_path, id))
             self.reader.sendline("cd %s/%s" % (self.install_path, id))
             try:
-                self.reader.prompt( timeout=self.comm_timeout )
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout on cd command")
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "command failed"
@@ -988,7 +1148,8 @@ class Station330(Station):
 
             self.reader.sendline("slate")
             try:
-                self.reader.prompt( timeout=self.comm_timeout )
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout on install mode selection")
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "command failed"
@@ -997,7 +1158,8 @@ class Station330(Station):
             #self._log("cd %s" % self.install_path)
             self.reader.sendline("cd %s" % self.install_path)
             try:
-                self.reader.prompt( timeout=self.comm_timeout )
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout on second cd command")
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "command failed"
@@ -1006,7 +1168,8 @@ class Station330(Station):
             #self._log("rm -rf %s*" % id)
             self.reader.sendline("rm -rf %s*" % id)
             try:
-                self.reader.prompt( timeout=self.comm_timeout )
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout on clean (rm) command")
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "command failed"
@@ -1015,7 +1178,8 @@ class Station330(Station):
             #self._log("echo '%s' > /opt/util/%s.md5" % (md5_hash, id))
             self.reader.sendline("echo '%s' > /opt/util/%s.md5" % (md5_hash, id))
             try:
-                self.reader.prompt( timeout=self.comm_timeout )
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout on .md5 file update")
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "command failed"
@@ -1023,7 +1187,8 @@ class Station330(Station):
 
         self.reader.sendline("if [ ! -d \"/opt/util/scripts\" ]; then mkdir /opt/util/scripts; fi")
         try:
-            self.reader.prompt( timeout=self.comm_timeout )
+            if not self.reader.prompt( timeout=self.comm_timeout ):
+                raise ExTimeout("timeout on scripts directory check/creation")
         except Exception, e:
             self._log( "exception details: %s" % str(e) )
             raise ExIncomplete, "command failed"
@@ -1035,7 +1200,8 @@ class Station330(Station):
             script_dst = "/opt/util/scripts/%s" % script
             self.reader.sendline("if [ -e \"%s\" ]; then mv %s %s; fi" % (script_src, script_src, script_dst))
             try:
-                self.reader.prompt( timeout=self.comm_timeout )
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout on script installation")
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "command failed"
@@ -1066,16 +1232,19 @@ class Station330(Station):
 
             self._log( "checking hash of %s" % check_script )
             self.reader.sendline("md5sum %s" % script_path)
-            self.reader.prompt( timeout=self.comm_timeout )
+            if not self.reader.prompt( timeout=self.comm_timeout ):
+                raise ExTimeout("timeout on performing checks script md5")
             self.output += self.reader.before + "\n"
 
             self._log( "running checks script" )
             self.reader.sendline(script_path)
-            self.reader.prompt( timeout=self.comm_timeout )
+            if not self.reader.prompt( timeout=self.comm_timeout ):
+                raise ExTimeout("timeout while running checks script")
 
             self._log( "storing checks output" )
             self.reader.sendline('cat /opt/util/output')
-            self.reader.prompt( timeout=self.comm_timeout )
+            if not self.reader.prompt( timeout=self.comm_timeout ):
+                raise ExTimeout("timeout while reading checks output")
             self.output += self.reader.before
 
 
@@ -1091,11 +1260,13 @@ class Station330(Station):
         md5_files = []
 
         self.reader.sendline("cd /opt/util/scripts && ls -1 * | xargs -l1 md5sum")
-        self.reader.prompt( timeout=self.comm_timeout )
+        if not self.reader.prompt( timeout=self.comm_timeout ):
+            raise ExTimeout("timeout while checking md5sums")
         md5_files += self.reader.before.strip('\n').split('\n')[1:]
 
         self.reader.sendline("cd /opt/util && for FILE in `ls -1 *.md5`; do SUM=`cat $FILE`; echo \"$SUM  $FILE\"; done")
-        self.reader.prompt( timeout=self.comm_timeout )
+        if not self.reader.prompt( timeout=self.comm_timeout ):
+            raise ExTimeout("timeout while checking .md5 files")
         md5_files += map(lambda n: n[:-5], self.reader.before.strip('\n').split('\n')[1:])
 
         for file in md5_files:
@@ -1107,11 +1278,13 @@ class Station330(Station):
             summary = ''
             if (len(file) > 4) and (file[-4:] == '.md5'):
                 self.reader.sendline("cat %s" % file)
-                self.reader.prompt(timeout=self.comm_timeout)
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout while checking .md5 files")
                 md5 = self.reader.before.strip('\n').split('\n')[1].strip()
             else:
                 self.reader.sendline("md5sum %s" % file)
-                self.reader.prompt(timeout=self.comm_timeout)
+                if not self.reader.prompt( timeout=self.comm_timeout ):
+                    raise ExTimeout("timeout while checking md5sums")
                 md5 = self.reader.before.strip('\n').split('\n')[1].split(' ')[0].strip()
             summary = "%s %s" % (md5, file)
             log_category = 'default'
@@ -1130,7 +1303,8 @@ class Station330(Station):
         # determine which channels to check based on which files
         # are listed in the checks
         self.reader.sendline("ls -1 /opt/data/%s" % self.name[3:])
-        self.reader.prompt( timeout=self.comm_timeout )
+        if not self.reader.prompt( timeout=self.comm_timeout ):
+            raise ExTimeout("timeout preparing for diskloop continuity check")
         ls_result = self.reader.before
         reg_file = re.compile("(\d{2}_LHZ)[.]idx")
         diskloop_files = sorted(set(reg_file.findall(ls_result)))
@@ -1170,11 +1344,7 @@ class Station330(Station):
                     raise Exception("Station::check_diskloop_continuity() could not create gap file %s: %s" % (gap_file, str(e)))
 
             # make sure the files have the correct permissions
-            permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH
-            if os.stat(archive_file).st_mode != permissions:
-                os.chmod(archive_file, permissions)
-            if os.stat(gap_file).st_mode != permissions:
-                os.chmod(gap_file, permissions)
+            Permissions("EEIEEIEII", 1).process([archive_file, gap_file])
 
             start_date = ""
             end_date = ""
@@ -1223,7 +1393,8 @@ class Station330(Station):
             self._log("checking diskloop continuity for channel %s" % '-'.join(diskloop_file.split('_')))
             command += " 2> /dev/null"
             self.reader.sendline(command)
-            self.reader.prompt(timeout=self.comm_timeout)
+            if not self.reader.prompt( timeout=self.comm_timeout ):
+                raise ExTimeout("timeout while performing diskloop continuity check")
             dlc_results = self.reader.before.strip('\n\r').split('\n')
             if (type(dlc_results) != list) or (len(dlc_results) < 2):
                 self._log(str(type(dlc_results)), 'debug')
@@ -1269,7 +1440,8 @@ class Station330(Station):
                     command += " %s %s" % (start_date, end_date)
                     command += " 2> /dev/null"
                     self.reader.sendline(command)
-                    self.reader.prompt(timeout=self.comm_timeout)
+                    if not self.reader.prompt( timeout=self.comm_timeout ):
+                        raise ExTimeout("timeout on dlc command")
                     dlc_results = self.reader.before.strip('\n\r').split('\n')
                     self._log("dlc raw data: [%s]" % dlc_results, 'debug')
                     if (type(dlc_results) != list) or (len(dlc_results) < 2):
@@ -1354,7 +1526,7 @@ class StationBaler(Station):
         Station.__init__(self, action)
 
         self.wget = "/usr/bin/wget"
-        self.connected = 1
+        self.connected = True
 
         self.baler_address = self.address
         self.baler_port    = ""
