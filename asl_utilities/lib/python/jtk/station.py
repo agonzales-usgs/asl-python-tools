@@ -213,20 +213,36 @@ class Station(threading.Thread):
                 self._log("Invalid action for station(s): '%s'" % action)
         except ExConnectFailed, e:
             self._log( str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except ExDisconnectFailed, e:
             self._log( str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except ExInvalidCredentials, e:
             self._log( str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except ExIncomplete, e:
             self._log( str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except ExLaunchFailed, e:
             self._log( str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except ExNoReader, e:
             self._log( str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except ExNotConnected, e:
             self._log( str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except ExStationNotSupported, e:
             self._log( str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except Exception, e:
             self._log( "Station::run() caught exception: %s" % str(e), "error" )
             (ex_f, ex_s, trace) = sys.exc_info()
@@ -297,6 +313,12 @@ class Station(threading.Thread):
             raise ExIncomplete, "Username not specified"
         if self.password == "":
             raise ExIncomplete, "Password not specified"
+        if (self.proxy is not None) and (self.proxy.connected):
+            self._log("updating station with proxy info")
+            self.address = self.proxy.local_address
+            self.port = self.proxy.local_port
+        self._log("address = %s" % str(self.address))
+        self._log("port    = %s" % str(self.port))
 
     def connect(self):
         self.ready()
@@ -339,7 +361,9 @@ class Station(threading.Thread):
         try:
             self._log( "opening connection to station" )
             match = self.reader.expect( [self.prompt_user], timeout=self.comm_timeout )
-        except:
+        except Exception, e:
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
             raise ExConnectFailed, "Unable to telnet to station " + self.address
 
         # enter the username
@@ -385,18 +409,20 @@ class Station(threading.Thread):
             #    prompt = "\[" + self.username + "[@]" + self.name[3:] + "[:][~]\][$]"
             #else:
             #    prompt = self.prompt_shell
-            if (self.proxy is not None) and (self.proxy.connected):
-                self.address = self.proxy.local_address
-                self.port = self.proxy.local_port
-            self._log("address = %s" % str(self.address))
-            self._log("port    = %s" % str(self.port))
-            prompt = "[$#>]"
+            prompt = "[$>]"
             if self.prompt_shell is not None:
                 prompt = self.prompt_shell
             self._log( "opening ssh connection" )
+            print "address: ", self.address
+            print "port:    ", self.port
+            print "username:", self.username
+            print "password: *** [%d]" % len(self.password)
+            print "prompt:  ", prompt
             self.reader.login( self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port )
         except Exception, e:
             self._log( "exception details: %s" % str(e) )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
             raise ExConnectFailed, "Failed to ssh to station: %s" % str(e)
 
     def ssh_disconnect(self):
@@ -1069,7 +1095,11 @@ class Station330(Station):
 
             self._log("waiting for password prompt...")
             try:
-                reader.expect(['password:'], timeout=self.comm_timeout)
+                idx = reader.expect(['password:', 'Are you sure you want to continue connecting'], timeout=self.comm_timeout)
+                self._log("accepting key")
+                if idx == 1:
+                    reader.sendline("yes")
+                    reader.expect(['password:'], timeout=self.comm_timeout)
             except Exception, e:
                 self._log( "exception details: %s" % str(e) )
                 raise ExIncomplete, "Did not receive password prompt"
