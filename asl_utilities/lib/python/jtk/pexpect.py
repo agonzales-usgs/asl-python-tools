@@ -9,17 +9,19 @@ use C, Expect, or TCL extensions. It should work on any platform that supports
 the standard Python pty module. The Pexpect interface focuses on ease of use so
 that simple tasks are easy.
 
-There are two main interfaces to Pexpect -- the function, run() and the class,
-spawn. You can call the run() function to execute a command and return the
+There are two main interfaces to the Pexpect system; these are the function,
+run() and the class, spawn. The spawn class is more powerful. The run()
+function is simpler than spawn, and is good for quickly calling program. When
+you call the run() function it executes a given program and then returns the
 output. This is a handy replacement for os.system().
 
 For example::
 
     pexpect.run('ls -la')
 
-The more powerful interface is the spawn class. You can use this to spawn an
-external child command and then interact with the child by sending lines and
-expecting responses.
+The spawn class is the more powerful interface to the Pexpect system. You can
+use this to spawn a child program then interact with it by sending input and
+expecting responses (waiting for patterns in the child's output).
 
 For example::
 
@@ -28,16 +30,18 @@ For example::
     child.sendline (mypassword)
 
 This works even for commands that ask for passwords or other input outside of
-the normal stdio streams.
+the normal stdio streams. For example, ssh reads input directly from the TTY
+device which bypasses stdin.
 
 Credits: Noah Spurrier, Richard Holden, Marco Molteni, Kimberley Burchett,
 Robert Stone, Hartmut Goebel, Chad Schroeder, Erick Tryzelaar, Dave Kirby, Ids
 vander Molen, George Todd, Noel Taylor, Nicolas D. Cesar, Alexander Gattin,
-Geoffrey Marshall, Francisco Lourenco, Glen Mabey, Karthik Gurusamy, Fernando
-Perez, Corey Minyard, Jon Cohen, Guillaume Chazarain, Andrew Ryan, Nick
-Craig-Wood, Andrew Stone, Jorgen Grahn (Let me know if I forgot anyone.)
+Jacques-Etienne Baudoux, Geoffrey Marshall, Francisco Lourenco, Glen Mabey,
+Karthik Gurusamy, Fernando Perez, Corey Minyard, Jon Cohen, Guillaume
+Chazarain, Andrew Ryan, Nick Craig-Wood, Andrew Stone, Jorgen Grahn, John
+Spiegel, Jan Grant, and Shane Kerr. Let me know if I forgot anyone.
 
-Free, open source, and all that good stuff.
+Pexpect is free, open source, and all that good stuff.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -57,10 +61,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Pexpect Copyright (c) 2008 Noah Spurrier
+Pexpect Copyright (c) 2010 Noah Spurrier
 http://pexpect.sourceforge.net/
 
-$Id: pexpect.py 507 2007-12-27 02:40:52Z noah $
+$Id: pexpect.py 521 2010-07-11 01:54:48Z noah $
 """
 
 try:
@@ -84,8 +88,8 @@ except ImportError, e:
 A critical module was not found. Probably this operating system does not
 support it. Pexpect is intended for UNIX-like operating systems.""")
 
-__version__ = '2.3'
-__revision__ = '$Revision: 399 $'
+__version__ = '2.6'
+__revision__ = '$Revision: 521 $'
 __all__ = ['ExceptionPexpect', 'EOF', 'TIMEOUT', 'spawn', 'run', 'which',
     'split_command_line', '__version__', '__revision__']
 
@@ -336,12 +340,12 @@ class spawn (object):
         the input from the child and output sent to the child. Sometimes you
         don't want to see everything you write to the child. You only want to
         log what the child sends back. For example::
-        
+
             child = pexpect.spawn('some_command')
             child.logfile_read = sys.stdout
 
         To separately log output sent to the child use logfile_send::
-        
+
             self.logfile_send = fout
 
         The delaybeforesend helps overcome a weird behavior that many users
@@ -443,7 +447,7 @@ class spawn (object):
             # -- Fernando Perez
             try:
                 self.close()
-            except AttributeError:
+            except:
                 pass
 
     def __str__(self):
@@ -611,19 +615,24 @@ class spawn (object):
 
         child_name = os.ttyname(tty_fd)
 
-        # Disconnect from controlling tty if still connected.
-        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY);
-        if fd >= 0:
-            os.close(fd)
-
-        os.setsid()
-
-        # Verify we are disconnected from controlling tty
+        # Disconnect from controlling tty. Harmless if not already connected.
         try:
             fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY);
             if fd >= 0:
                 os.close(fd)
-                raise ExceptionPexpect, "Error! We are not disconnected from a controlling tty."
+        except:
+            # Already disconnected. This happens if running inside cron.
+            pass
+
+        os.setsid()
+
+        # Verify we are disconnected from controlling tty
+        # by attempting to open it again.
+        try:
+            fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY);
+            if fd >= 0:
+                os.close(fd)
+                raise ExceptionPexpect, "Error! Failed to disconnect from controlling tty. It is still possible to open /dev/tty."
         except:
             # Good! We are disconnected from a controlling tty.
             pass
@@ -696,15 +705,14 @@ class spawn (object):
             p.waitnoecho()
             p.sendline(mypassword)
 
-        If timeout is None then this method to block forever until ECHO flag is
-        False.
-
+        If timeout==-1 then this method will use the value in self.timeout.
+        If timeout==None then this method to block until ECHO flag is False.
         """
 
         if timeout == -1:
             timeout = self.timeout
         if timeout is not None:
-            end_time = time.time() + timeout 
+            end_time = time.time() + timeout
         while True:
             if not self.getecho():
                 return True
@@ -950,7 +958,7 @@ class spawn (object):
         if self.logfile_send is not None:
             self.logfile_send.write (s)
             self.logfile_send.flush()
-        c = os.write(self.child_fd, s)
+        c = os.write (self.child_fd, s.encode("utf-8"))
         return c
 
     def sendline(self, s=''):
@@ -958,7 +966,7 @@ class spawn (object):
         """This is like send(), but it adds a line feed (os.linesep). This
         returns the number of bytes written. """
 
-        n = self.send(s)
+        n = self.send (s)
         n = n + self.send (os.linesep)
         return n
 
@@ -1230,7 +1238,7 @@ class spawn (object):
 
         return compiled_pattern_list
 
-    def expect(self, pattern, timeout = -1, searchwindowsize=None):
+    def expect(self, pattern, timeout = -1, searchwindowsize=-1):
 
         """This seeks through the stream until a pattern is matched. The
         pattern is overloaded and may take several types. The pattern can be a
@@ -1355,7 +1363,7 @@ class spawn (object):
         if timeout == -1:
             timeout = self.timeout
         if timeout is not None:
-            end_time = time.time() + timeout 
+            end_time = time.time() + timeout
         if searchwindowsize == -1:
             searchwindowsize = self.searchwindowsize
 
@@ -1581,6 +1589,8 @@ class spawn (object):
 class searcher_string (object):
 
     """This is a plain string search helper for the spawn.expect_any() method.
+    This helper class is for speed. For more powerful regex patterns
+    see the helper class, searcher_re.
 
     Attributes:
 
@@ -1593,6 +1603,7 @@ class searcher_string (object):
         start - index into the buffer, first byte of match
         end   - index into the buffer, first byte after match
         match - the matching string itself
+
     """
 
     def __init__(self, strings):
@@ -1653,7 +1664,7 @@ class searcher_string (object):
         # rescanning until we've read three more bytes.
         #
         # Sadly, I don't know enough about this interesting topic. /grahn
-        
+
         for index, s in self._strings:
             if searchwindowsize is None:
                 # the match, if any, can only be in the fresh data,
@@ -1676,7 +1687,8 @@ class searcher_string (object):
 class searcher_re (object):
 
     """This is regular expression string search helper for the
-    spawn.expect_any() method.
+    spawn.expect_any() method. This helper class is for powerful
+    pattern matching. For speed, see the helper class, searcher_string.
 
     Attributes:
 
@@ -1732,7 +1744,7 @@ class searcher_re (object):
         'buffer' which have not been searched before.
 
         See class spawn for the 'searchwindowsize' argument.
-        
+
         If there is a match this returns the index of that string, and sets
         'start', 'end' and 'match'. Otherwise, returns -1."""
 
@@ -1842,4 +1854,4 @@ def split_command_line(command_line):
         arg_list.append(arg)
     return arg_list
 
-# vi:ts=4:sw=4:expandtab:ft=python:
+# vi:set sr et ts=4 sw=4 ft=python :

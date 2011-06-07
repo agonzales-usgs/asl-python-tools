@@ -123,6 +123,7 @@ class Station(threading.Thread):
         self.start_time = None
 
         self.type     = None
+        self.group    = None
         self.name     = None
         self.address  = None
         self.port     = None
@@ -248,6 +249,11 @@ class Station(threading.Thread):
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
 
+        if self.proxy is not None:
+            self._log("requesting proxy halt")
+            self.proxy.halt()
+            self.proxy.join()
+
     def run_check(self):
         self.ready()
         self.connect()
@@ -284,6 +290,9 @@ class Station(threading.Thread):
         if self.name and self.username and self.password:
             return 1
         return 0
+
+    def set_group(self, group):
+        self.group = group
 
     def set_name(self, name):
         self.name = name
@@ -437,6 +446,8 @@ class Proxy(Station):
     def __init__(self, socks_tunnel=False, log_queue=None):
         Station.__init__(self, 'proxy')
 
+        self.depth = 1
+
         self.prompt_pass = ""
         self.protocol = "ssh"
         self.socks_tunnel = socks_tunnel
@@ -463,6 +474,11 @@ class Proxy(Station):
         self.password = None
         self.tunnel_ready = False
 
+        # Create and acquire the lock now. This prevents
+        # the parent thread which is dependent on this
+        # proxy from checking too soon. Once this thread
+        # has started, the lock is released, and the parent
+        # is free to receive the connetion confirmation.
         self.proxy_connect_lock = thread.allocate_lock()
         self.proxy_connect_lock.acquire(0)
 
@@ -505,7 +521,10 @@ class Proxy(Station):
                 self.halt_check()
                 self._log("opening SSH command line...")
                 self.reader.sendline()
-                self.reader.send("~C")
+                escape = ""
+                for i in range(0, depth):
+                    escape += '~'
+                self.reader.send(escape + "C")
                 try:
                     self.reader.expect("ssh>", timeout=10)
                 except Exception, e:

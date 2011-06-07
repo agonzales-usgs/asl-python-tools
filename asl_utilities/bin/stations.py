@@ -2,7 +2,7 @@
 """-
 Checks work without issues on stations that don't require any
 access to the DA. Luckily this is the majority of our stations,
-and includes all those with bad comlinks.
+and includes all those with bad comm-links.
 
 The next order of business is keep a information base where station
 information is stored. This should be encrypted where possible. Aespipe
@@ -70,101 +70,44 @@ class ExLoopDone(ExceptionLoop):
     """raised when all checks are complete"""
 
 
-class StationThread:
-    def __init__(self, action):
-        self.station = None
-        self.thread  = None
-        self.start_time = None
+class Manager:
+    def __init__(self, action, stop_queue):
         self.action = action
+        self.stop_queue = stop_queue
 
-        self.thread_lock = thread.allocate_lock()
-        self.station_info = None
-
-    def start(self):
-        if not self.station:
-            raise Exception, "StationThread::start() empty station object"
-        if not self.thread_lock.acquire(0):
-            return 0
-        self.thread = threading.Thread(None, self.station.run, args=[self.action])
-        self.thread.start()
-        self.start_time = time.mktime( time.gmtime() )
-        return 1
-
-    def stop(self):
-        #self.thread.terminate()
-        self.station.halt()
-        # XXX: This join() may be a bad idea as it could lockup the thread.
-        #      Then again, we already have trouble with lockups.
-        self.thread.join()
-        self.thread_lock.release()
-
-    def is_done(self):
-        alive = False
-        try:
-            alive = self.thread.is_alive()
-        except:
-            alive = self.thread.isAlive()
-        return not alive
-
-    def set_info(self, station_info):
-        self.station_info = station_info
-    def get_info(self, station_info):
-        return self.station_info
-        
-    def set_station(self, station):
-        self.station = station
-    def get_station(self):
-        return self.station
-
-
-class StationLoop:
-    def __init__(self, action, max_threads=10):
-        self.socks             = [] # list of socks proxies to setup
-        self.proxies           = [] # list of proxies needed by some stations
-        self.stations          = [] # initial list of stations
-        self.stations_retry    = [] # checks failed, try again
-        self.stations_complete = [] # checks succeeded, done
-        self.stations_expired  = [] # tried max number of times allowed
-        self.stations_partial  = [] # stations that are missing information
-        self.action = action
+        self.stations = {} # dictionary of station info
+        self.proxies  = {} # dictionary of proxy info
+        self.groups   = {} # dictionary of group info
+        self.groups['NONE'] = {
+            'name'   : 'NONE',
+            'type'   : 'Group',
+            'threas' : '10',
+        }
 
         self.output_directory = ""
-
-        self.thread_count = 0
-        self.max_threads  = max_threads
-        self.thread_ttl   = 7200 # Should not take more than 2 hours
-        self.threads      = []
-
         self.types        = None
         self.selection    = None
         self.exclusion    = None
-        self.station_file = ""
-        self.station_file_encrypted = False
-        self.poll_interval = 0.10 # seconds
-        self.poller = Interval(self.poll_interval, self.poll)
 
-        self.poll_lock = thread.allocate_lock()
-        self.done = False
         self.continuity_only = False
         self.versions_only = False
+
+        self.station_file = ""
+        self.station_file_encrypted = False
 
         self.version_logger = Logger(prefix='deviations_')
         self.version_queue  = Queue.Queue()
         self.version_thread = None
         self.version_files  = []
 
-        self.socks_queue    = Queue.Queue()
-        self.socks_logger   = Logger(prefix="socks_proxies_")
-        self.socks_threads  = []
+        self.loops = []
+        self.queue = Queue.Queue()
 
-    def is_done(self):
-        return self.done
 
-    def set_selection(self, list):
-        self.selection = list
-
-    def set_exclusion(self, list):
-        self.exclusion = list
+# ===== Mutators =====
+    def set_file(self, name, encrypted=False):
+        self.station_file = name
+        self.station_file_encrypted = encrypted
 
     def set_continuity_only(self, only=True):
         self.continuity_only = only
@@ -172,17 +115,153 @@ class StationLoop:
     def set_versions_only(self, only=True):
         self.versions_only = only
 
+    def set_selection(self, list):
+        self.selection = list
+
+    def set_exclusion(self, list):
+        self.exclusion = list
+
     def set_types(self, list):
         self.types = list
 
-    def set_file(self, name, encrypted=False):
-        self.station_file = name
-        self.station_file_encrypted = encrypted
 
-    def set_dir(self, directory):
-        self.station_dir = directory
+# ===== Entry Point =====
+    def start(self):
+        self.init_dir()
+        self.parse_configuration()
+        self.read_version_file()
+        self.start_threads()
 
-    # create the archive directory if it does not exist
+        station_groups = {}
+
+        group_names = self.groups.keys()
+        if self.group_selection is not None:
+            group_names = self.group_selection
+
+        for station in self.stations.keys():
+            group = 'NONE'
+            if self.stations[station].has_key('group'):
+                group = self.stations['group']
+            add_station = True
+            if (self.group_selection != None) and (group not in group_names):
+                add_station = False
+            if add_station
+                if not station_groups.has_key(group):
+                    station_groups[group] = []
+                station_groups[group].append(station)
+        
+        for group in group_names:
+            max_threads = self.max_threads
+            if self.groups[group].has_key('threads'):
+                max_threads = int(self.groups[group]['threads'])
+            loop = ThreadLoop(self, group, self.action, station_groups[group] max_threads, self.version_queue)
+            loop.set_version_queue()
+            loop.start()
+            self.loops.append(loop)
+
+        while len(self.loops):
+            message,loop = self.queue.get()
+            if message == 'DONE':
+                self.loops.remove(loop)
+            # else: self._log(message, loop.group)
+
+        self.stop_queue.put('DONE')
+
+# ===== Long Running Threads =====
+    def start_threads(self):
+        self.version_thread = threading.Thread(target=self._version_log_thread)
+        self.version_thread.start()
+
+    def stop_threads(self):
+        self.version_queue.put('HALT')
+        self.version_thread.join()
+
+    def _version_log_thread(self):
+        run = True
+        while run:
+            message = self.version_queue.get()
+            if message == 'HALT':
+                run = False
+            else:
+                parts = message.split(':', 1)
+                if (len(parts) == 2) and (4 < len(parts[0]) < 9):
+                    self.version_logger.set_log_note(parts[0])
+                    self.version_logger.log(parts[1])
+                else:
+                    self.version_logger.set_log_note("")
+                    self.version_logger.log(parts[0])
+
+# ===== Read in the contents of the version file =====
+    def read_version_file(self):
+        version_file = './software_versions'
+        if os.path.exists(version_file) and os.path.isfile(version_file):
+            fh = open(version_file, 'r')
+            for line in fh.readlines():
+                parts = line.split('#', 1)[0].split()
+                if len(parts) > 1:
+                    hash = parts[0]
+                    file = parts[1]
+                    self.version_files.append((file, hash))
+
+# ===== Parse the configuration file =====
+    def parse_configuration(self):
+        """
+           Build a data structure of the stations listed in a file:
+           stations = [station1, station2, ..., stationN]
+           station  = [property1, property2, ..., propertyN]
+           property = [name, value]
+              name in [name, type, address, username, password, netserv, server, port, proxy]
+        """
+        Permissions("EEIEEIEII", 1).process([self.station_file])
+
+        lines = ""
+        if self.station_file_encrypted:
+            aes = Crypt.Crypt(asl.aescrypt_bin)
+            aes.log_to_screen(False)
+            aes.log_to_file(False)
+            aes.set_mode(Crypt.DECRYPT)
+            # TODO: Add option to read password from a file
+            aes.get_password()
+            lines = aes.crypt_data(src_file=self.station_file)
+        else:
+            fh = open( self.station_file, "r" )
+            if not fh:
+                raise Exception, "%s::open() could not open file: %s" % (self.__class__.__name__, station_file)
+            lines = "".join(fh.readlines())
+            fh.close()
+
+        reg_stations   = re.compile('<\s*((\s*\[[^\]]+\]\s*)+)\s*>')
+        reg_properties = re.compile('\[([^:]+)[:]([^\]]+)\]')
+
+        matches = reg_stations.findall(lines)
+        for match in matches:
+            station = reg_properties.findall(match[0])
+            if station:
+                info = {}
+                # Populate this pseudo-station's info
+                for pair in station:
+                    info[pair[0]] = pair[1]
+
+                if not info.has_key('name'):
+                    raise Exception("Found a station without a 'name' field")
+
+                # Insert the pseudo-station into the correct category
+                # - Station
+                # - Group (Station Group)
+                # - Proxy (SSH TCP Port Forwarding Tunnel)
+                if info.has_key('type') and (info['type'] == 'Group'):
+                    self.groups[info['name']] = info
+                elif info.has_key('type') and (info['type'] == 'Proxy'):
+                    self.proxies[info['name']] = info
+                elif ((not self.selection) or (self.selection.count(info['name']))) and \
+                     ((not self.types)     or (self.types.count(info['type'])))     and \
+                     ((not self.exclusion) or (not self.exclusion.count(info['name']))):
+                    if self.stations.has_key(info['name']):
+                        raise Exception("Duplicate station name found '%(name)s'" % info)
+                    self.stations[info['name']] = info
+                    self.stations_fresh.append(info['name'])
+
+# ===== create the archive directory if it does not exist =====
     def init_dir(self):
         self.output_directory = None
         self.version_directory = None
@@ -214,134 +293,45 @@ class StationLoop:
                 raise Exception, "CheckLoop::init_dir() could not create version directory: %s" % self.version_directory
         self.version_logger.set_log_path(self.version_directory)
 
-        self.socks_logger.set_log_path(self.output_directory)
 
-# ===== Long Running Threads =====================================
-    def start_threads(self):
-        self.version_thread = threading.Thread(target=self._version_log_thread)
-        self.version_thread.start()
-        self.proxy_log_thread = threading.Thread(target=self._proxy_log_thread)
-        self.proxy_log_thread.start()
-        self.start_socks_proxies()
+class ThreadLoop:
+    def __init__(self, manager, group, action, station_names, max_threads, version_queue):
+        self.action = action
+        self.manager = manager
+        self.group = group
 
-    def stop_threads(self):
-        self.stop_socks_proxies()
-        self.socks_queue.put(("HALT",))
-        self.proxy_log_thread.join()
-        self.version_queue.put('HALT')
-        self.version_thread.join()
+        self.max_threads  = max_threads
+        self.thread_ttl   = 7200 # Should not take more than 2 hours
+        self.threads      = []
 
-    def start_socks_proxies(self):
-        for proxy_info in self.socks:
-            thread = Proxy(socks_tunnel=True, log_queue=self.socks_queue)
-            self.prep_proxy(thread, proxy_info)
-            thread.start()
-            self.socks_threads.append(thread)
+        # Group based station tracking dictionaries
+        self.stations_fresh    = station_names
+        self.stations_retry    = [] # checks failed, try again
+        self.stations_complete = [] # checks succeeded, done
+        self.stations_expired  = [] # tried max number of times allowed
+        self.stations_partial  = [] # stations that are missing information
 
-    def stop_socks_proxies(self):
-        for thread in self.socks_threads:
-            thread.halt()
-            thread.join()
+        self.poll_interval = 0.10 # seconds
+        self.poller = Interval(self.poll_interval, self.poll)
 
-    def _version_log_thread(self):
-        run = True
-        while run:
-            message = self.version_queue.get()
-            if message == 'HALT':
-                run = False
-            else:
-                parts = message.split(':', 1)
-                if (len(parts) == 2) and (4 < len(parts[0]) < 9):
-                    self.version_logger.set_log_note(parts[0])
-                    self.version_logger.log(parts[1])
-                else:
-                    self.version_logger.set_log_note("")
-                    self.version_logger.log(parts[0])
+        self.poll_lock = thread.allocate_lock()
+        self.done = False
 
-    def _proxy_log_thread(self):
-        run = True
-        while run:
-            message = self.socks_queue.get()
-            if message[0] == "HALT":
-                run = False
-            else:
-                if len(message) > 2:
-                    self.socks_logger.set_log_note(message[0])
-                    self.socks_logger.log(message[1], message[2])
-                elif len(message) > 1:
-                    self.socks_logger.set_log_note(message[0])
-                    self.socks_logger.log(message[1])
-                else:
-                    self.socks_logger.set_log_note("")
-                    self.socks_logger.log(message[0])
-
-    # Read in the contents of the version file
-    def read_version_file(self):
-        version_file = './software_versions'
-        if os.path.exists(version_file) and os.path.isfile(version_file):
-            fh = open(version_file, 'r')
-            for line in fh.readlines():
-                parts = line.split('#', 1)[0].split()
-                if len(parts) > 1:
-                    hash = parts[0]
-                    file = parts[1]
-                    self.version_files.append((file, hash))
+    def is_done(self):
+        return self.done
 
     # start the loop with the appropriate action
     def start(self):
-        if self.action == 'update':
-            self.start_update()
-        elif self.action == 'check':
-            self.start_check()
-
-    # initialize the update process
-    def start_update(self):
-        self.init_dir()
-        self.parse_configuration()
-        self.start_threads()
         self.poller.start()
 
-    # initialize the check process
-    def start_check(self):
-        self.init_dir()
-        self.parse_configuration()
-        self.read_version_file()
-        self.start_threads()
-        self.poller.start()
-
-    def prep_proxy(self, proxy, info, station=None):
-        if info.has_key('type'):
-            proxy.type = info['type']
-        if info.has_key('station'):
-            proxy.set_name(info['station'])
-        if info.has_key('address'):
-            proxy.set_address(info['address'])
-        if info.has_key('port'):
-            proxy.set_port(info['port'])
-        if info.has_key('username'):
-            proxy.set_username(info['username'])
-        if info.has_key('password'):
-            proxy.set_password(info['password'])
-        if info.has_key('prompt'):
-            proxy.prompt_shell = info['prompt']
-        if info.has_key('local-address'):
-            proxy.local_address = info['local-address']
-        else:
-            proxy.local_address = "127.0.0.1"
-        if info.has_key('local-port'):
-            proxy.local_port = info['local-port']
-        if info.has_key('socks-port'):
-            proxy.socks_port = info['socks-port']
-        if station is not None:
-            proxy.station_address = station.address
-            proxy.station_port = station.port
-        proxy.info=info
-
+# ===== Preparation methods =====
     def prep_station(self, station, info):
         if info.has_key('type'):
             station.type = info['type']
-        if info.has_key('station'):
-            station.set_name(info['station'])
+        if info.has_key('name'):
+            station.set_name(info['name'])
+        if info.has_key('group'):
+            station.set_group(info['group'])
         if info.has_key('address'):
             station.set_address(info['address'])
         if info.has_key('port'):
@@ -361,6 +351,73 @@ class StationLoop:
             for item in list:
                 station.add_server_log(item)
         station.info = info
+
+    def prep_proxy(self, proxy, info, station=None):
+        if info.has_key('type'):
+            proxy.type = info['type']
+        if info.has_key('name'):
+            proxy.set_name(info['name'])
+        if info.has_key('address'):
+            proxy.set_address(info['address'])
+        if info.has_key('port'):
+            proxy.set_port(info['port'])
+        if info.has_key('username'):
+            proxy.set_username(info['username'])
+        if info.has_key('password'):
+            proxy.set_password(info['password'])
+        if info.has_key('prompt'):
+            proxy.prompt_shell = info['prompt']
+        if info.has_key('local-address'):
+            proxy.local_address = info['local-address']
+        else:
+            proxy.local_address = "127.0.0.1"
+        if info.has_key('local-port'):
+            proxy.local_port = info['local-port']
+        if station is not None:
+            proxy.station_address = station.address
+            proxy.station_port = station.port
+        proxy.info=info
+
+
+  # Recursively determines a station's proxy chain
+    def find_proxies(self, station, station_info):
+        if station_info.has_key('proxy'):
+            if self.proxies.has_key(station_info['proxy']):
+                station.proxy = Proxy()
+                station.proxy_info = self.proxies[station_info['proxy']]
+                self.prep_proxy(station.proxy, station.proxy_info, station)
+                # Look for any proxy upon which this proxy depends (nested proxy support)
+                self.find_proxies(station.proxy, station.proxy_info)
+            else:
+                raise Exception("Could not locate proxy '%(proxy)s' associated with station '%(name)s'" % station_info)
+
+  # Recursively starts a station's proxy chain
+    def start_proxies(self, station, dir, depth=[1]):
+        if station.proxy is not None:
+            # The depth logic can be a little confusing. We need this in order
+            # to track how many ~ characters are required in order to reach
+            # the SSH shell from this level. By passing a list, we can modify
+            # its contents before returning control to our parent, thereby
+            # giving increment control to the child. This ensures that the
+            # parent proxy has a higher depth value than its child proxy, and
+            # on down the chain. The parents is dependent on the child proxy
+            # to establish the next portion of the path before it can connect.
+            # We connect the child proxy before calling this proxy's start
+            # method to ensure that the threads all begin in the correct order.
+            proxy = station.proxy
+            proxy.log_file_name(dir + '/proxy.log')
+            proxy.log_to_file()
+            proxy.log_to_screen()
+            proxy.set_output_directory(self.output_directory + '/' + staiton.name)
+            self.start_proxies(proxy, dir, depth)
+            proxy.depth = depth
+            depth[0] = depth[0] + 1
+            station._log("Starting proxy thread...")
+            proxy.start()
+
+    def summarize(self):
+        # build a summary
+        print "All checks completed."
 
     def record(self, station):
         if not station:
@@ -422,18 +479,18 @@ class StationLoop:
                         if self.action == 'check':
                             self.record(station)
                     self.threads.remove(station)
-                    if (station.proxy is not None) and (not station.proxy.is_done()):
-                        station.proxy.halt()
-                        station.proxy.join()
+                    self.stations_complete.append(station.name)
 
             # check for failed threads
             while len(self.threads) < self.max_threads:
                 # check for stations in original list
-                if len(self.stations):
-                    station_info = self.stations.pop(0)
+                if len(self.stations_fresh):
+                    station_key = self.stations_fresh.pop(0)
+                    station_info = self.manager.stations[station_key]
                 # once the original list is exhausted, check for retry stations
                 elif len(self.stations_retry):
-                    station_info = self.stations_retry.pop(0)
+                    station_key = self.stations_retry.pop(0)
+                    station_info = self.manager.stations[station_key]
                 # if there are no threads remaining all stations have been checked
                 elif not len(self.threads):
                     self.summarize()
@@ -513,16 +570,9 @@ class StationLoop:
                     station.set_output_directory(self.output_directory + '/' + station.name)
 
                     if not station.min_info():
-                        self.stations_partial.append(station_info)
+                        self.stations_partial.append(station.name)
 
-                    if station.proxy is not None:
-                        proxy = station.proxy
-                        proxy.log_file_name(dir + '/proxy.log')
-                        proxy.log_to_file()
-                        proxy.log_to_screen()
-                        proxy.set_output_directory(self.output_directory + '/' + station.name)
-                        station._log("Starting proxy thread...")
-                        proxy.start()
+                    self.start_proxies(station, dir)
                     station._log("Starting station thread...")
                     station.start()
                     self.threads.append(station)
@@ -539,93 +589,24 @@ class StationLoop:
             traceback.print_tb(trace)
 
         self.poll_lock.release()
+        self.manager.queue.put(('DONE', self))
 
 
-    def find_proxies(self, station, station_info):
-        if station_info.has_key('proxy'):
-            for proxy_info in self.proxies:
-                if proxy_info.has_key('station') and (proxy_info['station'] == station_info['proxy']):
-                    if proxy_info['type'] == 'Proxy':
-                        proxy = Proxy()
-                    else:
-                        raise ExProxyTypeNotRecognized, "Proxy type '%(type)s' not recognized" % proxy_info
-                    self.prep_proxy(proxy, proxy_info, station)
-                    station.proxy = proxy
-                    station.proxy_info = proxy_info
-
-                    # At this time we are not allowing nested proxies
-                    # In order to do so, we will need to modify the actual SSH
-                    # connect command rather than setting up the tunnel after
-                    # the connection has been made. We do not have a need for this
-                    # so far.
-                    #self.find_proxies(proxy, proxy_info)
-
-    def summarize(self):
-        # build a summary
-        print "All checks completed."
-
-    def parse_configuration(self):
-        """-
-           Build a data structure of the stations listed in a file:
-           stations = [station1, station2, ..., stationN]
-           station  = [property1, property2, ..., propertyN]
-           property = [name, value]
-              name in [station, type, address, username, password, netserv, server, port, socks-port]
-        -"""
-        Permissions("EEIEEIEII", 1).process([self.station_file])
-
-        lines = ""
-        if self.station_file_encrypted:
-            aes = Crypt.Crypt(asl.aescrypt_bin)
-            aes.log_to_screen(False)
-            aes.log_to_file(False)
-            aes.set_mode(Crypt.DECRYPT)
-            aes.get_password()
-            lines = aes.crypt_data(src_file=self.station_file)
-        else:
-            fh = open( self.station_file, "r" )
-            if not fh:
-                raise Exception, "%s::open() could not open file: %s" % (self.__class__.__name__, station_file)
-            lines = "".join(fh.readlines())
-            fh.close()
-
-        reg_stations   = re.compile('<\s*((\s*\[[^>\]]+\]\s*)+)\s*>')
-        reg_properties = re.compile('\[([^:]+)[:]([^\]]+)\]')
-
-        matches = reg_stations.findall(lines)
-        for match in matches:
-            station = reg_properties.findall(match[0])
-            if station:
-                dict = {}
-                for pair in station:
-                    dict[pair[0]] = pair[1]
-                if ((not self.selection) or (self.selection.count(dict['station']))) and ((not self.types) or (self.types.count(dict['type']))) and ((not self.exclusion) or (not self.exclusion.count(dict['station']))):
-                    self.stations.append(dict)
-                elif dict.has_key('type') and (dict['type'] in ['Proxy']):
-                    self.proxies.append(dict)
-                elif dict.has_key('type') and (dict['type'] in ['Socks']):
-                    self.socks.append(dict)
-
-
+# === Main Class /*{{{*/
 class Main:
     def __init__(self):
         option_list = []
-        option_list.append(optparse.make_option("-a", "--address", dest="address", action="store", help="station IP address"))
         option_list.append(optparse.make_option("-c", "--comm-application", dest="comm_app", action="store", help="path to application for connection to station"))
         option_list.append(optparse.make_option("-d", "--diskloop-continuity-only", dest="dco", action="store_true", help="check diskloop continuity, then exit"))
         option_list.append(optparse.make_option("-e", "--encrypted", dest="encrypted", action="store_true", help="station file contents are encrypted"))
-        option_list.append(optparse.make_option("-x", "--exclude", dest="exclusion", action="store", help="comma seperated list of stations names to exclude"))
-        option_list.append(optparse.make_option("-f", "--file", dest="file", action="store", help="get station information from this file"))
-        option_list.append(optparse.make_option("-n", "--name", dest="name", action="store", help="station name"))
-        option_list.append(optparse.make_option("-P", "--port", dest="port", action="store", type="int", help="station connect port"))
-        option_list.append(optparse.make_option("-p", "--password", dest="password", action="store", help="station login password"))
-        option_list.append(optparse.make_option("-s", "--select", dest="selection", action="store", help="comma seperated list of stations names to check"))
-        option_list.append(optparse.make_option("-T", "--thread-count", dest="thread_count", type="int", action="store", help="maximum number of simulatneous connection threads"))
-        option_list.append(optparse.make_option("-t", "--type", dest="type", action="store", help="comma seperated list of station types to check"))
-        option_list.append(optparse.make_option("-u", "--username", dest="username", action="store", help="station login username"))
+        option_list.append(optparse.make_option("-g", "--groups", dest="groups", action="store", help="comma seperated list of groups to check/update"))
+        option_list.append(optparse.make_option("-s", "--select", dest="selection", action="store", help="comma seperated list of stations names to check/update"))
+        option_list.append(optparse.make_option("-T", "--thread-count", dest="max_threads", type="int", action="store", help="maximum number of simulatneous connection threads"))
+        option_list.append(optparse.make_option("-t", "--type", dest="type", action="store", help="comma seperated list of station types to check/update"))
         option_list.append(optparse.make_option("-v", "--software-versions-only", dest="svo", action="store_true", help="check software versions, then exit"))
+        option_list.append(optparse.make_option("-x", "--exclude", dest="exclusion", action="store", help="comma seperated list of stations names to exclude from checks/updates"))
         self.parser = optparse.OptionParser(option_list=option_list)
-        self.parser.set_usage("""Usage: %s [options] <action>
+        self.parser.set_usage("""Usage: %s [options] <stations_file> <action>
 
 action: 
   update - update station software 
@@ -640,83 +621,50 @@ action:
     def start(self):
         options, args = self.parser.parse_args()
 
-        arg_address     = options.address
         arg_location    = options.comm_app
         arg_continuity  = options.dco
         arg_encrypted   = options.encrypted
         arg_exclude     = options.exclusion
-        arg_file        = options.file
-        arg_name        = options.name
-        arg_port        = options.port
-        arg_password    = options.password
         arg_select      = options.selection
-        arg_threads     = options.thread_count
+        arg_group_selection = options.groups
+        arg_threads     = options.max_threads
         arg_type        = options.type
-        arg_username    = options.username
         arg_versions    = options.svo
 
-        if len(args) < 1:
+        if len(args) != 2:
             self.usage()
-        if len(args) > 1:
-            self.usage()
-        arg_action = args[0]
+
+        arg_file = args[0]
+        arg_action = args[1]
         if arg_action not in ('check', 'update'):
             self.usage("Un-recognized action '%s'" % arg_action)
 
-        if arg_file:
-            thread_count = 10
-            if arg_threads:
-                thread_count = arg_threads
-            loop = StationLoop(arg_action, thread_count)
-            loop.set_file(arg_file, arg_encrypted)
-            if (arg_select):
-                loop.set_selection(arg_select.split(','))
-            if (arg_type):
-                loop.set_types(arg_type.split(','))
-            if arg_continuity and arg_versions:
-                print "Cannot select options -d and -v simultaneously"
-                self.parser.print_help()
-                sys.exit(1)
-            if arg_exclude:
-                loop.set_exclusion(arg_exclude.split(','))
-            if arg_action == 'check':
-                loop.set_continuity_only(arg_continuity)
-                loop.set_versions_only(arg_versions)
-            loop.start()
-            while not loop.is_done():
-                time.sleep(1)
-            loop.stop_threads()
+      # Perform Action
+        max_threads = 10
+        if arg_threads:
+            max_threads = arg_threads
+        stop_queue = Queue.Queue()
+        manager = Manager(arg_action, stop_queue)
+        manager.set_file(arg_file, arg_encrypted)
+        if (arg_select):
+            manager.set_selection(arg_select.split(','))
+        if (arg_group_selection):
+            manager.set_group_selection(arg_group_selection.split(','))
+        if (arg_type):
+            manager.set_types(arg_type.split(','))
+        if arg_continuity and arg_versions:
+            print "Cannot select options -d and -v simultaneously"
+            self.parser.print_help()
+            sys.exit(1)
+        if arg_exclude:
+            manager.set_exclusion(arg_exclude.split(','))
+        if arg_action == 'check':
+            manager.set_continuity_only(arg_continuity)
+            manager.set_versions_only(arg_versions)
+        manager.start()
+        stop_queue.get()
 
-        else:
-            """Run check on one station only"""
-            # This should be updated to handle Q330s, or be deleted altogether
-            if not arg_name:
-                arg_name = raw_input( "Station Name: " )
-            if not arg_address:
-                arg_address = raw_input( "Host Address: " )
-            if not arg_username:
-                arg_username = raw_input( "Username: " )
-            if not arg_password:
-                arg_password = getpass.getpass( "Password: " )
-
-            station = Station680(arg_action)
-            station.set_name(arg_name)
-            station.set_address(arg_address)
-            station.set_username(arg_username)
-            station.set_password(arg_password)
-            if arg_location:
-                station.set_com_app(arg_location)
-            if arg_port:
-                station.set_port(arg_port)
-            try:
-                station.connect()
-                result = station.run(arg_action)
-                station.disconnect()
-                print station.output
-                print station.log_messages
-                print "Checks complete."
-            except Exception, e:
-                print "Caught exception: " + str(e)
+# === Main Class (END) /*}}}*/
 
 if __name__ == '__main__':
     Main().start()
