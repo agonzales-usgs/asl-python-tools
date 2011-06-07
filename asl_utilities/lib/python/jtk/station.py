@@ -1,8 +1,4 @@
 """
-This module provides automated installation to the Kinemetrics Slate
-at the new Q330 stations.
-"""
-"""
 This module provides automated debugging and software upgrade 
 tools for various stations
 Station680 (Under Development): for debugging our Q680 stations
@@ -17,7 +13,7 @@ Expansion: Eventually I would like to modify this class to provide
 
            Also, instead of pre-defined return types, I intened
            to introduce exceptions to describe the various errors
-           one can run into.
+           one can encounter.
 """
 
 try:
@@ -47,6 +43,7 @@ You will need modules 'pexpect' and 'pxssh'.
 """)
 
 
+# === Exception Classes/*{{{*/
 """Parent of all exception classes in the station module"""
 class ExceptionStation(Exception):
     def __init__(self, value):
@@ -107,9 +104,14 @@ class ExStationDisabled(ExceptionStation):
 class ExProxyTypeNotRecognized(ExceptionStation):
     """Raised when the proxy type is not recognized"""
 
+# === Exception Classes (END)/*}}}*/
+
+# === Station Class/*{{{*/
 class Station(threading.Thread):
-    def __init__(self, action):
-        threading.Thread.__init__(self)
+    def __init__(self, name, action, loop_queue=None):
+        threading.Thread.__init__(self, name=name)
+
+        self.loop_queue = loop_queue
 
         # timeouts
         self.spawn_timeout    = 5
@@ -122,9 +124,9 @@ class Station(threading.Thread):
 
         self.start_time = None
 
+        self.name     = name
         self.type     = None
         self.group    = None
-        self.name     = None
         self.address  = None
         self.port     = None
         self.username = None
@@ -249,10 +251,18 @@ class Station(threading.Thread):
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
 
-        if self.proxy is not None:
-            self._log("requesting proxy halt")
-            self.proxy.halt()
-            self.proxy.join()
+        try:
+            if self.proxy is not None:
+                self._log("requesting proxy halt")
+                self.proxy.halt()
+                self.proxy.join()
+        except Exception, e:
+            self._log( "Station::run() caught exception: %s" % str(e), "error" )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
+
+        if self.loop_queue is not None:
+            self.loop_queue.put(('DONE', self))
 
     def run_check(self):
         self.ready()
@@ -395,7 +405,7 @@ class Station(threading.Thread):
         try:
             self.reader.sendline( "logout" )
             self.reader.expect( pexpect.EOF, timeout=self.comm_timeout )
-            self._log( "closing telnet" )
+            self._log( "closing telnet connection..." )
         except Exception, e:
             #self._log( "Station::telnet_disconnect() caught exception while trying to close telnet connection: %s" % e.__str__() )
             raise ExDisconnectFailed, "Disconnect Failed: " % str(e)
@@ -409,15 +419,6 @@ class Station(threading.Thread):
             raise ExLaunchFailed, "Failed to spawn ssh process"
 
         try:
-            # This didn't work for some reason. Probaby best to just leave it alone anyway...
-            #prompt = ""
-            #if self.prompt_shell is None:
-            #    name = self.name
-            #    if name[2] == '_':
-            #        name = self.name[3:]
-            #    prompt = "\[" + self.username + "[@]" + self.name[3:] + "[:][~]\][$]"
-            #else:
-            #    prompt = self.prompt_shell
             prompt = "[$>]"
             if self.prompt_shell is not None:
                 prompt = self.prompt_shell
@@ -427,7 +428,7 @@ class Station(threading.Thread):
             print "username:", self.username
             print "password: *** [%d]" % len(self.password)
             print "prompt:  ", prompt
-            self.reader.login( self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port )
+            self.reader.login(self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port, quiet=False)
         except Exception, e:
             self._log( "exception details: %s" % str(e) )
             (ex_f, ex_s, trace) = sys.exc_info()
@@ -436,15 +437,17 @@ class Station(threading.Thread):
 
     def ssh_disconnect(self):
         try:
-            self._log( "closing ssh connection" )
+            self._log( "closing ssh connection..." )
             self.reader.logout()
         except Exception, e:
             #self._log( "Station::ssh_disconnect() caught exception while trying to close ssh connection: %s" % e.__str__(), "error" )
             raise ExDisconnectFailed, "Disconnect Failed: %s" % str(e)
+# === Station Class (END)/*}}}*/
 
+# === Proxy Class/*{{{*/
 class Proxy(Station):
-    def __init__(self, socks_tunnel=False, log_queue=None):
-        Station.__init__(self, 'proxy')
+    def __init__(self, name, socks_tunnel=False, log_queue=None):
+        Station.__init__(self, name, 'proxy')
 
         self.depth = 1
 
@@ -522,7 +525,7 @@ class Proxy(Station):
                 self._log("opening SSH command line...")
                 self.reader.sendline()
                 escape = ""
-                for i in range(0, depth):
+                for i in range(0, self.depth):
                     escape += '~'
                 self.reader.send(escape + "C")
                 try:
@@ -611,10 +614,12 @@ class Proxy(Station):
 
     def check(self):
         pass
+# === Proxy Class (END)/*}}}*/
 
+# === Station680 Class/*{{{*/
 class Station680(Station):
-    def __init__(self, action):
-        Station.__init__(self, action)
+    def __init__(self, name, action, loop_queue):
+        Station.__init__(self, name, action, loop_queue)
 
         self.netservs = []
         self.servers  = []
@@ -1041,6 +1046,9 @@ class Station680(Station):
             s_summary = "[%s]%s: DP running %d days.%s\n\n" % (s_type, s_name, s_uptime, outage_string)
         self.summary = "%s%s" % (s_summary, self.summary)
 
+# === Station680 Class (END)/*}}}*/
+
+# === Station330 Class/*{{{*/
 """-
 Evaluate health of a Q330 based station
     If we could not login due to receiving an unexpected
@@ -1048,8 +1056,8 @@ Evaluate health of a Q330 based station
     the caller can log the issue.
 -"""
 class Station330(Station):
-    def __init__(self, action, legacy=False, continuity_only=False, versions_only=False):
-        Station.__init__(self, action)
+    def __init__(self, name, action, loop_queue, legacy=False, continuity_only=False, versions_only=False):
+        Station.__init__(self, name, action, loop_queue)
 
         self.prompt_pass = ""
         self.protocol = "ssh"
@@ -1569,6 +1577,9 @@ class Station330(Station):
             fh.flush()
             fh.close()
 
+# === Station330 Class (END)/*}}}*/
+
+# === StationBaler Class/*{{{*/
 """Evaluate health of a Baler"""
 class StationBaler(Station):
     def __init__(self, action):
@@ -1602,7 +1613,9 @@ class StationBaler(Station):
 
         pexpect.run( action_str )
 
+# === StationBaler Class (END)/*}}}*/
 
+# === Helper Functions/*{{{*/
 def time_cmp(a, b):
     s,t = time_diff(a, b)
     if s:
@@ -1642,4 +1655,6 @@ def inc_tmsec(date_string):
         #utime = utime - 3600
         dtime = time.localtime(utime)
     return "%s.%04d" % (time.strftime("%Y,%j,%H:%M:%S", dtime), tmsec)
+
+# === Helper Functions (END)/*}}}*/
 

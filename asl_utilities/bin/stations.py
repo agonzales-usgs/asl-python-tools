@@ -34,7 +34,6 @@ import traceback
 from jtk import pexpect      # expect lib
 from jtk import Crypt        # wrapper for aescrypt
 
-from jtk.Interval import Interval # time based poller
 from jtk.Logger import Logger     # logging mechanism
 from jtk.permissions import Permissions # UNIX permissions
 from jtk.station import Station680 # for diagnosing Q680 systems
@@ -48,6 +47,7 @@ from jtk.station import ExStationNotSupported
 from jtk.station import ExStationDisabled
 
 
+# === Exception Classes /*{{{*/
 class ExceptionLoop(Exception):
     def __init__(self, value):
         self.value = value
@@ -68,12 +68,14 @@ class ExceptionLoop(Exception):
 
 class ExLoopDone(ExceptionLoop):
     """raised when all checks are complete"""
+# === Exception Classes (END) /*}}}*/
 
-
+# === Manager Class /*{{{*/
 class Manager:
-    def __init__(self, action, stop_queue):
+    def __init__(self, action, stop_queue, max_threads=10):
         self.action = action
         self.stop_queue = stop_queue
+        self.max_threads = max_threads
 
         self.stations = {} # dictionary of station info
         self.proxies  = {} # dictionary of proxy info
@@ -84,10 +86,11 @@ class Manager:
             'threas' : '10',
         }
 
-        self.output_directory = ""
+        self.output_directory = "."
         self.types        = None
         self.selection    = None
         self.exclusion    = None
+        self.group_selection = None
 
         self.continuity_only = False
         self.versions_only = False
@@ -118,6 +121,9 @@ class Manager:
     def set_selection(self, list):
         self.selection = list
 
+    def set_group_selection(self, list):
+        self.group_selection = list
+
     def set_exclusion(self, list):
         self.exclusion = list
 
@@ -127,49 +133,60 @@ class Manager:
 
 # ===== Entry Point =====
     def start(self):
-        self.init_dir()
-        self.parse_configuration()
-        self.read_version_file()
-        self.start_threads()
+        try:
+            self.init_dir()
+            self.parse_configuration()
+            self.read_version_file()
+            self.start_threads()
 
-        station_groups = {}
+            station_groups = {}
 
-        group_names = self.groups.keys()
-        if self.group_selection is not None:
-            group_names = self.group_selection
+            group_names = self.groups.keys()
+            if self.group_selection is not None:
+                group_names = self.group_selection
 
-        for station in self.stations.keys():
-            group = 'NONE'
-            if self.stations[station].has_key('group'):
-                group = self.stations['group']
-            add_station = True
-            if (self.group_selection != None) and (group not in group_names):
-                add_station = False
-            if add_station
-                if not station_groups.has_key(group):
-                    station_groups[group] = []
-                station_groups[group].append(station)
-        
-        for group in group_names:
-            max_threads = self.max_threads
-            if self.groups[group].has_key('threads'):
-                max_threads = int(self.groups[group]['threads'])
-            loop = ThreadLoop(self, group, self.action, station_groups[group] max_threads, self.version_queue)
-            loop.set_version_queue()
-            loop.start()
-            self.loops.append(loop)
+            for station in self.stations.keys():
+                group = 'NONE'
+                if self.stations[station].has_key('group'):
+                    group = self.stations[station]['group']
+                add_station = True
+                if (self.group_selection != None) and (group not in group_names):
+                    add_station = False
+                if add_station:
+                    if not station_groups.has_key(group):
+                        station_groups[group] = []
+                    station_groups[group].append(station)
+            
+            for group in group_names:
+                max_threads = self.max_threads
+                if self.groups[group].has_key('threads'):
+                    max_threads = int(self.groups[group]['threads'])
+                loop = ThreadLoop(self, group, self.action, station_groups[group], max_threads, self.version_queue)
+                loop.set_version_files(self.version_files)
+                loop.set_versions_only(self.versions_only)
+                loop.set_continuity_only(self.continuity_only)
+                loop.set_output_directory(self.output_directory)
+                loop.start()
+                self.loops.append(loop)
 
-        while len(self.loops):
-            message,loop = self.queue.get()
-            if message == 'DONE':
-                self.loops.remove(loop)
-            # else: self._log(message, loop.group)
+            while len(self.loops):
+                message,loop = self.queue.get()
+                if message == 'DONE':
+                    self.loops.remove(loop)
+                    print "Removing loop.", len(self.loops), "loops remaining."
+                # else: self._log(message, loop.group)
+        except Exception, e:
+            print "Exception in :", e
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
 
+        print "All loops complete."
+        self.stop_threads()
         self.stop_queue.put('DONE')
 
 # ===== Long Running Threads =====
     def start_threads(self):
-        self.version_thread = threading.Thread(target=self._version_log_thread)
+        self.version_thread = threading.Thread(target=self._version_log_thread, name="VersionLog")
         self.version_thread.start()
 
     def stop_threads(self):
@@ -259,7 +276,7 @@ class Manager:
                     if self.stations.has_key(info['name']):
                         raise Exception("Duplicate station name found '%(name)s'" % info)
                     self.stations[info['name']] = info
-                    self.stations_fresh.append(info['name'])
+                    #self.stations_fresh.append(info['name'])
 
 # ===== create the archive directory if it does not exist =====
     def init_dir(self):
@@ -292,17 +309,27 @@ class Manager:
             except:
                 raise Exception, "CheckLoop::init_dir() could not create version directory: %s" % self.version_directory
         self.version_logger.set_log_path(self.version_directory)
+# === Manager Class (END) /*}}}*/
 
-
-class ThreadLoop:
+# === ThreadLoop Class /*{{{*/
+class ThreadLoop(threading.Thread):
     def __init__(self, manager, group, action, station_names, max_threads, version_queue):
-        self.action = action
+        threading.Thread.__init__(self, name=group)
+
         self.manager = manager
         self.group = group
+        self.action = action
+
+        self.continuity_only = False
+        self.versions_only = False
+        self.version_queue = version_queue
+        self.version_files = []
 
         self.max_threads  = max_threads
         self.thread_ttl   = 7200 # Should not take more than 2 hours
         self.threads      = []
+
+        self.output_directory = '.'
 
         # Group based station tracking dictionaries
         self.stations_fresh    = station_names
@@ -311,18 +338,30 @@ class ThreadLoop:
         self.stations_expired  = [] # tried max number of times allowed
         self.stations_partial  = [] # stations that are missing information
 
-        self.poll_interval = 0.10 # seconds
-        self.poller = Interval(self.poll_interval, self.poll)
-
-        self.poll_lock = thread.allocate_lock()
         self.done = False
+        self.running = False
+
+        self.queue = Queue.Queue()
+
+    def set_output_directory(self, dir):
+        self.output_directory = dir
+
+    def set_version_files(self, files):
+        self.version_files = files
+
+    def set_continuity_only(self, only=True):
+        self.continuity_only = only
+
+    def set_versions_only(self, only=True):
+        self.versions_only = only
 
     def is_done(self):
-        return self.done
-
-    # start the loop with the appropriate action
-    def start(self):
-        self.poller.start()
+        alive = False
+        try:
+            alive = self.is_alive()
+        except:
+            alive = self.isAlive()
+        return not alive
 
 # ===== Preparation methods =====
     def prep_station(self, station, info):
@@ -382,9 +421,9 @@ class ThreadLoop:
   # Recursively determines a station's proxy chain
     def find_proxies(self, station, station_info):
         if station_info.has_key('proxy'):
-            if self.proxies.has_key(station_info['proxy']):
-                station.proxy = Proxy()
-                station.proxy_info = self.proxies[station_info['proxy']]
+            if self.manager.proxies.has_key(station_info['proxy']):
+                station.proxy_info = self.manager.proxies[station_info['proxy']]
+                station.proxy = Proxy(station.proxy_info['name'])
                 self.prep_proxy(station.proxy, station.proxy_info, station)
                 # Look for any proxy upon which this proxy depends (nested proxy support)
                 self.find_proxies(station.proxy, station.proxy_info)
@@ -408,9 +447,9 @@ class ThreadLoop:
             proxy.log_file_name(dir + '/proxy.log')
             proxy.log_to_file()
             proxy.log_to_screen()
-            proxy.set_output_directory(self.output_directory + '/' + staiton.name)
+            proxy.set_output_directory(self.output_directory + '/' + station.name)
             self.start_proxies(proxy, dir, depth)
-            proxy.depth = depth
+            proxy.depth = depth[0]
             depth[0] = depth[0] + 1
             station._log("Starting proxy thread...")
             proxy.start()
@@ -462,13 +501,29 @@ class ThreadLoop:
         except Exception, e:
             station._log("CheckLoop::record() failed to record data to file. Exception: %s" % str(e))
 
+    def run(self):
+        print "[Loop:%s]Start> Starting..." % self.group
+        print "[Loop:%s]Start> action      = %s" % (self.group, self.action)
+        print "[Loop:%s]Start> max threads = %s" % (self.group, str(self.max_threads))
+        print "[Loop:%s]Start> stations    : %s" % (self.group, str(self.stations_fresh))
 
-    def poll(self):
-        if not self.poll_lock.acquire( 0 ):
-            print "%s::poll() could not acquire lock" % self.__class__.__name__
-            return
+        self.running = True
+        while self.running:
+            try:
+                self._poll()
+                message,thread = self.queue.get()
+            except ExLoopDone, e:
+                self.running = False
+                print "All stations processed for group '%s' loop." % self.group
+            except Exception, e:
+                print "%s::poll() caught exception: %s" % (self.__class__.__name__, str(e))
+                (ex_f, ex_s, trace) = sys.exc_info()
+                traceback.print_tb(trace)
 
-        try:
+        self.manager.queue.put(('DONE', self))
+
+
+    def _poll(self):
             # check for completed threads
             for station in self.threads:
                 if not station:
@@ -494,10 +549,10 @@ class ThreadLoop:
                 # if there are no threads remaining all stations have been checked
                 elif not len(self.threads):
                     self.summarize()
-                    self.poller.stop()
                     self.done = True
-                    #self.poll_lock.release()
-                    raise ExLoopDone, "No stations remaining."
+                    self.running = False
+                    self.queue.put(("DONE", None))
+                    raise ExLoopDone("No stations remaining.")
                 else:
                     # This occurs when we have no stations
                     # in either the default or retry queues, and
@@ -507,7 +562,7 @@ class ThreadLoop:
 
                 station = None
                 try:
-                    if ( station_info.has_key('disabled') and (station_info['disabled'] == 'true') ):
+                    if ( station_info.has_key('disabled') and (station_info['disabled'].lower() == 'true') ):
                         raise ExStationDisabled, "Station is disabled"
                     if ( station_info['type'] == 'Q680' ):
                         if self.continuity_only:
@@ -516,14 +571,12 @@ class ThreadLoop:
                             raise Exception("Software version checks, Q680s not supported")
                         if self.action == 'update':
                             raise Exception("Software update, Q680s not supported")
-                        station = Station680(self.action)
-                    elif ( station_info['type'] == 'Q330' ):
-                        station = Station330(self.action, legacy=False, continuity_only=self.continuity_only, versions_only=self.versions_only)
-                        if self.action == 'check':
-                            station.set_version_queue(self.version_queue)
-                            station.set_version_files(self.version_files)
-                    elif ( station_info['type'] == 'Q330C' ):
-                        station = Station330(self.action, legacy=True, continuity_only=self.continuity_only, versions_only=self.versions_only)
+                        station = Station680(station_info['name'], self.action, self.queue)
+                    elif station_info['type'] in ('Q330', 'Q330C'):
+                        legacy = False
+                        if station_info['type'] == 'Q330C':
+                            lagacy = True
+                        station = Station330(station_info['name'], self.action, self.queue, legacy=legacy, continuity_only=self.continuity_only, versions_only=self.versions_only)
                         if self.action == 'check':
                             station.set_version_queue(self.version_queue)
                             station.set_version_files(self.version_files)
@@ -581,16 +634,7 @@ class ThreadLoop:
                         print "%s::poll() failed to create thread. Exception: %s" % (self.__class__.__name__, str(e))
                     else:
                         print "%s::poll() failed to create station object. Exception: %s" % (self.__class__.__name__, str(e))
-        except ExLoopDone, e:
-            print "All stations have been processed"
-        except Exception, e:
-            print "%s::poll() caught exception: %s" % (self.__class__.__name__, str(e))
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-
-        self.poll_lock.release()
-        self.manager.queue.put(('DONE', self))
-
+# ===== ThreadLoop Class (END) /*}}}*/
 
 # === Main Class /*{{{*/
 class Main:
@@ -639,30 +683,43 @@ action:
         if arg_action not in ('check', 'update'):
             self.usage("Un-recognized action '%s'" % arg_action)
 
-      # Perform Action
-        max_threads = 10
-        if arg_threads:
-            max_threads = arg_threads
-        stop_queue = Queue.Queue()
-        manager = Manager(arg_action, stop_queue)
-        manager.set_file(arg_file, arg_encrypted)
-        if (arg_select):
-            manager.set_selection(arg_select.split(','))
-        if (arg_group_selection):
-            manager.set_group_selection(arg_group_selection.split(','))
-        if (arg_type):
-            manager.set_types(arg_type.split(','))
-        if arg_continuity and arg_versions:
-            print "Cannot select options -d and -v simultaneously"
-            self.parser.print_help()
-            sys.exit(1)
-        if arg_exclude:
-            manager.set_exclusion(arg_exclude.split(','))
-        if arg_action == 'check':
-            manager.set_continuity_only(arg_continuity)
-            manager.set_versions_only(arg_versions)
-        manager.start()
-        stop_queue.get()
+        try:
+          # Perform Action
+            max_threads = 10
+            if arg_threads:
+                max_threads = arg_threads
+            stop_queue = Queue.Queue()
+            manager = Manager(arg_action, stop_queue, max_threads)
+            manager.set_file(arg_file, arg_encrypted)
+            if (arg_select):
+                manager.set_selection(arg_select.split(','))
+            if (arg_group_selection):
+                manager.set_group_selection(arg_group_selection.split(','))
+            if (arg_type):
+                manager.set_types(arg_type.split(','))
+            if arg_continuity and arg_versions:
+                print "Cannot select options -d and -v simultaneously"
+                self.parser.print_help()
+                sys.exit(1)
+            if arg_exclude:
+                manager.set_exclusion(arg_exclude.split(','))
+            if arg_action == 'check':
+                manager.set_continuity_only(arg_continuity)
+                manager.set_versions_only(arg_versions)
+            manager.start()
+            stop_queue.get()
+            print "Manager: DONE."
+        except Exception, e:
+            print "Exception:", e
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
+
+        self.thread_summary()
+
+    def thread_summary(self):
+        print "There are", threading.active_count(), "threads running."
+        print "Threads:"
+        print threading.enumerate()
 
 # === Main Class (END) /*}}}*/
 
