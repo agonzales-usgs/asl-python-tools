@@ -124,7 +124,7 @@ class pxssh (spawn):
 
     # JDE:  method to facilitate using comm timeouts rather than sleeps to
     #       perform synchronization
-    def try_read_prompt(self, initial_timeout, micro_timeout, total_timeout):
+    def try_read_prompt(self, initial_timeout, interval_timeout, total_timeout):
         done = False
         prompt = ''
         begin = time.time()
@@ -136,7 +136,7 @@ class pxssh (spawn):
                 c = self.read_nonblocking(size=1, timeout=timeout)
                 prompt  += c # append acquired content
                 expired = time.time() - begin # updated total time expired
-                timeout = micro_timeout # Set time to wait between characters
+                timeout = interval_timeout # Set time to wait between characters
             except TIMEOUT:
                 expired = total_timeout
         return prompt
@@ -153,22 +153,22 @@ class pxssh (spawn):
         # Worst case (with default multiplier) should be 12 seconds in the event
         # that no response is ever received
         initial_timeout = sync_multiplier * 0.5
-        micro_timeout   = sync_multiplier * 0.1
+        interval_timeout   = sync_multiplier * 0.1
         total_timeout   = sync_multiplier * 3
 
         self.sendline()
 
         # GAS: Clear out the cache before getting the prompt
-        self.try_read_prompt(initial_timeout, micro_timeout, total_timeout)
+        self.try_read_prompt(initial_timeout, interval_timeout, total_timeout)
 
         self.sendline()
-        x = self.try_read_prompt(initial_timeout, micro_timeout, total_timeout)
+        x = self.try_read_prompt(initial_timeout, interval_timeout, total_timeout)
 
         self.sendline()
-        a = self.try_read_prompt(initial_timeout, micro_timeout, total_timeout)
+        a = self.try_read_prompt(initial_timeout, interval_timeout, total_timeout)
 
         self.sendline()
-        b = self.try_read_prompt(initial_timeout, micro_timeout, total_timeout)
+        b = self.try_read_prompt(initial_timeout, interval_timeout, total_timeout)
 
         ld = self.levenshtein_distance(a,b)
         len_a = len(a)
