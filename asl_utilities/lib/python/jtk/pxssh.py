@@ -122,36 +122,54 @@ class pxssh (spawn):
                 current[j] = min(add, delete, change)
         return current[n]
 
-    def sync_original_prompt (self):
+    # JDE:  method to facilitate using comm timeouts rather than sleeps to
+    #       perform synchronization
+    def try_read_prompt(self, initial_timeout, micro_timeout, total_timeout):
+        done = False
+        prompt = ''
+        begin = time.time()
+        expired = 0
+        # Set time to wait for the first character
+        timeout = initial_timeout
+        while (not done) and (expired < total_timeout):
+            try:
+                c = self.read_nonblocking(size=1, timeout=timeout)
+                prompt  += c # append acquired content
+                expired = time.time() - begin # updated total time expired
+                timeout = micro_timeout # Set time to wait between characters
+            except TIMEOUT:
+                expired = total_timeout
+        return prompt
+
+    def sync_original_prompt (self, sync_multiplier=1):
 
         """This attempts to find the prompt. Basically, press enter and record
         the response; press enter again and record the response; if the two
         responses are similar then assume we are at the original prompt. This
         is a slow function. It can take over 10 seconds. """
 
-        # All of these timing pace values are magic.
-        # I came up with these based on what seemed reliable for
-        # connecting to a heavily loaded machine I have.
-        self.sendline()
-        time.sleep(0.1)
-        # If latency is worse than these values then this will fail.
+        # Timeouts which can be adjusted by a multiplier supplied by the user
+        # in the event of stations with very poor connections
+        # Worst case (with default multiplier) should be 12 seconds in the event
+        # that no response is ever received
+        initial_timeout = sync_multiplier * 0.5
+        micro_timeout   = sync_multiplier * 0.1
+        total_timeout   = sync_multiplier * 3
 
-        try:
-            self.read_nonblocking(size=10000,timeout=1) # GAS: Clear out the cache before getting the prompt
-        except TIMEOUT:
-            pass
-        time.sleep(0.1)
         self.sendline()
-        time.sleep(0.5)
-        x = self.read_nonblocking(size=1000,timeout=1)
-        time.sleep(0.1)
+
+        # GAS: Clear out the cache before getting the prompt
+        self.try_read_prompt(initial_timeout, micro_timeout, total_timeout)
+
         self.sendline()
-        time.sleep(0.5)
-        a = self.read_nonblocking(size=1000,timeout=1)
-        time.sleep(0.1)
+        x = self.try_read_prompt(initial_timeout, micro_timeout, total_timeout)
+
         self.sendline()
-        time.sleep(0.5)
-        b = self.read_nonblocking(size=1000,timeout=1)
+        a = self.try_read_prompt(initial_timeout, micro_timeout, total_timeout)
+
+        self.sendline()
+        b = self.try_read_prompt(initial_timeout, micro_timeout, total_timeout)
+
         ld = self.levenshtein_distance(a,b)
         len_a = len(a)
         if len_a == 0:
@@ -162,7 +180,7 @@ class pxssh (spawn):
 
     ### TODO: This is getting messy and I'm pretty sure this isn't perfect.
     ### TODO: I need to draw a flow chart for this.
-    def login (self,server,username,password='',terminal_type='ansi',original_prompt=r"[#$]",login_timeout=10,port=None,auto_prompt_reset=True,ssh_key=None,quiet=True):
+    def login (self,server,username,password='',terminal_type='ansi',original_prompt=r"[#$]",login_timeout=10,port=None,auto_prompt_reset=True,ssh_key=None,quiet=True,sync_multiplier=1):
 
         """This logs the user into the given server. It uses the
         'original_prompt' to try to find the prompt right after login. When it
@@ -256,9 +274,13 @@ class pxssh (spawn):
         else: # Unexpected
             self.close()
             raise ExceptionPxssh ('unexpected login response')
-        if not self.sync_original_prompt():
+
+        # TODO: Figure out a better way to do this...
+        #       For now it is breaking connections with any slow stations.
+        if not self.sync_original_prompt(sync_multiplier):
             self.close()
             raise ExceptionPxssh ('could not synchronize with original prompt')
+
         # We appear to be in.
         # set shell prompt to something unique.
         if auto_prompt_reset:

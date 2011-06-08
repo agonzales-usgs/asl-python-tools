@@ -121,6 +121,7 @@ class Station(threading.Thread):
         self.search_timeout   = self.comm_timeout * 2
         self.transfer_timeout = self.comm_timeout * 2
         self.launch_timeout   = self.comm_timeout
+        self.sync_multiplier  = 10  # determines how long pxssh prompt sync should take
 
         self.start_time = None
 
@@ -200,12 +201,12 @@ class Station(threading.Thread):
         return not alive
 
     def run(self):
-        if self.proxy is not None:
-            if self.proxy.wait_for_ready() == False:
-                raise ExConnectFailed("Could not establish proxy connection to '%s' for station '%s' " % (self.proxy.name, self.name))
-            self.start_time = time.mktime( time.gmtime() )
-            self._log("Proxy connection established.")
         try:
+            if self.proxy is not None:
+                if self.proxy.wait_for_ready() == False:
+                    raise ExConnectFailed("Could not establish proxy connection to '%s' for station '%s' " % (self.proxy.name, self.name))
+                self.start_time = time.mktime( time.gmtime() )
+                self._log("Proxy connection established.")
             if self.action == 'check':
                 self.run_check()
             elif self.action == 'update':
@@ -336,11 +337,10 @@ class Station(threading.Thread):
             self._log("updating station with proxy info")
             self.address = self.proxy.local_address
             self.port = self.proxy.local_port
-        self._log("address = %s" % str(self.address))
-        self._log("port    = %s" % str(self.port))
+        self._log("proxy address = %s" % str(self.address))
+        self._log("proxy port    = %s" % str(self.port))
 
     def connect(self):
-        self.ready()
         if self.protocol == "telnet":
             self.telnet_connect()
         elif self.protocol == "ssh":
@@ -419,18 +419,23 @@ class Station(threading.Thread):
             raise ExLaunchFailed, "Failed to spawn ssh process"
 
         try:
-            prompt = "[$>]"
+            prompt = "[$#>]"
+            quiet  = True
+            if self.info['type'] == 'Proxy':
+                prompt = "[$>]"
+                quiet  = False
             if self.prompt_shell is not None:
                 prompt = self.prompt_shell
             self._log( "opening ssh connection" )
-            print "address: ", self.address
-            print "port:    ", self.port
-            print "username:", self.username
-            print "password: *** [%d]" % len(self.password)
-            print "prompt:  ", prompt
-            self.reader.login(self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port, quiet=False)
+            self._log( "address:  %s" % self.address)
+            self._log( "port:     %s" % str(self.port))
+            self._log( "username: %s" % self.username)
+            self._log( "password: *** [%d]" % len(self.password))
+            self._log( "prompt:   %s" % prompt)
+            self.reader.login(self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port, quiet=quiet, sync_multiplier=self.sync_multiplier)
         except Exception, e:
-            self._log( "exception details: %s" % str(e) )
+            self._log("reader.before: %s" % self.reader.before)
+            self._log("exception details: %s" % str(e))
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
             raise ExConnectFailed, "Failed to ssh to station: %s" % str(e)
@@ -442,6 +447,7 @@ class Station(threading.Thread):
         except Exception, e:
             #self._log( "Station::ssh_disconnect() caught exception while trying to close ssh connection: %s" % e.__str__(), "error" )
             raise ExDisconnectFailed, "Disconnect Failed: %s" % str(e)
+
 # === Station Class (END)/*}}}*/
 
 # === Proxy Class/*{{{*/
@@ -523,6 +529,7 @@ class Proxy(Station):
 
                 self.halt_check()
                 self._log("opening SSH command line...")
+
                 self.reader.sendline()
                 escape = ""
                 for i in range(0, self.depth):
@@ -532,6 +539,10 @@ class Proxy(Station):
                     self.reader.expect("ssh>", timeout=10)
                 except Exception, e:
                     self._log("Could not open SSH command interface: %s" % str(e))
+                    response = self.reader.before
+                    caught   = self.reader.after
+                    self._log("  before: %s" % str(response))
+                    self._log("  after:  %s" % str(caught))
                     continue
                 response = self.reader.before
                 caught   = self.reader.after

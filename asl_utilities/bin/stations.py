@@ -231,7 +231,7 @@ class Manager:
         """
         Permissions("EEIEEIEII", 1).process([self.station_file])
 
-        lines = ""
+        config_data = ""
         if self.station_file_encrypted:
             aes = Crypt.Crypt(asl.aescrypt_bin)
             aes.log_to_screen(False)
@@ -239,18 +239,27 @@ class Manager:
             aes.set_mode(Crypt.DECRYPT)
             # TODO: Add option to read password from a file
             aes.get_password()
-            lines = aes.crypt_data(src_file=self.station_file)
+            lines = aes.crypt_data(src_file=self.station_file).split("\n")
         else:
             fh = open( self.station_file, "r" )
             if not fh:
                 raise Exception, "%s::open() could not open file: %s" % (self.__class__.__name__, station_file)
-            lines = "".join(fh.readlines())
+            lines = fh.readlines()
             fh.close()
 
         reg_stations   = re.compile('<\s*((\s*\[[^\]]+\]\s*)+)\s*>')
         reg_properties = re.compile('\[([^:]+)[:]([^\]]+)\]')
 
-        matches = reg_stations.findall(lines)
+        config_lines = []
+        for line in lines:
+            if len(line.lstrip()) < 1:
+                continue
+            if line.lstrip()[0] == '#':
+                continue
+            config_lines.append(line)
+        config_data = "".join(config_lines)
+
+        matches = reg_stations.findall(config_data)
         for match in matches:
             station = reg_properties.findall(match[0])
             if station:
@@ -415,6 +424,7 @@ class ThreadLoop(threading.Thread):
         if station is not None:
             proxy.station_address = station.address
             proxy.station_port = station.port
+            proxy.group = station.group
         proxy.info=info
 
 
@@ -431,7 +441,7 @@ class ThreadLoop(threading.Thread):
                 raise Exception("Could not locate proxy '%(proxy)s' associated with station '%(name)s'" % station_info)
 
   # Recursively starts a station's proxy chain
-    def start_proxies(self, station, dir, depth=[1]):
+    def start_proxies(self, station, dir, depth):
         if station.proxy is not None:
             # The depth logic can be a little confusing. We need this in order
             # to track how many ~ characters are required in order to reach
@@ -441,17 +451,18 @@ class ThreadLoop(threading.Thread):
             # parent proxy has a higher depth value than its child proxy, and
             # on down the chain. The parents is dependent on the child proxy
             # to establish the next portion of the path before it can connect.
-            # We connect the child proxy before calling this proxy's start
-            # method to ensure that the threads all begin in the correct order.
+            # We connect the child proxy before calling the parent proxy's start
+            # method which establishes all connections in the correct order.
             proxy = station.proxy
             proxy.log_file_name(dir + '/proxy.log')
             proxy.log_to_file()
             proxy.log_to_screen()
             proxy.set_output_directory(self.output_directory + '/' + station.name)
+            proxy.logger.set_log_note("%s:%s" % (proxy.name, station.name))
             self.start_proxies(proxy, dir, depth)
             proxy.depth = depth[0]
+            station._log("Starting proxy '%s:%s' thread at depth %d..." % (proxy.name, station.name, depth[0]))
             depth[0] = depth[0] + 1
-            station._log("Starting proxy thread...")
             proxy.start()
 
     def summarize(self):
@@ -530,7 +541,7 @@ class ThreadLoop(threading.Thread):
                     self.threads.remove(station)
                 elif station.is_done():
                     if station:
-                        station._log( "Wrapping up thread (" + str(len(self.threads) - 1) + " threads remaining)" )
+                        station._log( "Wrapping up thread (" + str(len(self.threads) - 1) + " thread(s) remaining)" )
                         if self.action == 'check':
                             self.record(station)
                     self.threads.remove(station)
@@ -625,7 +636,7 @@ class ThreadLoop(threading.Thread):
                     if not station.min_info():
                         self.stations_partial.append(station.name)
 
-                    self.start_proxies(station, dir)
+                    self.start_proxies(station, dir, [1])
                     station._log("Starting station thread...")
                     station.start()
                     self.threads.append(station)
@@ -717,7 +728,7 @@ action:
         self.thread_summary()
 
     def thread_summary(self):
-        print "There are", threading.active_count(), "threads running."
+        print "There are", threading.activeCount(), "threads running."
         print "Threads:"
         print threading.enumerate()
 
