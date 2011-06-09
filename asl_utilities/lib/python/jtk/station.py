@@ -798,7 +798,7 @@ class Station680(Station):
             raise ExceptionStation, "Station680::check() segment selection: "
 
         # Print a list of the instruments for this station
-        self._log( "printing instrument list" )
+        self._log("printing instrument list")
         self.reader.sendline( "r" )
         self.log_messages += self.reader.before
         try:

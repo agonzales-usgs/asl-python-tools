@@ -81,9 +81,9 @@ class Manager:
         self.proxies  = {} # dictionary of proxy info
         self.groups   = {} # dictionary of group info
         self.groups['NONE'] = {
-            'name'   : 'NONE',
-            'type'   : 'Group',
-            'threas' : '10',
+            'name'    : 'NONE',
+            'type'    : 'Group',
+            'threads' : '10',
         }
 
         self.output_directory = "."
@@ -102,6 +102,11 @@ class Manager:
         self.version_queue  = Queue.Queue()
         self.version_thread = None
         self.version_files  = []
+
+        self.logger = Logger(prefix='StationsManager_')
+        self.logger.set_log_to_screen(True)
+        self.logger.set_log_to_file(False)
+        self.logger.set_log_note('Manager')
 
         self.loops = []
         self.queue = Queue.Queue()
@@ -166,6 +171,8 @@ class Manager:
                 loop.set_versions_only(self.versions_only)
                 loop.set_continuity_only(self.continuity_only)
                 loop.set_output_directory(self.output_directory)
+                loop.logger.set_log_note("Loop:%s" % group)
+                self.logger.log("Starting new ThreadLoop for group '%s'" % group)
                 loop.start()
                 self.loops.append(loop)
 
@@ -173,14 +180,14 @@ class Manager:
                 message,loop = self.queue.get()
                 if message == 'DONE':
                     self.loops.remove(loop)
-                    print "Removing loop.", len(self.loops), "loops remaining."
+                    self.logger.log("Removing loop. %d loops remaining." % len(self.loops))
                 # else: self._log(message, loop.group)
         except Exception, e:
-            print "Exception in :", e
+            self.logger.log("Exception in: %s" % str(e))
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
 
-        print "All loops complete."
+        self.logger.log("All loops complete.")
         self.stop_threads()
         self.stop_queue.put('DONE')
 
@@ -352,6 +359,10 @@ class ThreadLoop(threading.Thread):
 
         self.queue = Queue.Queue()
 
+        self.logger = Logger()
+        self.logger.set_log_to_screen(True)
+        self.logger.set_log_to_file(False)
+
     def set_output_directory(self, dir):
         self.output_directory = dir
 
@@ -467,7 +478,7 @@ class ThreadLoop(threading.Thread):
 
     def summarize(self):
         # build a summary
-        print "All checks completed."
+        self.logger.log("All stations have been processed.")
 
     def record(self, station):
         if not station:
@@ -513,10 +524,10 @@ class ThreadLoop(threading.Thread):
             station._log("CheckLoop::record() failed to record data to file. Exception: %s" % str(e))
 
     def run(self):
-        print "[Loop:%s]Start> Starting..." % self.group
-        print "[Loop:%s]Start> action      = %s" % (self.group, self.action)
-        print "[Loop:%s]Start> max threads = %s" % (self.group, str(self.max_threads))
-        print "[Loop:%s]Start> stations    : %s" % (self.group, str(self.stations_fresh))
+        self.logger.log("Start: Starting Loop...")
+        self.logger.log("Start: action      = %s" % self.action)
+        self.logger.log("Start: max threads = %s" % str(self.max_threads))
+        self.logger.log("Start: stations    : %s" % str(self.stations_fresh))
 
         self.running = True
         while self.running:
@@ -525,9 +536,8 @@ class ThreadLoop(threading.Thread):
                 message,thread = self.queue.get()
             except ExLoopDone, e:
                 self.running = False
-                print "All stations processed for group '%s' loop." % self.group
             except Exception, e:
-                print "%s::poll() caught exception: %s" % (self.__class__.__name__, str(e))
+                self.logger.log("%s::poll() caught exception: %s" % (self.__class__.__name__, str(e)))
                 (ex_f, ex_s, trace) = sys.exc_info()
                 traceback.print_tb(trace)
 
@@ -627,7 +637,7 @@ class ThreadLoop(threading.Thread):
                     elif self.action == 'update':
                         file = dir + '/update.log'
 
-                    print "log file: ", file
+                    self.logger.log("log file: %s" % file)
                     station.log_file_name(file)
                     station.log_to_file()
                     station.log_to_screen()
@@ -642,9 +652,9 @@ class ThreadLoop(threading.Thread):
                     self.threads.append(station)
                 except Exception, e:
                     if station:
-                        print "%s::poll() failed to create thread. Exception: %s" % (self.__class__.__name__, str(e))
+                        self.logger.log("%s::poll() failed to create thread. Exception: %s" % (self.__class__.__name__, str(e)))
                     else:
-                        print "%s::poll() failed to create station object. Exception: %s" % (self.__class__.__name__, str(e))
+                        self.logger.log("%s::poll() failed to create station object. Exception: %s" % (self.__class__.__name__, str(e)))
 # ===== ThreadLoop Class (END) /*}}}*/
 
 # === Main Class /*{{{*/
@@ -719,7 +729,7 @@ action:
                 manager.set_versions_only(arg_versions)
             manager.start()
             stop_queue.get()
-            print "Manager: DONE."
+            print "Manager Thread is Done."
         except Exception, e:
             print "Exception:", e
             (ex_f, ex_s, trace) = sys.exc_info()
@@ -728,9 +738,11 @@ action:
         self.thread_summary()
 
     def thread_summary(self):
+        print "===== Thread Info ==========================="
         print "There are", threading.activeCount(), "threads running."
         print "Threads:"
         print threading.enumerate()
+        print "============================================="
 
 # === Main Class (END) /*}}}*/
 

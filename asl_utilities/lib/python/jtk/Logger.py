@@ -50,6 +50,11 @@ class Logger(object):
         screen_fh = sys.stdout
         if self.categories.has_key(cat_key):
             category = self.categories[cat_key]
+        else:
+            try:
+                category = str(cat_key)
+            except:
+                pass
 
         if category == "ERROR":
             screen_fh = sys.stderr
