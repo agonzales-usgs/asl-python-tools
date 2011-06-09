@@ -337,8 +337,8 @@ class Station(threading.Thread):
             self._log("updating station with proxy info")
             self.address = self.proxy.local_address
             self.port = self.proxy.local_port
-        self._log("proxy address = %s" % str(self.address))
-        self._log("proxy port    = %s" % str(self.port))
+            self._log("proxy address = %s" % str(self.address))
+            self._log("proxy port    = %s" % str(self.port))
 
     def connect(self):
         if self.protocol == "telnet":
