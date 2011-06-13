@@ -327,11 +327,11 @@ class Station(threading.Thread):
     def ready(self):
         if self.name == "":
             self.name = "anonamous"
-        if self.address == "":
+        if (self.address is None) or (self.address == ""):
             raise ExIncomplete, "Server address not specified"
-        if self.username == "":
+        if (self.username is None) or (self.username == ""):
             raise ExIncomplete, "Username not specified"
-        if self.password == "":
+        if (self.password is None) or (self.password == ""):
             raise ExIncomplete, "Password not specified"
         if (self.proxy is not None) and (self.proxy.connected):
             self._log("updating station with proxy info")
@@ -375,7 +375,7 @@ class Station(threading.Thread):
         # open telnet connection to station
         server = self.address 
         if ( self.port ):
-            server += " " + self.port
+            server += " " + str(self.port)
         self.reader.sendline( "open " + server )
         try:
             self._log( "opening connection to station" )
@@ -426,12 +426,16 @@ class Station(threading.Thread):
                 quiet  = False
             if self.prompt_shell is not None:
                 prompt = self.prompt_shell
-            self._log( "opening ssh connection" )
-            self._log( "address:  %s" % self.address)
-            self._log( "port:     %s" % str(self.port))
-            self._log( "username: %s" % self.username)
-            self._log( "password: *** [%d]" % len(self.password))
-            self._log( "prompt:   %s" % prompt)
+            self._log("opening ssh connection")
+            self._log("address:  %s" % self.address)
+            self._log("port:     %s" % str(self.port))
+            self._log("username: %s" % self.username)
+            try:
+                pass_len = len(self.password)
+            except:
+                pass_len = 0
+            self._log("password: *** [%d]" % pass_len)
+            self._log("prompt:   %s" % prompt)
             self.reader.login(self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port, quiet=quiet, sync_multiplier=self.sync_multiplier)
         except Exception, e:
             self._log("reader.before: %s" % self.reader.before)

@@ -144,43 +144,51 @@ class Manager:
             self.read_version_file()
             self.start_threads()
 
-            station_groups = {}
-
             group_names = self.groups.keys()
             if self.group_selection is not None:
                 group_names = self.group_selection
 
-            for station in self.stations.keys():
+            station_groups = {}
+            for g in group_names:
+                station_groups[g] = []
+
+            for station_name in self.stations.keys():
                 group = 'NONE'
-                if self.stations[station].has_key('group'):
-                    group = self.stations[station]['group']
+                if self.stations[station_name].has_key('group'):
+                    group = self.stations[station_name]['group']
                 add_station = True
                 if (self.group_selection != None) and (group not in group_names):
                     add_station = False
                 if add_station:
                     if not station_groups.has_key(group):
                         station_groups[group] = []
-                    station_groups[group].append(station)
+                    station_groups[group].append(station_name)
             
+            self.logger.log("Groups: %s" % str(station_groups.keys()))
             for group in group_names:
-                max_threads = self.max_threads
-                if self.groups[group].has_key('threads'):
-                    max_threads = int(self.groups[group]['threads'])
-                loop = ThreadLoop(self, group, self.action, station_groups[group], max_threads, self.version_queue)
-                loop.set_version_files(self.version_files)
-                loop.set_versions_only(self.versions_only)
-                loop.set_continuity_only(self.continuity_only)
-                loop.set_output_directory(self.output_directory)
-                loop.logger.set_log_note("Loop:%s" % group)
-                self.logger.log("Starting new ThreadLoop for group '%s'" % group)
-                loop.start()
-                self.loops.append(loop)
+                try:
+                    max_threads = self.max_threads
+                    if self.groups[group].has_key('threads'):
+                        max_threads = int(self.groups[group]['threads'])
+                    loop = ThreadLoop(self, group, self.action, station_groups[group], max_threads, self.version_queue)
+                    loop.set_version_files(self.version_files)
+                    loop.set_versions_only(self.versions_only)
+                    loop.set_continuity_only(self.continuity_only)
+                    loop.set_output_directory(self.output_directory)
+                    loop.logger.set_log_note("Loop:%s" % group)
+                    self.logger.log("Starting new ThreadLoop for group '%s'" % group)
+                    loop.start()
+                    self.loops.append(loop)
+                except Exception, e:
+                    self.logger.log("Exception while creating Loop:%s: %s" % (group, str(e)))
+                    (ex_f, ex_s, trace) = sys.exc_info()
+                    traceback.print_tb(trace)
 
-            while len(self.loops):
+            while len(self.loops) > 0:
                 message,loop = self.queue.get()
                 if message == 'DONE':
                     self.loops.remove(loop)
-                    self.logger.log("Removing loop. %d loops remaining." % len(self.loops))
+                    self.logger.log("Removing Loop:%s. %d loops remaining." % (str(loop.group), len(self.loops)))
                 # else: self._log(message, loop.group)
         except Exception, e:
             self.logger.log("Exception in: %s" % str(e))
