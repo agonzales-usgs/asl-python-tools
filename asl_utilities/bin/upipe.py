@@ -136,7 +136,7 @@ class PipeBase(asyncore.dispatcher):
         self._connected     = False # True when the connection has been established
         self._disconnecting = False # True when a request has been made to close the connection
 
-        self._master = master # MultiPipe class instance that "owns" this Host
+        self._master = master # MultiPipe class instance that "owns" this Pipe component
 
     def log(self, string, verbosity=1):
         if self._master:
@@ -166,8 +166,6 @@ class PipeBase(asyncore.dispatcher):
         if socket_type not in ('UDP', 'TCP', socket.SOCK_DGRAM, socket.SOCK_STREAM):
             raise ValueError("invalid value for socket_type")
         if type(socket_type) is int:
-            if not socket_type in (socket.SOCK_DGRAM, socket.SOCK_STREAM):
-                raise ValueError("invalid value for socket_type")
             self._socket_type = socket_type
         else:
             if socket_type == 'UDP':
@@ -206,7 +204,7 @@ class PipeBase(asyncore.dispatcher):
     def writable(self):
         self.log("%s buffers %s" % (self.__class__.__name__, str(self._buffers)), 5)
         self.log("%s write_buffer %s" % (self.__class__.__name__, str(self._write_buffer)), 5)
-        self.log("%s address %s" % (self.__class__.__name__, str(self._write_address)), 5)
+        self.log("%s write_address %s" % (self.__class__.__name__, str(self._write_address)), 5)
         return (len(self._buffers) > 0) or (len(self._write_buffer) > 0)
 
     # Check that we are connected before reading
