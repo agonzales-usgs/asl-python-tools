@@ -12,17 +12,10 @@ from jtk import StationDatabase
 class Main:
     def __init__(self):
         option_list = []
-        #option_list.append(optparse.make_option("-A", "--all-types", dest="all_types", action="store_true", help="change file objects of any type (includes devices)"))
-        #option_list.append(optparse.make_option("-d", "--depth", dest="depth", action="store", type="int", help="recurse this many levels (includes current level)"))
-        #option_list.append(optparse.make_option("-D", "--directories-only", dest="directories_only", action="store_true", help="only change permissions on directories"))
-        #option_list.append(optparse.make_option("-F", "--files-only", dest="files_only", action="store_true", help="only change permissions on regular files"))
-        #option_list.append(optparse.make_option("-g", "--group", dest="group", action="store", metavar="control_mask", help="control_mask for the group"))
-        #option_list.append(optparse.make_option("-o", "--other", dest="other", action="store", metavar="control_mask", help="control_mask for all others"))
-        #option_list.append(optparse.make_option("-s", "--smart", dest="smart", action="store_true", help="use smart options (mask 'PIP') for group"))
-        #option_list.append(optparse.make_option("-S", "--smart-all", dest="smart_all", action="store_true", help="use smart options (mask 'PIP') for group and other"))
-        #option_list.append(optparse.make_option("-u", "--user", dest="user", action="store", metavar="control_mask", help="control_mask for the owner"))
         option_list.append(optparse.make_option("-d", dest="database", action="store", help="database file to use for station and channel information"))
+        option_list.append(optparse.make_option("-n", "--networks", dest="networks", action="store", help="comma seperated list of networks to process"))
         option_list.append(optparse.make_option("-p", dest="path", action="store", help="station summary path"))
+        option_list.append(optparse.make_option("-s", "--stations", dest="stations", action="store", help="comma seperated list of stations to process"))
         option_list.append(optparse.make_option("-v", dest="verbosity", action="count", help="specify multiple times to increase verbosity"))
         self.parser = optparse.OptionParser(option_list=option_list)
         self.parser.set_usage("""Usage: %prog [options] [path]""")
@@ -57,6 +50,14 @@ class Main:
             print "Could not open database '%s'" % self.db_file
             sys.exit(1)
 
+        arg_networks = None
+        if self.options.networks:
+            arg_networks = map(lambda n: n.upper(), self.options.stations.split(','))
+
+        arg_stations = None
+        if self.options.stations:
+            arg_stations = map(lambda s: s.upper(), self.options.stations.split(','))
+
         station_groups = []
         station_groups.append(('IMS',  self.db.get_stations_by_subset('CTBTO', False)))
         station_groups.append(('OTHER', self.db.get_stations_by_subset('CTBTO', True)))
@@ -67,6 +68,11 @@ class Main:
         for subset,stations in station_groups:
             oh.write("%s INTERNET STATIONS (%s)\n.\n" % (subset, time.strftime("%Y/%m/%d")))
             for (_,network,station) in stations:
+                if arg_stations and (station.upper() not in arg_stations):
+                    continue
+                if arg_networks and (network.upper() not in arg_networks):
+                    continue
+
                 now = time.gmtime()
                 report_line = ""
                 line_code = ""
@@ -96,38 +102,18 @@ class Main:
                                 report_line += self.q330_summary(file_path, network, station)
                             elif line_code == 'Q680-LOCAL':
                                 report_line = line.split(']', 1)[1]
-                                report_line += self.q330_summary(file_path, network, station)
+                                report_line += self.q680_local_summary(file_path, network, station)
                             elif line_code == 'Q680-REMOTE':
                                 report_line = line.split(']', 1)[1]
-                                report_line += self.q330_summary(file_path, network, station)
+                                report_line += self.q680_remote_summary(file_path, network, station)
                             else:
                                 print "line_code '%s' did not match" % line_code
+                            if len(report_line):
+                                break
                     except OSError, e:
                         print "Exception> %s" % str(e)
 
                     if report_line != '':
-                        expected_channels = self.db.get_channels(network, station)
-                        channels = {}
-                        channel_list = []
-                        for (_,_,location,channel,_) in expected_channels:
-                            key = StationDatabase.create_channel_key(location,channel)
-                            channels[key] = "Not Found"
-
-                        # Parse file for channel information.
-                        if line_code[0:4] == 'Q330':
-                            matches = re.compile("\d+\s+(\w{3}\s+\d{2}:\d{2}\s+(?:\d{1,2}_)?\w{1,3})[.]buf\s*?$").findall(line, re.M)
-                            print "CHANNEL LINES:", matches
-                            for match in matches:
-                                month,day,timestamp,channel = match[0].split() 
-                                l,c = channel.split('_')
-                                channel_list.append((l,c,"OKAY"))
-                        elif line_code[0:4] == 'Q680':
-                            # implement this logic
-                            pass
-                        for location,channel,state in channel_list:
-                            key = StationDatabase.create_channel_key(location,channel)
-                            channels[key] = state
-
                         break
 
                     now = time.gmtime(calendar.timegm(now) - 86400)
@@ -140,27 +126,71 @@ class Main:
         oh.close()
 
     def q330_summary(self, file, network, station):
-        problems = ""
-        self.q330_channels(file, network, station)
-        return problems
-
-    def q680_remote_summary(self, file, network, station):
-        problems = ""
-        self.q680_channels(file, network, station)
+        problems = self.q330_channels(file, network, station)
         return problems
 
     def q680_local_summary(self, file, network, station):
-        problems = ""
-        self.q680_channels(file, network, station)
+        problems = self.q680_channels(file, network, station)
+        return problems
+
+    def q680_remote_summary(self, file, network, station):
+        problems = self.q680_channels(file, network, station)
         return problems
 
     def q680_channels(self, file, network, station):
-        #channels = self.db.get_channels(network=network, station=station)
-        pass
+        result = ""
+        try:
+            channels = self.db.get_channels(network=network, station=station)
+            fh = open(file, 'r')
+            check_summary = file.read()
+            fh.close()
+        except Exception, e:
+            print "%s-%s channel check Exception:" % (network,station), str(e)
+        return result
 
     def q330_channels(self, file, network, station):
-        #channels = self.db.get_channels(network=network, station=station)
-        pass
+        result = ""
+        try:
+            channel_results = []
+            channels = self.db.get_channels(network=network, station=station)
+            fh = open(file, 'r')
+            check_summary = fh.read()
+            fh.close()
+            reg_timestamp = re.compile("Slate Timestamp:\s+(\d+-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})")
+            reg_channels = re.compile("(?:.*?(\w{3})\s+(\d+)\s+(\d+[:]?\d+)\s+(\w+)[.]buf)", re.M | re.S)
+            timestamp_matches = reg_timestamp.search(check_summary)
+            channel_matches = reg_channels.findall(check_summary)
+            if not timestamp_matches:
+                raise Exception("No timestamp match found.")
+            if not channel_matches:
+                raise Exception("No channel matches found.")
+            check_channels = {}
+            for m,d,t,c in channel_matches:
+                check_channels[c] = (m,d,t)
+            slate_timestamp = timestamp_matches.groups()[0]
+
+            for _,_,l,c,_ in channels:
+                key = c
+                if l and len(l):
+                    key = l + "_" + c
+                if not check_channels.has_key(key):
+                    channel_result.append("%s - no buffer" % key)
+                else:
+                    m,d,t = check_channels[key]
+                    time_parts = t.split(':')
+                    if len(time_parts) == 1:
+                        channel_result.append("%s - delayed" % key)
+                    else:
+                        time_slate = calendar.timegm(time.strptime(slate_timestamp, "%Y-%m-%d %H:%M:%S"))
+                        time_channel = calendar.timegm(time.strptime("%s-%s-%s %s" % (time.strftime("%Y"),m,d,t), "%Y-%b-%d %H:%M"))
+                        delay = time_slate - time_channel
+                        if delay > 7200:
+                            channel_results.append("%s - delayed" % (key.replace("_","-"),))
+            if len(channel_results):
+                result = " Delayed Channels: %s." % (", ".join(channel_results),)
+        except Exception, e:
+            print "%s-%s channel check Exception:" % (network,station), str(e)
+        return result
 
     def outage_string(self, outages):
         result_str = ""
