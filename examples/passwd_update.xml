@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<passwd>
+    <host id="CLEAN_SLATE">
+        <address>136.177.121.163</address>
+        <port>22</port>
+        <user>maint</user>
+    </host>
+    <host id="ASPX">
+        <address>136.177.121.170</address>
+        <port>22</port>
+        <user>maint</user>
+    </host>
+</passwd>

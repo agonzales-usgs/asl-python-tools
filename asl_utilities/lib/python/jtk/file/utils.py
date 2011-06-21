@@ -1,5 +1,11 @@
 import os
 
+mode_map = {
+    'r' : os.R_OK,
+    'w' : os.W_OK,
+    'x' : os.X_OK,
+}
+
 def scan_directories(dir_list, depth=1):
     files = []
     for dir in dir_list:
@@ -26,4 +32,16 @@ def dir_from_file_path(file):
     if len(dir_parts):
         dir = dir_parts[0]
     return dir
+
+def test_dir(dir, mode):
+    if mode.lower() not in ('r', 'w', 'x'):
+        raise Exception("Invalid mode for test_dir()")
+    test = mode_map[mode.lower()]
+    return os.path.isdir(dir) and os.access(dir, test)
+
+def test_file(file, mode):
+    if mode.lower() not in ('r', 'w', 'x'):
+        raise Exception("Invalid mode for test_file()")
+    test = mode_map[mode.lower()]
+    return os.path.isfile(file) and os.access(file, test)
 
