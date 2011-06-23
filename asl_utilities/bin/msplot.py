@@ -4,7 +4,8 @@ import asl
 import os
 
 def main():
-    os.popen('java -jar %s/utils/msplot.jar' % asl.path)
+    path = os.path.abspath(asl.path + "/utils/msplot.jar")
+    proc = os.popen('java -jar "%s"' % path)
 
 if __name__ == '__main__':
     main()
