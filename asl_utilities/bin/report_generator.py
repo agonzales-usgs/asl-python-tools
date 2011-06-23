@@ -12,13 +12,33 @@ from jtk import StationDatabase
 class Main:
     def __init__(self):
         option_list = []
-        option_list.append(optparse.make_option("-d", dest="database", action="store", help="database file to use for station and channel information"))
-        option_list.append(optparse.make_option("-n", "--networks", dest="networks", action="store", help="comma seperated list of networks to process"))
-        option_list.append(optparse.make_option("-p", dest="path", action="store", help="station summary path"))
-        option_list.append(optparse.make_option("-s", "--stations", dest="stations", action="store", help="comma seperated list of stations to process"))
-        option_list.append(optparse.make_option("-v", dest="verbosity", action="count", help="specify multiple times to increase verbosity"))
+        option_list.append(optparse.make_option(
+            "-d",
+            dest="database",
+            action="store",
+            help="Database file to use for station and channel information"))
+        option_list.append(optparse.make_option(
+            "-n", "--networks",
+            dest="networks",
+            action="store",
+            help="Comma seperated list of networks to process"))
+        option_list.append(optparse.make_option(
+            "-p",
+            dest="path",
+            action="store",
+            help="Station summary path"))
+        option_list.append(optparse.make_option(
+            "-s", "--stations",
+            dest="stations",
+            action="store",
+            help="Comma seperated list of stations to process"))
+        option_list.append(optparse.make_option(
+            "-v",
+            dest="verbosity",
+            action="count",
+            help="Specify multiple times to increase verbosity"))
         self.parser = optparse.OptionParser(option_list=option_list)
-        self.parser.set_usage("""Usage: %prog [options] [path]""")
+        self.parser.set_usage("""Usage: %prog [options]""")
 
         self.db = StationDatabase.StationDatabase()
         self.db_file = "stations.db"
