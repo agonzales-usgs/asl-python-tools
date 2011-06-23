@@ -87,9 +87,11 @@ class Manager:
         }
 
         self.output_directory = "."
-        self.types        = None
-        self.selection    = None
-        self.exclusion    = None
+        self.types = None
+        self.selected_stations = None
+        self.excluded_stations = None
+        self.selected_networks = None
+        self.excluded_networks = None
         self.group_selection = None
 
         self.continuity_only = False
@@ -123,11 +125,17 @@ class Manager:
     def set_versions_only(self, only=True):
         self.versions_only = only
 
-    def set_selection(self, list):
-        self.selection = list
+    def set_selected_stations(self, list):
+        self.selected_stations = list
 
-    def set_group_selection(self, list):
-        self.group_selection = list
+    def set_excluded_stations(self, list):
+        self.excluded_stations = list
+
+    def set_selected_networks(self, list):
+        self.selected_networks = list
+
+    def set_excluded_networks(self, list):
+        self.excluded_networks = list
 
     def set_exclusion(self, list):
         self.exclusion = list
@@ -294,13 +302,28 @@ class Manager:
                     self.groups[info['name']] = info
                 elif info.has_key('type') and (info['type'] == 'Proxy'):
                     self.proxies[info['name']] = info
-                elif ((not self.selection) or (self.selection.count(info['name']))) and \
-                     ((not self.types)     or (self.types.count(info['type'])))     and \
-                     ((not self.exclusion) or (not self.exclusion.count(info['name']))):
-                    if self.stations.has_key(info['name']):
-                        raise Exception("Duplicate station name found '%(name)s'" % info)
-                    self.stations[info['name']] = info
-                    #self.stations_fresh.append(info['name'])
+                else:
+                    network = ""
+                    parts = info['name'].split('_', 1)
+                    print parts
+                    if len(parts) > 1:
+                        network,station = parts
+                    else:
+                        station = parts[0]
+                    if ((not self.selected_stations) or \
+                        (self.selected_stations.count(station))) and \
+                       ((not self.selected_networks) or \
+                        (self.selected_networks.count(network))) and \
+                       ((not self.types) or \
+                        (self.types.count(info['type']))) and \
+                       ((not self.excluded_stations) or \
+                        (not self.excluded_stations.count(station))) and \
+                       ((not self.excluded_networks) or \
+                        (not self.excluded_networks.count(network))):
+                        if self.stations.has_key(info['name']):
+                            raise Exception("Duplicate station name found '%(name)s'" % info)
+                        self.stations[info['name']] = info
+                        #self.stations_fresh.append(info['name'])
 
 # ===== create the archive directory if it does not exist =====
     def init_dir(self):
@@ -669,15 +692,62 @@ class ThreadLoop(threading.Thread):
 class Main:
     def __init__(self):
         option_list = []
-        option_list.append(optparse.make_option("-c", "--comm-application", dest="comm_app", action="store", help="path to application for connection to station"))
-        option_list.append(optparse.make_option("-d", "--diskloop-continuity-only", dest="dco", action="store_true", help="check diskloop continuity, then exit"))
-        option_list.append(optparse.make_option("-e", "--encrypted", dest="encrypted", action="store_true", help="station file contents are encrypted"))
-        option_list.append(optparse.make_option("-g", "--groups", dest="groups", action="store", help="comma seperated list of groups to check/update"))
-        option_list.append(optparse.make_option("-s", "--select", dest="selection", action="store", help="comma seperated list of stations names to check/update"))
-        option_list.append(optparse.make_option("-T", "--thread-count", dest="max_threads", type="int", action="store", help="maximum number of simulatneous connection threads"))
-        option_list.append(optparse.make_option("-t", "--type", dest="type", action="store", help="comma seperated list of station types to check/update"))
-        option_list.append(optparse.make_option("-v", "--software-versions-only", dest="svo", action="store_true", help="check software versions, then exit"))
-        option_list.append(optparse.make_option("-x", "--exclude", dest="exclusion", action="store", help="comma seperated list of stations names to exclude from checks/updates"))
+        option_list.append(optparse.make_option(
+            "-c", "--comm-application", 
+            dest="comm_app", 
+            action="store", 
+            help="Path to application for connection to station"))
+        option_list.append(optparse.make_option(
+            "-d", "--diskloop-continuity-only", 
+            dest="dco", 
+            action="store_true", 
+            help="Check diskloop continuity, then exit"))
+        option_list.append(optparse.make_option(
+            "-e", "--encrypted", 
+            dest="encrypted", 
+            action="store_true", 
+            help="Station file contents are encrypted"))
+        option_list.append(optparse.make_option(
+            "-g", "--groups", 
+            dest="groups", 
+            action="store", 
+            help="Comma seperated list of groups to check/update"))
+        option_list.append(optparse.make_option(
+            "-n", "--networks", 
+            dest="selected_networks", 
+            action="store", 
+            help="Comma seperated list of networks to check/update (not compatible with -N option)"))
+        option_list.append(optparse.make_option(
+            "-N", "--exclude-networks", 
+            dest="excluded_networks", 
+            action="store", 
+            help="Comma seperated list of networks to exclude from check/update (not compatible with -n option)"))
+        option_list.append(optparse.make_option(
+            "-s", "--stations", 
+            dest="selected_stations", 
+            action="store", 
+            help="Comma seperated list of stations to check/update (not compatible with -S option)"))
+        option_list.append(optparse.make_option(
+            "-S", "--exclude-stations", 
+            dest="excluded_stations", 
+            action="store", 
+            help="Comma seperated list of stations to exclude from check/update (not compatible with -s option)"))
+        option_list.append(optparse.make_option(
+            "-T", "--thread-count", 
+            dest="max_threads", 
+            type="int", 
+            action="store", 
+            help="Maximum number of simulatneous connection threads"))
+        option_list.append(optparse.make_option(
+            "-t", "--type", 
+            dest="type", 
+            action="store", 
+            help="Comma seperated list of station types to check/update"))
+        option_list.append(optparse.make_option(
+            "-v", "--software-versions-only", 
+            dest="svo", 
+            action="store_true", 
+            help="Check software versions, then exit"))
         self.parser = optparse.OptionParser(option_list=option_list)
         self.parser.set_usage("""Usage: %s [options] <stations_file> <action>
 
@@ -697,8 +767,6 @@ action:
         arg_location    = options.comm_app
         arg_continuity  = options.dco
         arg_encrypted   = options.encrypted
-        arg_exclude     = options.exclusion
-        arg_select      = options.selection
         arg_group_selection = options.groups
         arg_threads     = options.max_threads
         arg_type        = options.type
@@ -712,6 +780,9 @@ action:
         if arg_action not in ('check', 'update'):
             self.usage("Un-recognized action '%s'" % arg_action)
 
+        networks_set = False
+        stations_set = False
+
         try:
           # Perform Action
             max_threads = 10
@@ -720,8 +791,20 @@ action:
             stop_queue = Queue.Queue()
             manager = Manager(arg_action, stop_queue, max_threads)
             manager.set_file(arg_file, arg_encrypted)
-            if (arg_select):
-                manager.set_selection(arg_select.split(','))
+            if (options.selected_stations):
+                manager.set_selected_stations(map(lambda o: o.upper(), options.selected_stations.split(',')))
+                stations_set = True
+            if (options.excluded_stations):
+                if stations_set:
+                    self.usage("Cannot use both -s and -S flags.")
+                manager.set_excluded_stations(map(lambda o: o.upper(), options.excluded_stations.split(',')))
+            if (options.selected_networks):
+                manager.set_selected_networks(map(lambda o: o.upper(), options.selected_networks.split(',')))
+                networks_set = True
+            if (options.excluded_networks):
+                manager.set_excluded_networks(map(lambda o: o.upper(), options.excluded_networks.split(',')))
+                if networks_set:
+                    self.usage("Cannot use both -n and -N flags.")
             if (arg_group_selection):
                 manager.set_group_selection(arg_group_selection.split(','))
             if (arg_type):
@@ -730,8 +813,6 @@ action:
                 print "Cannot select options -d and -v simultaneously"
                 self.parser.print_help()
                 sys.exit(1)
-            if arg_exclude:
-                manager.set_exclusion(arg_exclude.split(','))
             if arg_action == 'check':
                 manager.set_continuity_only(arg_continuity)
                 manager.set_versions_only(arg_versions)
