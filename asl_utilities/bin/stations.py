@@ -38,6 +38,7 @@ from jtk.Logger import Logger     # logging mechanism
 from jtk.permissions import Permissions # UNIX permissions
 from jtk.station import Station680 # for diagnosing Q680 systems
 from jtk.station import Station330 # for diagnosing Q330 systems
+from jtk.station import Station330Direct # for diagnosing Q330 systems
 from jtk.station import Proxy
 
 
@@ -193,10 +194,16 @@ class Manager:
                     traceback.print_tb(trace)
 
             while len(self.loops) > 0:
-                message,loop = self.queue.get()
-                if message == 'DONE':
-                    self.loops.remove(loop)
-                    self.logger.log("Removing Loop:%s. %d loops remaining." % (str(loop.group), len(self.loops)))
+                try:
+                    message,loop = self.queue.get(True, 1.0)
+                    for l in self.loops:
+                        if not l.running:
+                            self.loops.remove(l)
+                            self.logger.log("Removing Loop:%s. %d loop(s) remaining." % (str(l.group), len(self.loops)))
+                            for l in self.loops:
+                                self.logger.log("  Loop:%s has %d station thread(s) running." % (str(l.group), len(l.threads)))
+                except Queue.Empty, e:
+                    pass
                 # else: self._log(message, loop.group)
         except Exception, e:
             self.logger.log("Exception in: %s" % str(e))
@@ -563,7 +570,9 @@ class ThreadLoop(threading.Thread):
         while self.running:
             try:
                 self._poll()
-                message,thread = self.queue.get()
+                message,thread = self.queue.get(True, 30.0)
+            except Queue.Empty, e:
+                pass
             except ExLoopDone, e:
                 self.running = False
             except Exception, e:
@@ -623,6 +632,8 @@ class ThreadLoop(threading.Thread):
                         if self.action == 'update':
                             raise Exception("Software update, Q680s not supported")
                         station = Station680(station_info['name'], self.action, self.queue)
+                    elif station_info['type'] == 'Q330D':
+                        station = Station330Direct(station_info['name'], self.action, self.queue, station_info['cfg'])
                     elif station_info['type'] in ('Q330', 'Q330C'):
                         legacy = False
                         if station_info['type'] == 'Q330C':

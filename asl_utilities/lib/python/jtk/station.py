@@ -112,6 +112,7 @@ class Station(threading.Thread):
         threading.Thread.__init__(self, name=name)
 
         self.loop_queue = loop_queue
+        self.running = False
 
         # timeouts
         self.spawn_timeout    = 5
@@ -201,6 +202,7 @@ class Station(threading.Thread):
         return not alive
 
     def run(self):
+        self.running = True
         try:
             if self.proxy is not None:
                 if self.proxy.wait_for_ready() == False:
@@ -262,6 +264,7 @@ class Station(threading.Thread):
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
 
+        self.running = False
         if self.loop_queue is not None:
             self.loop_queue.put(('DONE', self))
 
@@ -341,7 +344,9 @@ class Station(threading.Thread):
             self._log("proxy port    = %s" % str(self.port))
 
     def connect(self):
-        if self.protocol == "telnet":
+        if self.protocol == "qdp":
+            pass
+        elif self.protocol == "telnet":
             self.telnet_connect()
         elif self.protocol == "ssh":
             self.ssh_connect()
@@ -350,10 +355,12 @@ class Station(threading.Thread):
         self.connected = True
 
     def disconnect(self):
-        if not self.reader:
+        if (self.protocol != "qdp") and (not self.reader):
             raise ExNotConnected, "There was no connection established"
 
-        if self.protocol == "telnet":
+        if self.protocol == "qdp":
+            pass
+        elif self.protocol == "telnet":
             self.telnet_disconnect()
         elif self.protocol == "ssh":
             self.ssh_disconnect()
@@ -1062,6 +1069,94 @@ class Station680(Station):
         self.summary = "%s%s" % (s_summary, self.summary)
 
 # === Station680 Class (END)/*}}}*/
+
+# === Station330Direct Class/*{{{*/
+"""-
+    Evaluate health of a Q330
+-"""
+class Station330Direct(Station):
+    def __init__(self, name, action, loop_queue, config_file):
+        Station.__init__(self, name, action, loop_queue)
+
+        self.output = ""        # results of the checks script
+        self.log_messages = ""  # purpose TBD
+        self.summary = ""
+        self.config_file = config_file
+
+        self.protocol = "qdp"
+
+        self.current_id = -1
+
+    def save_ping_info(self, message):
+        self.tmp_buffer += message + "\n"
+
+    def ready(self):
+        if self.name == "":
+            self.name = "anonymous"
+
+    def check(self):
+        fh = open(self.config_file, 'r')
+        lines = map(lambda l: l.strip(), fh.readlines())
+        fh.close()
+
+        ids = {}
+        for line in lines:
+            if len(line) < 8:
+                continue
+            parts = line.split(".")
+            if len(parts) < 3:
+                continue
+            if parts[0] != "Q330":
+                continue
+            try:
+                id = int(parts[1])
+            except:
+                continue
+            ids[id] = None
+
+        try:
+            from CnC import QComm, QPing
+            comm = QComm.QComm()
+            comm.set_max_tries(3)
+            comm.set_timeout(30.0)
+            comm.set_verbosity(0)
+            action = QPing.QPing()
+            action.action = "monitor"
+            action._print = self.save_ping_info
+            parts = self.name.split('_')
+            if len(parts) > 1:
+                name = parts[1]
+            else:
+                name = parts[0]
+            self.output += "[Q330]%s:" % name
+
+            q330_boot_times = []
+            qping_results = {}
+            for id in sorted(ids.keys()):
+                self.tmp_buffer = ""
+                comm.set_from_file(str(id), self.config_file)
+                comm.execute(action)
+                self._log("Performing QDP Ping on Q330 #%d..." % id)
+                match = re.compile("Boot Time: (\d+[/]\d+[/]\d+ \d+[:]\d+ UTC)", re.M).search(self.tmp_buffer)
+                if not match:
+                    self._log("Could not locate boot time for Q330 #%d" % id)
+                    continue
+                boot_time = match.groups()[0]
+                boot_summary = " Q330 #%d boot time: %s" % (id, boot_time)
+                q330_boot_times.append(boot_summary)
+                qping_results[id] = self.tmp_buffer.strip()
+
+            self.output += ",".join(q330_boot_times) + ".\n\n"
+            for id in sorted(qping_results.keys()):
+                self.output += "Q330 #%d\n" % id
+                self.output += self.tmp_buffer + "\n"
+
+        except ImportError, e:
+            self._log("Failed to import CnC modules.")
+        except Exception, e:
+            self._log("Exception: %s" % str(e))
+
+# === Station330Direct Class (END)/*}}}*/
 
 # === Station330 Class/*{{{*/
 """-
