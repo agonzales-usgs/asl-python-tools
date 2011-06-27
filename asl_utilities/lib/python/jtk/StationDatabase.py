@@ -12,6 +12,9 @@ class StationDatabase(Database):
     def __init__(self):
         Database.__init__(self)
 
+    def execute(self, query):
+        self.cur.execute(query)
+        self.db.commit()
 
   # INSERT Operations
     def add_station(self, network, station):
