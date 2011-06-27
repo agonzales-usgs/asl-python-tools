@@ -179,8 +179,8 @@ class Main:
             fh.close()
             reg_timestamp = re.compile("Slate Timestamp:\s+(\d+-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})")
             reg_channels = re.compile("(?:.*?(\w{3})\s+(\d+)\s+(\d+[:]?\d+)\s+(\w+)[.]buf)", re.M | re.S)
-            reg_loc  = re.compile("^(?:[123]0)?$")
-            reg_chan = re.compile("^H[HN][12ENZ]$")
+            reg_loc  = re.compile("^(?:[012]0)?$")
+            reg_chan = re.compile("^(?:H[HN][12ENZ])|(?:BC[0-9])$")
 
             timestamp_matches = reg_timestamp.search(check_summary)
             channel_matches = reg_channels.findall(check_summary)
