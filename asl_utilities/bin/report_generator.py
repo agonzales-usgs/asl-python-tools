@@ -171,13 +171,17 @@ class Main:
     def q330_channels(self, file, network, station):
         result = ""
         try:
-            channel_results = []
+            delayed_channels = []
+            missing_channels = []
             channels = self.db.get_channels(network=network, station=station)
             fh = open(file, 'r')
             check_summary = fh.read()
             fh.close()
             reg_timestamp = re.compile("Slate Timestamp:\s+(\d+-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})")
             reg_channels = re.compile("(?:.*?(\w{3})\s+(\d+)\s+(\d+[:]?\d+)\s+(\w+)[.]buf)", re.M | re.S)
+            reg_loc  = re.compile("^(?:[123]0)?$")
+            reg_chan = re.compile("^H[HN][12ENZ]$")
+
             timestamp_matches = reg_timestamp.search(check_summary)
             channel_matches = reg_channels.findall(check_summary)
             if not timestamp_matches:
@@ -194,20 +198,25 @@ class Main:
                 if l and len(l):
                     key = l + "_" + c
                 if not check_channels.has_key(key):
-                    channel_result.append("%s - no buffer" % key)
+                    missing_channels.append("%s" % key)
                 else:
+                    if reg_loc.match(l) and reg_chan.match(c):
+                        print "Skipping event channeld %s-%s" % (l,c)
+                        continue
                     m,d,t = check_channels[key]
                     time_parts = t.split(':')
                     if len(time_parts) == 1:
-                        channel_result.append("%s - delayed" % key)
+                        delayed_channels.append("%s" % key)
                     else:
                         time_slate = calendar.timegm(time.strptime(slate_timestamp, "%Y-%m-%d %H:%M:%S"))
                         time_channel = calendar.timegm(time.strptime("%s-%s-%s %s" % (time.strftime("%Y"),m,d,t), "%Y-%b-%d %H:%M"))
                         delay = time_slate - time_channel
                         if delay > 7200:
-                            channel_results.append("%s - delayed" % (key.replace("_","-"),))
-            if len(channel_results):
-                result = " Delayed Channels: %s." % (", ".join(channel_results),)
+                            delayed_channels.append("%s" % (key.replace("_","-"),))
+            if len(delayed_channels):
+                result += " Delayed Channels: %s." % (", ".join(delayed_channels),)
+            if len(missing_channels):
+                result += " Missing Channels: %s." % (", ".join(missing_channels),)
         except Exception, e:
             print "%s-%s channel check Exception:" % (network,station), str(e)
         return result

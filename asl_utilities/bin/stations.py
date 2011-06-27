@@ -294,7 +294,7 @@ class Manager:
                 if not info.has_key('name'):
                     raise Exception("Found a station without a 'name' field")
 
-                # Insert the pseudo-station into the correct category
+                # Insert the host into the correct category
                 # - Station
                 # - Group (Station Group)
                 # - Proxy (SSH TCP Port Forwarding Tunnel)
@@ -305,7 +305,6 @@ class Manager:
                 else:
                     network = ""
                     parts = info['name'].split('_', 1)
-                    print parts
                     if len(parts) > 1:
                         network,station = parts
                     else:
