@@ -217,6 +217,10 @@ class Manager:
         self.stop_threads()
         self.stop_queue.put('DONE')
 
+    def halt(self):
+        for loop in self.loops:
+            loop.halt()
+
 # ===== Long Running Threads =====
     def start_threads(self):
         self.version_thread = threading.Thread(target=self._version_log_thread, name="VersionLog")
@@ -519,6 +523,11 @@ class ThreadLoop(threading.Thread):
     def summarize(self):
         # build a summary
         self.logger.log("All stations have been processed.")
+
+    def halt(self):
+        self.stations_fresh = []
+        for thread in self.threads:
+            thread.halt(now=True)
 
     def record(self, station):
         if not station:
