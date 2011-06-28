@@ -4,7 +4,31 @@ import asl
 from jtk import StationDatabase
 
 channel_file = "allchan.txt"
+device_file = "instrument.txt"
 database = "stations.db"
+
+sensor_map = {
+'36000I'      : 'KS36000',
+'54000'       : 'KS54000',
+'CMG3-T'      : 'CMG3-T',
+'CMG3-T-B'    : 'CMG3-TB',
+'FBA23'       : 'FBA23',
+'FBAES-T'     : 'ES-T',
+'PARO_MB'     : 'Paro-MBaro',
+'RMYOUNG_WDI' : 'Wind-Direction',
+'RMYOUNG_WSI' : 'Wind-Speed',
+'S13'         : 'GS-13',
+'SETRA-270'   : 'Setra-270',
+'STS-2-HG'    : 'STS-2-HG',
+'STS-2-SG'    : 'STS-2-SG',
+'STS-2.5'     : 'STS-2.5',
+'STS1HVBB'    : 'STS-1-H',
+'STS1VBBE300' : ('STS-1-V-E300', 'STS-1-H-E300'),
+'STS1VVBB'    : 'STS-1-V',
+'STS2VBB'     : 'STS-2-SG',
+'TR240'       : 'TR-240',
+'VAISALA'     : 'Vaisala',
+}
 
 subsets = {
 "AFRICA"    : "Africa",
@@ -202,5 +226,47 @@ def generate_database():
     db.add_channels(channel_list)
     db.add_station_channels(station_channel_pairs)
 
+def parse_device_file(file):
+    chan_dev_list = []
+    rh = open(file, 'r')
+    for line in rh:
+        if len(line.strip()) == 0:
+            continue
+        parts = map(lambda l: l.strip(), line.split())
+        if len(parts) == 4:
+            s,n,c,i = parts
+            l = ""
+        else:
+            s,n,l,c,i = parts
+        if sensor_map.has_key(i):
+            name = sensor_map[i]
+            if type(name) == tuple:
+                if len(name) == 1:
+                    i = name[0]
+                elif c[-1].upper() == 'Z':
+                    i = name[0]
+                elif len(name) == 2:
+                    i = name[1]
+                elif c[-1].upper() in ('N','1'):
+                    i = name[1]
+                else:
+                    i = name[2]
+            else:
+                i = name
+        st_id = StationDatabase.create_station_key(n,s)
+        ch_id = StationDatabase.create_channel_key(l,c)
+        chan_dev_list.append((st_id,ch_id,i,""))
 
-update_channels()
+    return chan_dev_list
+
+
+def update_devices():
+    chan_dev_list = parse_device_file(device_file)
+    db = StationDatabase.StationDatabase()
+    db.select_database(database)
+    db.add_station_channels(chan_dev_list)
+
+#update_channels()
+update_devices()
+
+
