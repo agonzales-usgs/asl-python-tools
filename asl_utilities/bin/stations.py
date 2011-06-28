@@ -22,6 +22,7 @@ import getpass      # to get user's password
 import os           # for getting environmental variables
 import Queue        # communication beteween threads
 import re           # regular expression support
+import signal       # signal handling support
 import stat         # file modes
 import string       # string manipulation functions
 import subprocess   # run shell commands
@@ -144,7 +145,7 @@ class Manager:
     def set_types(self, list):
         self.types = list
 
-    def set_group_selection
+    def set_group_selection(self, list):
         self.group_selection = list
 
 
@@ -198,16 +199,15 @@ class Manager:
 
             while len(self.loops) > 0:
                 try:
-                    message,loop = self.queue.get(True, 1.0)
+                    message,loop = self.queue.get()
                     for l in self.loops:
                         if not l.running:
                             self.loops.remove(l)
                             self.logger.log("Removing Loop:%s. %d loop(s) remaining." % (str(l.group), len(self.loops)))
                             for l in self.loops:
                                 self.logger.log("  Loop:%s has %d station thread(s) running." % (str(l.group), len(l.threads)))
-                except Queue.Empty, e:
-                    pass
-                # else: self._log(message, loop.group)
+                except KeyboardInterrupt, e:
+                    self.logger.log("Thread Summary [%d]: %s" % (threading.activeCount(), str(threading.enumerate())))
         except Exception, e:
             self.logger.log("Exception in: %s" % str(e))
             (ex_f, ex_s, trace) = sys.exc_info()
@@ -573,9 +573,7 @@ class ThreadLoop(threading.Thread):
         while self.running:
             try:
                 self._poll()
-                message,thread = self.queue.get(True, 30.0)
-            except Queue.Empty, e:
-                pass
+                message,thread = self.queue.get()
             except ExLoopDone, e:
                 self.running = False
             except Exception, e:
@@ -704,6 +702,7 @@ class ThreadLoop(threading.Thread):
 # === Main Class /*{{{*/
 class Main:
     def __init__(self):
+        signal.signal(signal.SIGTERM, self.halt_now)
         option_list = []
         option_list.append(optparse.make_option(
             "-c", "--comm-application", 
@@ -845,6 +844,13 @@ action:
         print "Threads:"
         print threading.enumerate()
         print "============================================="
+
+    def halt_now(self):
+        self.halt(now=True)
+
+    def halt(self, now=False):
+        manager.halt(now)
+        stop_queue.put("HALTED")
 
 # === Main Class (END) /*}}}*/
 

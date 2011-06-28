@@ -113,6 +113,7 @@ class Station(threading.Thread):
 
         self.loop_queue = loop_queue
         self.running = False
+        self.halt_request = False
 
         # timeouts
         self.spawn_timeout    = 5
@@ -191,7 +192,9 @@ class Station(threading.Thread):
         self._halt(now)
 
     def _halt(self, now):
-        pass
+        if self.reader:
+            self.reader.close()
+        raise Exhalt("Halt Now")
 
     def is_done(self):
         alive = False
@@ -217,6 +220,10 @@ class Station(threading.Thread):
                 self.run_proxy()
             else:
                 self._log("Invalid action for station(s): '%s'" % action)
+        except ExHalt, e:
+            self._log( str(e), "Halt Command Received." )
+            (ex_f, ex_s, trace) = sys.exc_info()
+            traceback.print_tb(trace)
         except ExConnectFailed, e:
             self._log( str(e), "error" )
             (ex_f, ex_s, trace) = sys.exc_info()
