@@ -144,6 +144,9 @@ class Manager:
     def set_types(self, list):
         self.types = list
 
+    def set_group_selection
+        self.group_selection = list
+
 
 # ===== Entry Point =====
     def start(self):
@@ -166,7 +169,7 @@ class Manager:
                 if self.stations[station_name].has_key('group'):
                     group = self.stations[station_name]['group']
                 add_station = True
-                if (self.group_selection != None) and (group not in group_names):
+                if (group_names != None) and (group not in group_names):
                     add_station = False
                 if add_station:
                     if not station_groups.has_key(group):
