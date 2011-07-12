@@ -484,14 +484,19 @@ class ThreadLoop(threading.Thread):
 
 
   # Recursively determines a station's proxy chain
-    def find_proxies(self, station, station_info):
+    def find_proxies(self, station, station_info, proxies=None):
+        if proxies is None:
+            proxies = {}
         if station_info.has_key('proxy'):
             if self.manager.proxies.has_key(station_info['proxy']):
                 station.proxy_info = self.manager.proxies[station_info['proxy']]
+                # Search for nested proxies
+                if proxies.has_key(station.proxy_info['name']):
+                    raise Exception("Encountered a proxy loop, first repeated on proxy '%(proxy)s'" % station_info)
                 station.proxy = Proxy(station.proxy_info['name'])
                 self.prep_proxy(station.proxy, station.proxy_info, station)
                 # Look for any proxy upon which this proxy depends (nested proxy support)
-                self.find_proxies(station.proxy, station.proxy_info)
+                self.find_proxies(station.proxy, station.proxy_info, proxies)
             else:
                 raise Exception("Could not locate proxy '%(proxy)s' associated with station '%(name)s'" % station_info)
 
@@ -584,7 +589,10 @@ class ThreadLoop(threading.Thread):
                 self._poll()
                 message,thread = self.queue.get()
             except ExLoopDone, e:
+                self.logger.log("Loop is complete.")
                 self.running = False
+            except KeyboardInterrupt, e:
+                pass
             except Exception, e:
                 self.logger.log("%s::poll() caught exception: %s" % (self.__class__.__name__, str(e)))
                 (ex_f, ex_s, trace) = sys.exc_info()

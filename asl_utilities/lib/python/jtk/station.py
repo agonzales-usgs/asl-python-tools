@@ -194,7 +194,7 @@ class Station(threading.Thread):
     def _halt(self, now):
         if self.reader:
             self.reader.close()
-        raise Exhalt("Halt Now")
+        raise ExhaltRequest("Halt Now")
 
     def is_done(self):
         alive = False
@@ -220,7 +220,7 @@ class Station(threading.Thread):
                 self.run_proxy()
             else:
                 self._log("Invalid action for station(s): '%s'" % action)
-        except ExHalt, e:
+        except ExHaltRequest, e:
             self._log( str(e), "Halt Command Received." )
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
@@ -435,9 +435,12 @@ class Station(threading.Thread):
         try:
             prompt = "[$#>]"
             quiet  = True
+            check_local_ip = True
             if self.info['type'] == 'Proxy':
                 prompt = "[$>]"
                 quiet  = False
+            if self.proxy is not None:
+                check_local_ip = False
             if self.prompt_shell is not None:
                 prompt = self.prompt_shell
             self._log("opening ssh connection")
@@ -450,7 +453,7 @@ class Station(threading.Thread):
                 pass_len = 0
             self._log("password: *** [%d]" % pass_len)
             self._log("prompt:   %s" % prompt)
-            self.reader.login(self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port, quiet=quiet, sync_multiplier=self.sync_multiplier)
+            self.reader.login(self.address, self.username, password=self.password, original_prompt=prompt, login_timeout=self.comm_timeout, port=self.port, quiet=quiet, sync_multiplier=self.sync_multiplier, check_local_ip=check_local_ip)
         except Exception, e:
             self._log("reader.before: %s" % self.reader.before)
             self._log("exception details: %s" % str(e))

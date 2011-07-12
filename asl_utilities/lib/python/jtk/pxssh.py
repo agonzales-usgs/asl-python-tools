@@ -180,7 +180,7 @@ class pxssh (spawn):
 
     ### TODO: This is getting messy and I'm pretty sure this isn't perfect.
     ### TODO: I need to draw a flow chart for this.
-    def login (self,server,username,password='',terminal_type='ansi',original_prompt=r"[#$]",login_timeout=10,port=None,auto_prompt_reset=True,ssh_key=None,quiet=True,sync_multiplier=1):
+    def login (self,server,username,password='',terminal_type='ansi',original_prompt=r"[#$]",login_timeout=10,port=None,auto_prompt_reset=True,ssh_key=None,quiet=True,sync_multiplier=1,check_local_ip=True):
 
         """This logs the user into the given server. It uses the
         'original_prompt' to try to find the prompt right after login. When it
@@ -207,11 +207,13 @@ class pxssh (spawn):
 
         ssh_options = ''
         if quiet:
-            ssh_options = '-q'
+            ssh_options += ' -q'
+        if not check_local_ip:
+            ssh_options += " -o'NoHostAuthenticationForLocalhost=yes'"
         if self.force_password:
-            ssh_options = ssh_options + ' ' + self.SSH_OPTS
+            ssh_options += ' ' + self.SSH_OPTS
         if port is not None:
-            ssh_options = ssh_options + ' -p %s'%(str(port))
+            ssh_options += ' -p %s'%(str(port))
         if ssh_key is not None:
             try:
                 os.path.isfile(ssh_key)
