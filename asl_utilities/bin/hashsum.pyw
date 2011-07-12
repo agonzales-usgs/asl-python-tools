@@ -46,6 +46,9 @@ class HashGui:
         self.label_digest = gtk.Label('Digest:')
         self.entry_digest = gtk.Entry()
 
+        self.label_digest2 = gtk.Label('Digest 2:')
+        self.entry_digest2 = gtk.Entry()
+
       # Control Buttons
         self.button_generate = gtk.Button(stock=None, use_underline=True)
         self.hbox_generate   = gtk.HBox()
@@ -87,6 +90,8 @@ class HashGui:
         self.table_hash.attach(self.button_file,         4, 5, 1, 2, 0, 0, 1, 1)
         self.table_hash.attach(LEFT(self.label_digest),  0, 1, 2, 3, gtk.FILL, 0, 1, 1)
         self.table_hash.attach(self.entry_digest,        1, 4, 2, 3, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_hash.attach(LEFT(self.label_digest2), 0, 1, 3, 4, gtk.FILL, 0, 1, 1)
+        self.table_hash.attach(self.entry_digest2,       1, 4, 3, 4, gtk.FILL | gtk.EXPAND, 0, 1, 1)
 
         self.hbox_control.pack_start(self.button_generate, False, False, 0)
         self.hbox_control.pack_start(self.button_copy, False, False, 0)
@@ -100,8 +105,10 @@ class HashGui:
         for h in sorted(hashsum.get_engine_list()):
             self.combobox_hash.append_text(h)
         self.combobox_hash.set_active(0)
-        self.entry_digest.set_editable(False)
+        self.entry_digest.set_editable(True)
         self.entry_digest.set_width_chars(64)
+        self.entry_digest2.set_editable(True)
+        self.entry_digest2.set_width_chars(64)
 
 # ===== Event Bindings =============================================
         self.combobox_hash.connect("changed", self.callback_hash_changed, None)
@@ -109,9 +116,13 @@ class HashGui:
         self.button_generate.connect("clicked", self.callback_generate, None)
         self.button_copy.connect("clicked", self.callback_copy, None)
         self.button_quit.connect("clicked", self.callback_quit, None)
+        self.entry_digest.connect("changed", self.callback_compare, None)
+        self.entry_digest2.connect("changed", self.callback_compare, None)
 
       # Show widgets
         self.window.show_all()
+
+        self.compare_digests()
 
 
 # ===== Callbacks ==================================================
@@ -136,6 +147,9 @@ class HashGui:
     def callback_copy(self, widget, event, data=None):
         self.clipboard.set_text(self.entry_digest.get_text())
 
+    def callback_compare(self, widget, event, data=None):
+        self.compare_digests()
+
     def callback_generate(self, widget, event, data=None):
         self.update_interface()
         filename = os.path.abspath(self.entry_file.get_text())
@@ -156,6 +170,14 @@ class HashGui:
     def update_interface(self):
         self.entry_digest.set_text('')
         self.label_copy_info.set_text('')
+
+    def compare_digests(self):
+        if self.entry_digest.get_text() == self.entry_digest2.get_text():
+            self.entry_digest.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(15000, 65000, 15000))
+            self.entry_digest2.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(15000, 65000, 15000))
+        else:
+            self.entry_digest.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(65535, 65535, 65535))
+            self.entry_digest2.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(65000, 15000, 15000))
 
 
 def main():
