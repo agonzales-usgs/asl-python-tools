@@ -162,8 +162,6 @@ class Manager:
                 group_names = self.group_selection
 
             station_groups = {}
-            for g in group_names:
-                station_groups[g] = []
 
             for station_name in self.stations.keys():
                 group = 'NONE'
@@ -178,12 +176,12 @@ class Manager:
                     station_groups[group].append(station_name)
             
             self.logger.log("Groups: %s" % str(station_groups.keys()))
-            for group in group_names:
+            for group in sorted(station_groups.keys()):
                 try:
                     max_threads = self.max_threads
                     if self.groups[group].has_key('threads'):
                         max_threads = int(self.groups[group]['threads'])
-                    loop = ThreadLoop(self, group, self.action, station_groups[group], max_threads, self.version_queue)
+                    loop = ThreadLoop(self, group, self.action, sorted(station_groups[group]), max_threads, self.version_queue)
                     loop.set_version_files(self.version_files)
                     loop.set_versions_only(self.versions_only)
                     loop.set_continuity_only(self.continuity_only)
