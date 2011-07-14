@@ -477,14 +477,17 @@ class Internal(PipeBase):
         self.regex_message = re.compile("^<\[(%s)\]\((%s)\)\((%s)\)\{(%s)\}>$" % (self.r_cmd, self.r_key, self.r_key, self.r_data))
 
     def _handle_read(self):
-        msg = self.recv(4096)
-        self.log("%s::_handle_read()  msg: %s" % (self.__class__.__name__, msg), 5)
-        pot = self.melt(msg)
-        if pot is None:
-            return len(msg)
-        command, src_key, dst_key, packet = pot
-        self._src_to_dst(command, src_key, dst_key, packet)
-        return len(msg)
+        data = self.recv(4096)
+        msgs = map(lambda s: '<'+s, filter(lambda s: s!='', data.split('<')))
+        self.log("%s::_handle_read() %d messages received" % (self.__class__.__name__, len(msgs)), 2)
+        for msg in msgs:
+            self.log("%s::_handle_read()  msg: %s" % (self.__class__.__name__, msg), 5)
+            pot = self.melt(msg)
+            if pot is None:
+                return len(msg)
+            command, src_key, dst_key, packet = pot
+            self._src_to_dst(command, src_key, dst_key, packet)
+        return len(data)
 
     # Break down a message into keys and data
     def melt(self, message):
