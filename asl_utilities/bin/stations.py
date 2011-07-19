@@ -73,8 +73,10 @@ class ExLoopDone(ExceptionLoop):
 # === Exception Classes (END) /*}}}*/
 
 # === Manager Class /*{{{*/
-class Manager:
+class Manager(threading.Thread):
     def __init__(self, action, stop_queue, max_threads=10):
+        threading.Thread.__init__(self, name="Manager")
+
         self.action = action
         self.stop_queue = stop_queue
         self.max_threads = max_threads
@@ -105,7 +107,7 @@ class Manager:
         self.version_logger = Logger(prefix='deviations_')
         self.version_queue  = Queue.Queue()
         self.version_thread = None
-        self.version_files  = []
+        self.version_files  = {}
 
         self.logger = Logger(prefix='StationsManager_')
         self.logger.set_log_to_screen(True)
@@ -150,7 +152,7 @@ class Manager:
 
 
 # ===== Entry Point =====
-    def start(self):
+    def run(self):
         try:
             self.init_dir()
             self.parse_configuration()
@@ -198,12 +200,21 @@ class Manager:
             while len(self.loops) > 0:
                 try:
                     message,loop = self.queue.get()
+                    name = "Anonymous"
+                    if loop is not None:
+                        name = loop.name
+                    self.logger.log("Received message from queue (Loop %s says '%s')" % (name, message))
+                    if (message == 'DONE') and (loop is not None):
+                        loop.join()
+                        self.logger.log("LoopThread joined: %s" % name)
+
                     for l in self.loops:
                         if not l.running:
                             self.loops.remove(l)
                             self.logger.log("Removing Loop:%s. %d loop(s) remaining." % (str(l.group), len(self.loops)))
-                            for l in self.loops:
-                                self.logger.log("  Loop:%s has %d station thread(s) running." % (str(l.group), len(l.threads)))
+
+                    for l in self.loops:
+                        self.logger.log("  Loop:%s has %d station thread(s) running." % (str(l.group), len(l.threads)))
                 except KeyboardInterrupt, e:
                     self.logger.log("Thread Summary [%d]: %s" % (threading.activeCount(), str(threading.enumerate())))
         except Exception, e:
@@ -253,7 +264,8 @@ class Manager:
                 if len(parts) > 1:
                     hash = parts[0]
                     file = parts[1]
-                    self.version_files.append((file, hash))
+                    key = os.path.basename(file)
+                    self.version_files[key] = (file, hash)
 
 # ===== Parse the configuration file =====
     def parse_configuration(self):
@@ -381,7 +393,7 @@ class ThreadLoop(threading.Thread):
         self.continuity_only = False
         self.versions_only = False
         self.version_queue = version_queue
-        self.version_files = []
+        self.version_files = {}
 
         self.max_threads  = max_threads
         self.thread_ttl   = 7200 # Should not take more than 2 hours
@@ -530,7 +542,9 @@ class ThreadLoop(threading.Thread):
     def halt(self):
         self.stations_fresh = []
         for thread in self.threads:
+            self.logger.log("Halting thread '%s'..." % thread.name)
             thread.halt(now=True)
+            thread.join()
 
     def record(self, station):
         if not station:
@@ -586,9 +600,13 @@ class ThreadLoop(threading.Thread):
             try:
                 self._poll()
                 message,thread = self.queue.get()
-            except ExLoopDone, e:
-                self.logger.log("Loop is complete.")
-                self.running = False
+                name = 'Anonymous'
+                if thread is not None:
+                    name = thread.name
+                self.logger.log("Received message from queue (Thread %s says '%s')" % (name, message))
+                if (message == 'DONE') and (thread is not None):
+                    thread.join()
+                    self.logger.log("Thread joined: %s" % name)
             except KeyboardInterrupt, e:
                 pass
             except Exception, e:
@@ -596,8 +614,8 @@ class ThreadLoop(threading.Thread):
                 (ex_f, ex_s, trace) = sys.exc_info()
                 traceback.print_tb(trace)
 
+        self.logger.log("Loop is complete.")
         self.manager.queue.put(('DONE', self))
-
 
     def _poll(self):
             # check for completed threads
@@ -628,7 +646,7 @@ class ThreadLoop(threading.Thread):
                     self.done = True
                     self.running = False
                     self.queue.put(("DONE", None))
-                    raise ExLoopDone("No stations remaining.")
+                    return
                 else:
                     # This occurs when we have no stations
                     # in either the default or retry queues, and
@@ -649,15 +667,20 @@ class ThreadLoop(threading.Thread):
                             raise Exception("Software update, Q680s not supported")
                         station = Station680(station_info['name'], self.action, self.queue)
                     elif station_info['type'] == 'Q330D':
+                        if self.continuity_only:
+                            raise Exception("Continuity checks, Slate required")
+                        if self.versions_only:
+                            raise Exception("Software version checks, Slate required")
+                        if self.action == 'update':
+                            raise Exception("Software update, Slate required")
                         station = Station330Direct(station_info['name'], self.action, self.queue, station_info['cfg'])
                     elif station_info['type'] in ('Q330', 'Q330C'):
                         legacy = False
                         if station_info['type'] == 'Q330C':
                             lagacy = True
                         station = Station330(station_info['name'], self.action, self.queue, legacy=legacy, continuity_only=self.continuity_only, versions_only=self.versions_only)
-                        if self.action == 'check':
-                            station.set_version_queue(self.version_queue)
-                            station.set_version_files(self.version_files)
+                        station.set_version_queue(self.version_queue)
+                        station.set_version_files(self.version_files)
                     else:
                         raise ExStationTypeNotRecognized, "Station type '%(type)s' not recognized" % station_info
                     self.prep_station(station, station_info)
@@ -845,7 +868,7 @@ action:
                 manager.set_versions_only(arg_versions)
             manager.start()
             stop_queue.get()
-            print "Manager Thread is Done."
+            print "Manager thread is done."
         except Exception, e:
             print "Exception:", e
             (ex_f, ex_s, trace) = sys.exc_info()

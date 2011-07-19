@@ -35,6 +35,7 @@ try:
     from Logger import Logger
     from permissions import Permissions
     import dlc
+    import hashsum
 except ImportError, e:
     raise ImportError (str(e) + """
 A critical module was not found. 
@@ -221,41 +222,9 @@ class Station(threading.Thread):
             else:
                 self._log("Invalid action for station(s): '%s'" % action)
         except ExHaltRequest, e:
-            self._log( str(e), "Halt Command Received." )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-        except ExConnectFailed, e:
-            self._log( str(e), "error" )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-        except ExDisconnectFailed, e:
-            self._log( str(e), "error" )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-        except ExInvalidCredentials, e:
-            self._log( str(e), "error" )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-        except ExIncomplete, e:
-            self._log( str(e), "error" )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-        except ExLaunchFailed, e:
-            self._log( str(e), "error" )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-        except ExNoReader, e:
-            self._log( str(e), "error" )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-        except ExNotConnected, e:
-            self._log( str(e), "error" )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
-        except ExStationNotSupported, e:
-            self._log( str(e), "error" )
-            (ex_f, ex_s, trace) = sys.exc_info()
-            traceback.print_tb(trace)
+            self._log( "Halt Command Received", "info" )
+            #(ex_f, ex_s, trace) = sys.exc_info()
+            #traceback.print_tb(trace)
         except Exception, e:
             self._log( "Station::run() caught exception: %s" % str(e), "error" )
             (ex_f, ex_s, trace) = sys.exc_info()
@@ -283,8 +252,9 @@ class Station(threading.Thread):
 
     def run_update(self):
         self.ready()
-        self.transfer()
         self.connect()
+        self.check_software_versions()
+        self.transfer()
         self.update()
         self.disconnect()
 
@@ -466,7 +436,7 @@ class Station(threading.Thread):
             self._log( "closing ssh connection..." )
             self.reader.logout()
         except Exception, e:
-            #self._log( "Station::ssh_disconnect() caught exception while trying to close ssh connection: %s" % e.__str__(), "error" )
+            self._log( "Station::ssh_disconnect() caught exception while trying to close ssh connection: %s" % e.__str__(), "error" )
             raise ExDisconnectFailed, "Disconnect Failed: %s" % str(e)
 
 # === Station Class (END)/*}}}*/
@@ -1191,8 +1161,9 @@ class Station330(Station):
         self.continuity_only = continuity_only
         self.versions_only = versions_only
 
-        self.version_files = []
+        self.version_files = {}
         self.version_queue = None
+        self.need_update = {}
 
         self.transfer_list = [
             ( # Path
@@ -1223,9 +1194,29 @@ class Station330(Station):
             'upipe.py',
         ]
 
+    def needs_update(self, file):
+        if not os.path.exists(file):
+            return False
+        if not len(self.version_files.keys()):
+            return True
+        if not len(self.need_update.keys()):
+            return False
+        key = file
+        if (len(file) > 8) and (file[-8:] == '.tar.bz2'):
+            key = file[:-8] + '.md5'
+        if not self.version_files.has_key(key):
+            return False
+        if hashsum.sum(file, 'MD5') != self.version_files[key][1]:
+            self._log("Update file '%s' does not match MD5 in versions file!" % file)
+            return False
+        if self.need_update.has_key(key):
+            return True
+        return False
+
     def transfer(self):
+        self._log("Need Update: " + ", ".join(sorted(self.need_update.keys())))
         for (dst, srcs) in self.transfer_list:
-            source_files = filter(lambda i: os.path.exists(i), srcs)
+            source_files = filter(lambda i: self.needs_update(i), srcs)
             if not len(source_files):
                 continue
             port_str = ''
@@ -1273,6 +1264,8 @@ class Station330(Station):
             md5_response = ''
             if not os.path.exists(file_name):
                 continue
+            if not self.needs_update(file_name):
+                continue
             self._log(str((id, file_name)))
             file = self.install_path + '/' + file_name
 
@@ -1314,7 +1307,6 @@ class Station330(Station):
                 raise ExIncomplete, "command failed"
             self._log(self.reader.before)
 
-            #self._log("./install_%s.py" % id)
             self.reader.sendline("./install_%s.py" % id)
             try:
                 self.reader.expect(['(slate or [manual])?'], timeout=self.comm_timeout)
@@ -1332,7 +1324,6 @@ class Station330(Station):
                 raise ExIncomplete, "command failed"
             self._log(self.reader.before)
 
-            #self._log("cd %s" % self.install_path)
             self.reader.sendline("cd %s" % self.install_path)
             try:
                 if not self.reader.prompt( timeout=self.comm_timeout ):
@@ -1342,7 +1333,6 @@ class Station330(Station):
                 raise ExIncomplete, "command failed"
             self._log(self.reader.before)
 
-            #self._log("rm -rf %s*" % id)
             self.reader.sendline("rm -rf %s*" % id)
             try:
                 if not self.reader.prompt( timeout=self.comm_timeout ):
@@ -1352,7 +1342,6 @@ class Station330(Station):
                 raise ExIncomplete, "command failed"
             self._log(self.reader.before)
 
-            #self._log("echo '%s' > /opt/util/%s.md5" % (md5_hash, id))
             self.reader.sendline("echo '%s' > /opt/util/%s.md5" % (md5_hash, id))
             try:
                 if not self.reader.prompt( timeout=self.comm_timeout ):
@@ -1394,18 +1383,6 @@ class Station330(Station):
         if (not self.continuity_only) and (not self.versions_only):
             check_script = 'checks.py'
             script_path  = '/opt/util/scripts/checks.py'
-            #self._log( "checking for newer checks script (checks.py)" )
-            #self.reader.sendline("if [ -e \"%s\" ]; then echo \"true\"; else echo \"false\"; fi" % script_path)
-            #self.reader.prompt( timeout=self.comm_timeout )
-            #reg_result = re.compile('((?:true)|(?:false))[^\n]*?$').search(self.reader.before)
-            #result = "false"
-            #if reg_result:
-            #    result = reg_result.groups()[0]
-            #self._log( "result of checks script is '%s'" % result )
-            #if result != "true":
-            #    self._log( "using default checks script (checks.pl)" )
-            #    check_script = 'checks.pl'
-            #    script_path  = '/opt/util/scripts/checks.pl'
 
             self._log( "checking hash of %s" % check_script )
             self.reader.sendline("md5sum %s" % script_path)
@@ -1430,7 +1407,7 @@ class Station330(Station):
             self.version_queue = version_queue
 
     def set_version_files(self, version_files):
-        if version_files and (type(version_files) == list):
+        if version_files and (type(version_files) == dict):
             self.version_files = version_files
 
     def check_software_versions_OLD(self):
@@ -1450,25 +1427,52 @@ class Station330(Station):
             self._log(file)
 
     def check_software_versions(self):
-        #print self.version_files
-        for (file, ref_md5) in self.version_files:
-            summary = ''
-            if (len(file) > 4) and (file[-4:] == '.md5'):
-                self.reader.sendline("cat %s" % file)
-                if not self.reader.prompt( timeout=self.comm_timeout ):
-                    raise ExTimeout("timeout while checking .md5 files")
-                md5 = self.reader.before.strip('\n').split('\n')[1].strip()
-            else:
-                self.reader.sendline("md5sum %s" % file)
-                if not self.reader.prompt( timeout=self.comm_timeout ):
-                    raise ExTimeout("timeout while checking md5sums")
-                md5 = self.reader.before.strip('\n').split('\n')[1].split(' ')[0].strip()
-            summary = "%s %s" % (md5, file)
+        for (file, ref_md5) in self.version_files.values():
+            tries = 2
+            attempt = 0
+            while attempt < tries:
+                summary = ''
+                if (len(file) > 4) and (file[-4:] == '.md5'):
+                    self.reader.sendline("cat %s" % file)
+                    try:
+                        if not self.reader.prompt(timeout=self.comm_timeout):
+                            raise ExTimeout("Timeout on md5sum check")
+                    except Eception, e:
+                        self._log("Exception details: %s" % str(e))
+                        raise
+                    md5_response = self.reader.before
+                else:
+                    self.reader.sendline("(which md5sum &> /dev/null && md5sum %s) || (which md5 &> /dev/null && md5 %s)" % (file, file))
+                    try:
+                        if not self.reader.prompt( timeout=self.comm_timeout ):
+                            raise ExTimeout("timeout on md5 command")
+                    except Exception, e:
+                        self._log("exception details: %s" % str(e))
+                        raise ExIncomplete, "command failed"
+                    md5_response = self.reader.before
+
+                md5_hash = ''
+                if type(md5_response) == str:
+                    match = re.compile('[0-9a-f]{32}', re.M).search(md5_response)
+                else:
+                    match = None
+
+                if match:
+                    md5_hash = match.group(0)
+                    #self._log("MD5 hash: %s" % md5_hash)
+                    attempt = tries
+                else:
+                    attempt += 1
+                    self._log("Failed attempt #%d to acquire md5sum for %s" % (attempt, file))
+
+            summary = "%s %s" % (md5_hash, file)
             log_category = 'default'
-            if ref_md5 != md5:
+            if ref_md5 != md5_hash:
                 self.version_queue.put("%s:%s" % (self.name, summary))
                 log_category = 'warning'
+                self.need_update[os.path.basename(file)] = True
             self._log(summary, category=log_category)
+
 
     def check_diskloop_continuity(self):
         diskloop_config = "/etc/q330/DLG1/diskloop.config"
