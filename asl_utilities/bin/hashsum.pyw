@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import asl
 
-import hashlib
 import os
 import sys
 
