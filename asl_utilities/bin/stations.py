@@ -641,7 +641,7 @@ class ThreadLoop(threading.Thread):
                     station_key = self.stations_retry.pop(0)
                     station_info = self.manager.stations[station_key]
                 # if there are no threads remaining all stations have been checked
-                elif not len(self.threads):
+                elif (not len(self.threads)) and (not len(self.stations_fresh)):
                     self.summarize()
                     self.done = True
                     self.running = False
