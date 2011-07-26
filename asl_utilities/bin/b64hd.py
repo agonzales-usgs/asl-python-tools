@@ -2,12 +2,12 @@
 import asl
 
 import base64
+import sys
 from jtk import hexdump
 
 while 1:
     try:
         data = raw_input()
-        print
 
         try:
             raw = base64.standard_b64decode(data.strip())
@@ -18,8 +18,5 @@ while 1:
         print hexdump.hexdump(raw)
 
     except KeyboardInterrupt:
-        print
-        break
-
-    print
+        sys.exit(0)
 

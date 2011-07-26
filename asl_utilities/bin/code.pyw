@@ -6,6 +6,8 @@ pygtk.require('2.0')
 import gtk
 import gobject
 
+from jtk import usertag
+
 class Q330_Code:
     def __init__(self):
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
@@ -20,11 +22,14 @@ class Q330_Code:
         self.hbox_station    = gtk.HBox()
         self.hbox_type       = gtk.HBox()
         self.hbox_auth_code  = gtk.HBox()
+        self.hbox_user_tag   = gtk.HBox()
         self.hbox_control    = gtk.HBox()
+
+        self.generating = False
 
       # User Interaction Widgets
         self.label_station   = gtk.Label("Station Code:")
-        self.entry_station   = gtk.Entry(max=5)
+        self.entry_station   = gtk.Entry(max=6)
 
         self.radiobutton_C   = gtk.RadioButton(group=None, label="C")
         self.radiobutton_1   = gtk.RadioButton(group=self.radiobutton_C, label="1")
@@ -35,6 +40,9 @@ class Q330_Code:
 
         self.label_auth_code = gtk.Label("Auth. Code:")
         self.entry_auth_code = gtk.Entry(max=16)
+
+        self.label_user_tag  = gtk.Label("User Tag:")
+        self.entry_user_tag  = gtk.Entry(max=16)
 
         self.button_copy_all = gtk.Button(stock=None, use_underline=True)
         self.hbox_copy_all   = gtk.HBox()
@@ -71,6 +79,7 @@ class Q330_Code:
         self.vbox_main.pack_start(self.hbox_type,      False, True,  0)
         self.vbox_main.pack_start(self.hbox_station,   False, True,  0)
         self.vbox_main.pack_start(self.hbox_auth_code, False, True,  0)
+        self.vbox_main.pack_start(self.hbox_user_tag,  False, True,  0)
         self.vbox_main.pack_start(self.hbox_control,   False, True,  0)
 
         self.hbox_station.pack_start(self.label_station, False,  False, 0)
@@ -86,6 +95,9 @@ class Q330_Code:
         self.hbox_auth_code.pack_start(self.label_auth_code, False, False, 0)
         self.hbox_auth_code.pack_end(self.entry_auth_code, False, False, 0)
 
+        self.hbox_user_tag.pack_start(self.label_user_tag, False, False, 0)
+        self.hbox_user_tag.pack_end(self.entry_user_tag, False, False, 0)
+
         self.hbox_control.pack_start(self.button_copy_all, False, False, 0)
         self.hbox_control.pack_start(self.button_copy_selection, False, False, 0)
         self.hbox_control.pack_end(self.button_quit, False, False, 0)
@@ -98,6 +110,9 @@ class Q330_Code:
         #self.entry_auth_code.set_justify(gtk.JUSTIFY_RIGHT)
         self.entry_auth_code.set_editable(False)
         self.entry_auth_code.set_text("0")
+        #self.entry_user_tag.set_justify(gtk.JUSTIFY_RIGHT)
+        #self.entry_user_tag.set_editable(False)
+        self.entry_user_tag.set_text("%d" % 0xffffffff)
         self.button_copy_selection.set_sensitive(False)
 
 # ===== Hidden Objects ============================================
@@ -109,7 +124,8 @@ class Q330_Code:
         self.window.connect("destroy-event", self.callback_quit, None)
         self.window.connect("delete-event",  self.callback_quit, None)
 
-        self.entry_station.connect("changed", self.callback_generate, None)
+        self.entry_station.connect("changed", self.callback_generate, None, "code")
+        self.entry_user_tag.connect("changed", self.callback_generate, None, "tag")
         self.entry_station.connect("focus", self.callback_entry_station_focused, None)
 
         self.radiobutton_C.connect("toggled", self.callback_radio, None, "C")
@@ -184,7 +200,7 @@ class Q330_Code:
         self.callback_generate(widget, event, data=data)
 
     def callback_generate(self, widget, event, data=None):
-        self.generate_code()
+        self.generate_code(data)
 
 # ===== Methods ===================================================
     def auth_code_to_clipboard(self, selection=False):
@@ -197,9 +213,21 @@ class Q330_Code:
         gtk.main_quit()
         return False
 
-    def generate_code(self):
+    def generate_code(self, data):
+        if self.generating:
+            return
+        self.generating = True
+
+        if data == 'tag':
+            try:
+                self.entry_station.set_text(usertag.decode(int(self.entry_user_tag.get_text())))
+            except Exception, e:
+                self.entry_station.set_text("")
+
         if len(self.entry_station.get_text()) == 0:
             self.entry_auth_code.set_text("0")
+            if data != 'tag':
+                self.entry_user_tag.set_text("%d" % 0xffffffff)
             self.button_copy_selection.set_sensitive(False)
         else:
             teh_string = self.entry_station.get_text()
@@ -223,7 +251,10 @@ class Q330_Code:
                     code += str(val - 96)
                 else:
                     self.entry_auth_code.set_text("0")
+                    if data != 'tag':
+                        self.entry_user_tag.set_text("")
                     self.button_copy_selection.set_sensitive(False)
+                    self.generating = False
                     return
                 first = False
             code += self.code_postfix
@@ -238,10 +269,18 @@ class Q330_Code:
             self.entry_auth_code.set_text(result)
             self.entry_auth_code.select_region(selection_start, selection_end)
 
+            if data != 'tag':
+                try:
+                    self.entry_user_tag.set_text("%d" % usertag.encode(teh_string))
+                except Exception, e:
+                    self.entry_user_tag.set_text("")
+
             if selection_length:
                 self.button_copy_selection.set_sensitive(True)
             else:
                 self.button_copy_selection.set_sensitive(False)
+
+        self.generating = False
 
 def main():
     app = Q330_Code()
