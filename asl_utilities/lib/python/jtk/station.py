@@ -1219,10 +1219,13 @@ class Station330(Station):
             source_files = filter(lambda i: self.needs_update(i), srcs)
             if not len(source_files):
                 continue
-            port_str = ''
+            port_str = ""
+            auth_str = ""
             if self.port:
-                port_str = '-P %s' % str(self.port)
-            command = "scp %s %s %s@%s:%s/." % (port_str, ' '.join(source_files), self.username, self.address, dst)
+                port_str = "-P %s" % str(self.port)
+            if self.proxy is not None:
+                auth_str = "-o'NoHostAuthenticationForLocalhost=yes'"
+            command = "scp %s %s %s %s@%s:%s/." % (port_str, auth_str, " ".join(source_files), self.username, self.address, dst)
             #command = "scp -o ConnectTimeout=%d %s %s@%s:%s/." % (self.comm_timeout, ' '.join(source_files), self.username, self.address, dst)
             self._log("spawning pexpect with command: %s" % command)
             try:
