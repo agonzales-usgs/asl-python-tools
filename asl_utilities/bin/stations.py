@@ -214,7 +214,10 @@ class Manager(threading.Thread):
                             self.logger.log("Removing Loop:%s. %d loop(s) remaining." % (str(l.group), len(self.loops)))
 
                     for l in self.loops:
-                        self.logger.log("  Loop:%s has %d station thread(s) running." % (str(l.group), len(l.threads)))
+                        running_threads = []
+                        for t in l.threads:
+                            running_threads.append(t.name)
+                        self.logger.log("  Loop:%s has %d station thread(s) running [%s]." % (str(l.group), len(l.threads), ", ".join(running_threads)))
                 except KeyboardInterrupt, e:
                     self.logger.log("Thread Summary [%d]: %s" % (threading.activeCount(), str(threading.enumerate())))
         except Exception, e:
@@ -599,6 +602,10 @@ class ThreadLoop(threading.Thread):
         while self.running:
             try:
                 self._poll()
+                running = []
+                for t in self.threads:
+                    running.append(t.name)
+                self.logger.log("%d running threads [%s]" % (len(self.threads), ", ".join(running)))
                 message,thread = self.queue.get()
                 name = 'Anonymous'
                 if thread is not None:
