@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+import traceback
 
 from jtk import StationDatabase
 
@@ -162,10 +163,49 @@ class Main:
         try:
             channels = self.db.get_channels(network=network, station=station)
             fh = open(file, 'r')
-            check_summary = file.read()
+            check_summary = fh.read()
             fh.close()
+            reg_timestamp = re.compile("UTC Timestamp:\s+(\d+-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})")
+            date_regex = "\d{4}[/]\d{2}[/]\d{2}\s+\d{2}[:]\d{2}[:]\d{2}"
+            reg_channels = re.compile("\d+\s+(\w{3,5})[.](\d{0,2}[-]\w{1,3})\s+[.]?\d+\s+%s\s+[-]\s+(%s)" % (date_regex, date_regex), re.M | re.S)
+            reg_loc  = re.compile("^(?:[012]0)?$")
+            reg_chan = re.compile("^(?:H[HN][12ENZ])|(?:BC[0-9])$")
+
+            timestamp_matches = reg_timestamp.search(check_summary)
+            channel_matches = reg_channels.findall(check_summary)
+            if not timestamp_matches:
+                raise Exception("No timestamp matches found.")
+            if not channel_matches:
+                raise Exception("No channel matches found.")
+            check_channels = {}
+            for s,c,t in channel_matches:
+                check_channels[c] = (s,c,t)
+            utc_timestamp = timestamp_matches.groups()[0]
+
+            for _,_,l,c,_ in channels:
+                key = c
+                if l and len(l):
+                    key = l + "-" + c
+                if not check_channels.has_key(key):
+                    missing_channels.append("%s" % key)
+                else:
+                    if reg_loc.match(l) and reg_chan.match(c):
+                        print "Skipping event channel %s-%s" % (l,c)
+                        continue
+                    s,c,t = check_channels[key]
+                    time_utc = calendar.timegm(time.strptime(utc_timestamp, "%Y-%m-%d %H:%M:%S"))
+                    time_channel = calendar.timegm(time.strptime(t, "%Y/%m/%d %H:%M:%S"))
+                    delay = time_utc - time_channel
+                    if delay > 7200:
+                        delayed_channels.append("%s" % (key.replace("_","-"),))
+                if len(delayed_channels):
+                    result += " Delayed Channels: %s." % (", ".join(delayed_channels),)
+                if len(missing_channels):
+                    result += " Missing Channels: %s." % (", ".join(missing_channels),)
         except Exception, e:
             print "%s-%s channel check Exception:" % (network,station), str(e)
+            #(ex_f, ex_s, trace) = sys.exc_info()
+            #traceback.print_tb(trace)
         return result
 
     def q330_channels(self, file, network, station):
@@ -201,7 +241,7 @@ class Main:
                     missing_channels.append("%s" % key)
                 else:
                     if reg_loc.match(l) and reg_chan.match(c):
-                        print "Skipping event channeld %s-%s" % (l,c)
+                        print "Skipping event channel %s-%s" % (l,c)
                         continue
                     m,d,t = check_channels[key]
                     time_parts = t.split(':')
@@ -219,6 +259,8 @@ class Main:
                 result += " Missing Channels: %s." % (", ".join(missing_channels),)
         except Exception, e:
             print "%s-%s channel check Exception:" % (network,station), str(e)
+            #(ex_f, ex_s, trace) = sys.exc_info()
+            #traceback.print_tb(trace)
         return result
 
     def outage_string(self, outages):

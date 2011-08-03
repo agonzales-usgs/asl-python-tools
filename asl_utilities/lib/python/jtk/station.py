@@ -832,6 +832,8 @@ class Station680(Station):
         #   [ ]d. ensure DATA is increasing
         #   [ ]e. write to to chk file
 
+        self.summary += "UTC Timestamp: %s\n" % time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+
         # Calculate uptime
         regex = re.compile( "(\d{1,})[:]\d{2} sysgo" )
         match = regex.search( lines )
@@ -1108,7 +1110,6 @@ class Station330Direct(Station):
                 name = parts[1]
             else:
                 name = parts[0]
-            self.output += "[Q330]%s:" % name
 
             q330_boot_times = []
             qping_results = {}
@@ -1126,10 +1127,12 @@ class Station330Direct(Station):
                 q330_boot_times.append(boot_summary)
                 qping_results[id] = self.tmp_buffer.strip()
 
-            self.output += ",".join(q330_boot_times) + ".\n\n"
-            for id in sorted(qping_results.keys()):
-                self.output += "Q330 #%d\n" % id
-                self.output += self.tmp_buffer + "\n"
+            if len(q330_boot_times) > 0:
+                self.output += "[Q330]%s:" % name
+                self.output += ",".join(q330_boot_times) + ".\n\n"
+                for id in sorted(qping_results.keys()):
+                    self.output += "Q330 #%d\n" % id
+                    self.output += self.tmp_buffer + "\n"
 
         except ImportError, e:
             self._log("Failed to import CnC modules.")
