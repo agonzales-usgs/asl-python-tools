@@ -209,7 +209,7 @@ class Manager(threading.Thread):
                         self.logger.log("LoopThread joined: %s" % name)
 
                     for l in self.loops:
-                        if not l.running:
+                        if (not l.fresh) and (not l.running):
                             self.loops.remove(l)
                             self.logger.log("Removing Loop:%s. %d loop(s) remaining." % (str(l.group), len(self.loops)))
 
@@ -411,6 +411,7 @@ class ThreadLoop(threading.Thread):
         self.stations_expired  = [] # tried max number of times allowed
         self.stations_partial  = [] # stations that are missing information
 
+        self.fresh = True
         self.done = False
         self.running = False
 
@@ -599,6 +600,7 @@ class ThreadLoop(threading.Thread):
         self.logger.log("Start: stations    : %s" % str(self.stations_fresh))
 
         self.running = True
+        self.fresh   = False
         while self.running:
             try:
                 self._poll()

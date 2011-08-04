@@ -209,9 +209,10 @@ class Station(threading.Thread):
         self.running = True
         try:
             if self.proxy is not None:
+                self._log("Waiting for proxy to start...")
                 if self.proxy.wait_for_ready() == False:
                     raise ExConnectFailed("Could not establish proxy connection to '%s' for station '%s' " % (self.proxy.name, self.name))
-                self.start_time = time.mktime( time.gmtime() )
+                self.start_time = time.mktime(time.gmtime())
                 self._log("Proxy connection established.")
             if self.action == 'check':
                 self.run_check()
@@ -229,6 +230,12 @@ class Station(threading.Thread):
             self._log( "Station::run() caught exception: %s" % str(e), "error" )
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
+
+        # Give child classes an opportunity to clean things up,
+        # even after a severe error. This is essential for proxies
+        # that fail to successfully connect, as there are dependent
+        # processes waiting on the completion of thier initialization.
+        self.cleanup()
 
         try:
             if self.proxy is not None:
@@ -264,6 +271,9 @@ class Station(threading.Thread):
         self.construct()
         self.proxy_loop()
         self.disconnect()
+
+    def cleanup(self):
+        pass
 
     def check(self):
         self._log( "Station::check() this method must be overriden. Throwing a fit!!" , "error" )
@@ -475,8 +485,8 @@ class Proxy(Station):
         self.tunnel_ready = False
 
         # Create and acquire the lock now. This prevents
-        # the parent thread which is dependent on this
-        # proxy from checking too soon. Once this thread
+        # the parent thread (which is dependent on this
+        # proxy) from checking too soon. Once this thread
         # has started, the lock is released, and the parent
         # is free to receive the connetion confirmation.
         self.proxy_connect_lock = thread.allocate_lock()
@@ -575,6 +585,9 @@ class Proxy(Station):
         self.proxy_connect_lock.release()
         if not self.tunnel_ready:
             raise ExConnectFailed("Failed to set up proxy connection: %s" % str(e))
+    
+    def cleanup(self):
+        self.proxy_connect_lock.release()
 
     def proxy_loop(self):
         self.running = True
@@ -598,7 +611,7 @@ class Proxy(Station):
         start = time.time()
         while timeout >= 0:
             try:
-                request = self.queue.get(timeout)
+                request = self.queue.get(True, timeout)
                 if request == 'HALT':
                     raise ExHaltRequest("HALT")
             except Queue.Empty:
@@ -610,9 +623,8 @@ class Proxy(Station):
 
     def wait_for_ready(self, timeout=None):
         self.proxy_connect_lock.acquire(1)
-        if self.tunnel_ready:
-            return True
-        return False
+        self.proxy_connect_lock.release()
+        return self.tunnel_ready
 
     def check(self):
         pass
