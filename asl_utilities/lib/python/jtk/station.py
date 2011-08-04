@@ -587,7 +587,10 @@ class Proxy(Station):
             raise ExConnectFailed("Failed to set up proxy connection: %s" % str(e))
     
     def cleanup(self):
-        self.proxy_connect_lock.release()
+        try:
+            self.proxy_connect_lock.release()
+        except:
+            pass
 
     def proxy_loop(self):
         self.running = True
