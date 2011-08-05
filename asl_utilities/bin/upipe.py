@@ -35,7 +35,7 @@ except:
 """
 TCP Forwarding:
 
-(NOTE: Most of this has been done, but there are still
+(NOTE: Most of fhe following has been done, but there are still 
        some bugs to work out.)
 
 We need a way for a TCP connection status to be recognized
@@ -587,6 +587,12 @@ class MultiPipe(threading.Thread):
         self._verbosity = verbosity
         self._local = True
 
+    def enable_packet_logging(self):
+        self._log = True
+
+    def disable_packet_logging(self):
+        self._log = False
+
     def log(self, string, verbosity=1):
         if verbosity <= self._verbosity:
             print string
@@ -844,6 +850,8 @@ class PipeUI:
         self.hbox_add.pack_start(self.image_add, padding=1)
         self.hbox_add.pack_start(self.label_add, padding=1)
 
+        self.checkbutton_log_packets = gtk.CheckButton("Log Packets")
+
         self.button_quit = gtk.Button(stock=None)
         self.hbox_quit   = gtk.HBox()
         self.image_quit  = gtk.Image()
@@ -870,6 +878,7 @@ class PipeUI:
         self.hbox_new.pack_start(self.combobox_type, False, False, 0)
         self.hbox_new.pack_start(self.button_add,    False, False, 0)
 
+        self.hbox_control.pack_start(self.checkbutton_log_packets, False, False, 0)
         self.hbox_control.pack_end(self.button_quit, False, False, 0)
 
 
@@ -883,11 +892,14 @@ class PipeUI:
         self.combobox_type.append_text('TCP')
         self.combobox_type.append_text('UDP')
         self.combobox_type.set_active(1)
+        self.checkbutton_log_packets.set_active(0)
+        if log:
+            self.checkbutton_log_packets.set_active(1)
 
 # ===== Event Bindings ============================================
         self.button_add.connect("clicked",  self.callback_add,  None)
         self.button_quit.connect("clicked", self.callback_quit, None)
-
+        self.checkbutton_log_packets.connect("toggled", self.callback_toggle_log_packets, None)
 
 # ===== Keyboard Shortcuts ========================================
         self.window.connect("key-press-event", self.callback_key_pressed)
@@ -981,6 +993,9 @@ class PipeUI:
     def callback_quit(self, widget, event, data=None):
         self.close_application()
 
+    def callback_toggle_log_packets(self, widget, event, data=None):
+        self.toggle_log_packets()
+
     def callback_add(self, widget, event, data=None):
         try:
             lport = int(self.entry_lport.get_text())
@@ -1003,6 +1018,12 @@ class PipeUI:
         self.core.stop()
         gtk.main_quit()
         return False
+
+    def toggle_log_packets(self):
+        if self.checkbutton_log_packets.get_active():
+            self.core.enable_packet_logging()
+        else:
+            self.core.disable_packet_logging()
 
     def log(self, string, verbosity=1):
         self.core.log(string, verbosity)
