@@ -12,23 +12,23 @@ class Counter(object):
     def set_default(self, default):
         self._default = default
 
-    def reset():
+    def reset(self):
         self._count = self._default
 
-    def ie():
+    def p_inc(self):
         self._count += self._step
         return self._count
 
-    def de():
+    def p_dec(self):
         self._count -= self._step
         return self._count
 
-    def ei():
+    def inc_p(self):
         tmp = self._count
         self._count += self._step
         return tmp
 
-    def ed():
+    def dec_p(self):
         tmp = self._count
         self._count -= self._step
         return tmp

@@ -9635,3 +9635,4 @@
 2011-07-22 06:31:02,830  WARN Unknown file format: org.openoffice.Office.UI.CalcWindowState.dat
 2011-07-22 06:31:02,831  WARN Unknown file format: org.openoffice.Office.Recovery.dat
 2011-07-22 06:31:02,871  WARN Unknown file format: .generate_report.py.un~
+2011-08-15 11:46:01,225 ERROR LoadDataCommand error: java.lang.RuntimeException: java.io.EOFException
