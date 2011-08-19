@@ -21,13 +21,20 @@ class Notifier(asyncore.dispatcher):
         self.set_socket(self.sock_in)
 
     def notify(self):
-        print "Sending Nofication..."
-        self.sock_out.sendto('CHANGED', self.address)
+        try :
+            self.sock_out.sendto('CHANGED', self.address)
+            print "Sending Nofication..."
+        except socket.error, e:
+            print "Error sending notification"
 
     def handle_read(self):
-        print "Nofication Received."
-        msg = self.sock_in.recv(7)
-        return len(msg)
+        try :
+            msg = self.sock_in.recv(7)
+            print "Nofication Received."
+            return len(msg)
+        except socket.error, e:
+            print "Error reading notification"
+        return 0
 
     def writable(self):
         return False
@@ -36,18 +43,28 @@ class TCPSocket(asyncore.dispatcher):
     def __init__(self, queue):
         asyncore.dispatcher.__init__(self)
         self._connected = False
+        self._connecting = False
+        self._connect_start = 0
+        self._connect_timeout = 30
         self._master_queue = queue
         self._packet_queue = Queue.Queue()
         self._current_packet = ""
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.set_socket(self._socket)
+        self.bind(('', 0))
         self.setblocking(0)
+
+    def get_address(self):
+        return self.socket.getsockname()
 
     def handle_connect(self):
         print "Connection Established"
         self._connected = True
+        self._connecting = False
 
     def handle_read(self):
         self._connected = True
+        self._connecting = False
         try:
             packet = self.recv(512)
         except socket.error, e:
@@ -58,13 +75,15 @@ class TCPSocket(asyncore.dispatcher):
             return 0
         return len(packet)
 
-    def handl_write(self):
+    def handle_write(self):
+        self._connected = True
+        self._connecting = False
         bytes_sent = 0
         try:
             if (self._current_packet == ""): 
                 self._current_packet = self._packet_queue.get_nowait()
             bytes_sent = self.send(self._current_packet)
-            if (len(bytes_sent) < len(self._current_packet)):
+            if (bytes_sent < len(self._current_packet)):
                 self._current_packet = self._current_packet[bytes_sent:]
             else:
                 self._current_pcaket = ""
@@ -106,15 +125,17 @@ class IOThread(threading.Thread):
         while self.running:
             print "IOThread Loop..."
             if self.socket == None:
-                print "Attempting to establish connection to %s:%d" % self.address
-                self.socket = TCPSocket(self.queue)
                 try:
+                    self.socket = TCPSocket(self.queue)
+                    print "Attempting to establish connection to %s:%d from 127.0.0.1:%d" % (self.address[0], self.address[1], self.socket.get_address()[1])
+                    self.socket._connecting = True
+                    self.socket._connect_start = time.time()
                     self.socket.connect(self.address)
-                except socket.error:
+                except socket.error, e:
                     print "Could not establish connection."
                     del self.socket
                     self.socket = None
-                    time.sleep(0.1)
+                    time.sleep(1.0)
                     continue
 
             map = {
@@ -130,14 +151,17 @@ class IOThread(threading.Thread):
                 self.socket._connected = False
                 time.sleep(0.1)
 
-            if not self.socket._connected:
-                try:
-                    self.socket.close()
-                except:
-                    pass
-                del self.socket
-                self.socket = None
-                time.sleep(0.1)
+            if self.socket is not None:
+                if self.socket._connected == False:
+                    if self.socket._connecting and ((time.time() - self.socket._connect_start) < self.socket._connect_timeout):
+                        continue
+                    try:
+                        self.socket.close()
+                    except:
+                        pass
+                    del self.socket
+                    self.socket = None
+                    time.sleep(1.0)
 
     def notify(self):
         print "Notify requested."
