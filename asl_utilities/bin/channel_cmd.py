@@ -86,7 +86,7 @@ class TCPSocket(asyncore.dispatcher):
             if (bytes_sent < len(self._current_packet)):
                 self._current_packet = self._current_packet[bytes_sent:]
             else:
-                self._current_pcaket = ""
+                self._current_packet = ""
         except Queue.Empty:
             return 0
         except socket.error, e:

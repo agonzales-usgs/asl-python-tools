@@ -607,7 +607,7 @@ class MultiPipe(threading.Thread):
             asyncore.loop(30.0, False, self._get_map(), 1)
         self._remove_all_pipes()
 
-        try: self._scokets['INTERNAL'].close() 
+        try: self._sockets['INTERNAL'].close() 
         except: pass
         try: del self._sockets['INTERNAL']
         except: pass
