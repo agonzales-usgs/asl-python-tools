@@ -12,8 +12,6 @@ import struct
 import sys
 import threading
 
-from jtk import serial
-
 HAS_GUI=True
 try:
     import pygtk
@@ -24,6 +22,8 @@ try:
 except:
     HAS_GUI=False
     pass
+
+import jtk
 
 crc_table = [
 0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301, 0x03C0, 0x0280, 0xC241,
@@ -641,7 +641,7 @@ class CommThread(threading.Thread):
         self.args    = {
             "port"      : 0,
             "baudrate"  : 9600,
-            "bytesize"  : serial.EIGHTBITS,
+            "bytesize"  : jtk.pyserial.serialutil.EIGHTBITS,
             "parity"    : PARITY_ODD,
             "stopbits"  : STOPBITS_ONE,
             "rtscts"    : True,
@@ -714,9 +714,9 @@ class CommThread(threading.Thread):
     def connect(self):
         # detect platform first...
         if self.platform == 'win32':
-            self.port = serial.serialwin32.Win32Serial(**self.args)
+            self.port = jtk.pyserial.serialwin32.Win32Serial(**self.args)
         else:
-            self.port = serial.serialposix.PosixSerial(**self.args)
+            self.port = jtk.pyserial.serialposix.PosixSerial(**self.args)
 
 #/*}}}*/
         
