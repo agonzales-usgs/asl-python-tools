@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import asl
-import jtk
 
 import glob
 import inspect
@@ -12,6 +11,8 @@ import stat
 import struct
 import sys
 import threading
+
+from jtk import serial
 
 HAS_GUI=True
 try:
@@ -77,6 +78,464 @@ class CRC:
     def getCRC(self):
         return (self.lo & 0xFF) | ((self.hi & 0xFF) << 8)
 
+
+# === PARAMETERS ========
+def conv2of5(L1, L2):
+    result = {"type": None}
+    if L2 == 0:
+        result["type"] = 'one'
+        result["value"] = L1
+    elif L1 > L2:
+        result["type"] = 'two'
+        result["value"] = (L1, L2)
+    elif L1 < L2:
+        result["type"] = 'range'
+        result["value"] = (L1, L2)
+    elif L1 == 0 and L2 == 0:
+        result["type"] = 'any'
+
+    return result
+
+parameters = {
+    # Decode Controls
+    0x1f : {
+        "name": "Code 39",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x09 : {
+        "name": "UPC",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x08 : {
+        "name": "Code128",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x36 : {
+        "name": "Code 39 Full ASCII",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x35 : {
+        "name": "UPC Supps",
+        "hint": "",
+        "values": {
+            0: "No Supps",
+            1: "Supps only",
+            2: "Auto-D"
+        },
+        "default": 2},
+    0x29 : {
+        "name": "Convert UPC E to A",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x2a : {
+        "name": "Convert EAN8 to EAN13",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x37 : {
+        "name": "Convert EAN8 to EAN13 Type",
+        "hint": "Set code type of converted EAN8 barcode to EAN8 or EAN13",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x2b : {
+        "name": "Send UPC A Check Digit",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x2c : {
+        "name": "Send UPC E Check Digit",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x2e : {
+        "name": "Code 39 Check Digit",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x2d : {
+        "name": "Xmit Code 39 Check Digit",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x25 : {
+        "name": "UPCE_Preamble",
+        "hint": "",
+        "values": {
+            0: "None",
+            1: "System char",
+            2: "Sys char & country code"
+        },
+        "default": 1},
+    0x24 : {
+        "name": "UPCA_Preamble",
+        "hint": "",
+        "values": {
+            0: "None",
+            1: "System char",
+            2: "Sys char & country code"
+        },
+        "default": 1},
+    0x34 : {
+        "name": "EAN 128",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x38 : {
+        "name": "Coupon Code",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x3a : {
+        "name": "I 2of5",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x41 : {
+        "name": "I 2of5 Check Digit",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "USS check digit",
+            2: "OPCC check digit"
+        },
+        "default": 0},
+    0x40 : {
+        "name": "Xmit I 2of5 Check Digit",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x3f : {
+        "name": "Convert ITF14 to EAN 13",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x3b : {
+        "name": "I 2of5 Length 1",
+        "hint": "One Discrete Length, Two Discrete Lengths, Length Within Range, or Any Length",
+        "values": {
+            "converter": conv2of5,
+            "associate": 0x3c,
+        },
+        "default": 14},
+    0x3c : {
+        "name": "I 2of5 Length 2",
+        "hint": "One Discrete Length, Two Discrete Lengths, Length Within Range, or Any Length",
+        "values": {
+            "converter": conv2of5,
+            "associate": 0x3b,
+        },
+        "default": 0},
+    0x39 : {
+        "name": "D 2of5",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x3d : {
+        "name": "D 2of5 Length 1",
+        "hint": "One Discrete Length, Two Discrete Lengths, Length Within Range, or Any Length",
+        "values": {
+            "converter": conv2of5,
+            "associate": 0x3e,
+        },
+        "default": 12},
+    0x3e : {
+        "name": "D 2of5 Length 2",
+        "hint": "One Discrete Length, Two Discrete Lengths, Length Within Range, or Any Length",
+        "values": {
+            "converter": conv2of5,
+            "associate": 0x3d,
+        },
+        "default": 0},
+    0x2f : {
+        "name": "UPC/EAN Security Level",
+        "hint": "",
+        "values": {
+            "range": True,
+            "min":   0,
+            "max":   3,
+            "step":  1,
+            "adjust": 1
+        },
+        "default": 0},
+    0x30 : {
+        "name": "UPC/EAN Supplemental Redundancy (No_supp_max)",
+        "hint": "Number of times to decode UPC/EAN barcode without supplements",
+        "values": {
+            "range": True,
+            "min":   2,
+            "max":   20,
+            "step":  1,
+            "adjust": 1
+        },
+        "default": 5},
+
+    # Scanner Controls
+    0x11 : {
+        "name": "Scanner On-Time",
+        "hint": "",
+        "values": {
+            "range": True,
+            "min":   1000,
+            "max":   10000,
+            "step":  100,
+            "adjust": .01,
+            "units": "seconds"
+        },
+        "default": 3000},
+    0x02 : {
+        "name": "Volume",
+        "hint": "",
+        "values": {
+            0: "Off",
+            1: "On"
+        },
+        "default": 1},
+    0x20 : {
+        "name": "Comm Awake Time",
+        "hint": "How long scanner will stay awake for host communication",
+        "values": {
+            "range": True,
+            "min":   1,
+            "max":   6,
+            "step":  1,
+            "adjust": 20,
+            "units": "seconds"
+        },
+        "default": 1},
+    0x0d : {
+        "name": "Baud Rate",
+        "hint": "",
+        "values": {
+            3: 300,
+            4: 600,
+            5: 1200,
+            6: 2400,
+            7: 4800,
+            8: 9600,
+            9: 19200
+        },
+        "default": 8},
+    0x1d : {
+        "name": "Baud Switch Delay",
+        "hint": "How long scanner will delay before sending a response to a new baud rate command",
+        "values": {
+            "range": True,
+            "min":   0.0,
+            "max":   1000.0,
+            "step":  10.0,
+            "adjust": 1000.0,
+            "units": "seconds"
+        },
+        "default": 35},
+    0x1c : {
+        "name": "Reset Baud Rates",
+        "hint": "Determines if default baud rate will be used on power-up",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x04 : {
+        "name": "Reject Redundant Barcode",
+        "hint": "Disabling will allow same barcode to be stored consecutively",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x0a : {
+        "name": "Host Connect Beep",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x0b : {
+        "name": "Host Complete Beep",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x07 : {
+        "name": "Low-Battery Indication",
+        "hint": "Detemines how low battery condition will be handled",
+        "values": {
+            0: "No Indication/No Operation",
+            1: "No Indication/Allow Operation",
+            2: "Indicate/No Operation",
+            3: "Indicate/Allow Operation"
+        },
+        "default": 3},
+    0x0f : {
+        "name": "Auto_Clear",
+        "hint": "Clear barcodes after upload",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x21 : {
+        "name": "Delete_Enable",
+        "hint": "Determines operation of delete and clear all functions",
+        "values": {
+            0: "Delete Disabled/Clear All Disabled",
+            1: "Delete Disabled/Clear All Enabled",
+            2: "Delete Enabled/Clear All Disabled",
+            3: "Delete Enabled/Clear All Enabled",
+            4: "Radio Stamp",
+            5: "VDIU Voluntary Device Initiated Upload"
+        },
+        "default": 3},
+    0x31 : {
+        "name": "Data Protection",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x32 : {
+        "name": "Memory Full Indication",
+        "hint": "",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x33 : {
+        "name": "Memory Low Indication",
+        "hint": "EEPROM is 90% full",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 0},
+    0x22 : {
+        "name": "Max Barcode Len",
+        "hint": "Increase to 30 for Coupon Code",
+        "values": {
+            "range": True,
+            "min":   1,
+            "max":   30,
+            "step":  1,
+            "adjust": 1,
+            "units":  "characters"
+        },
+        "default": 30},
+    0x1e : {
+        "name": "Good Decode LED On Time",
+        "hint": "",
+        "values": {
+            "range": True,
+            "min":   250,
+            "max":   1000,
+            "step":  250,
+            "adjust": 1,
+            "units":  "milliseconds"
+        },
+        "default": 4},
+    0x23 : {
+        "name": "Store_RTC",
+        "hint": "Store Real Time Clock data",
+        "values": {
+            0: "Disabled",
+            1: "Enabled"
+        },
+        "default": 1},
+    0x4f : {
+        "name": "ASCII mode",
+        "hint": "Allow user to choose how unencrypted data is to be sent",
+        "values": {
+            0: "Like encrypted data (CS-1504 Mode)",
+            1: "As ASCII strings (like CS-2000)"
+        },
+        "default": 0},
+    0x55 : {
+        "name": "Beeper Toggle",
+        "hint": "Allows user to toggle beeper On/Off with the scan key",
+        "values": {
+            0: "No",
+            1: "Yes"
+        },
+        "default": 1},
+    0x56 : {
+        "name": "Beeper Auto On",
+        "hint": "Automatically turns on a beeper toggled off by the scan key after 8 hours",
+        "values": {
+            0: "No",
+            1: "Yes"
+        },
+        "default": 0},
+    0x26 : {
+        "name": "Scratch Pad",
+        "hint": "A 32 byte storage area (unused by the CS-1504) for customer use",
+        "values": {
+            "string": True,
+            "length": 32
+        },
+        "default": None},
+}
+
+# === COMMANDS ==========
 CMD_INTERROGATE         =  1
 CMD_CLEAR_BAR_CODES     =  2
 CMD_DOWNLOAD_PARAMETERS =  3
@@ -96,24 +555,30 @@ class Command(object):
         self.message = None
 
     def build(self):
-        self.message = struct.pack(">BB%ds" % len(self.strings), self.command, self.stx, self.strings)
+        self.message = struct.pack(">BB", self.command, self.stx)
+        for string in self.strings:
+            self.message += struct.pack(">B%ds" % len(string), string)
+        self.message += struct.pack(">B", 0)
         crc = CRC()
         crc.add(self.message)
         self.message += struct.pack(">H", crc.getCRC())
 
 
-RSP_BAD_CRC      = -2
-RSP_BAD_STX      = -1
-RSP_UNSUPPORTED  =  5
-RSP_OK           =  6
-RSP_CMD_CRC_ERR  =  7
-RSP_RCV_CHAR_ERR =  8
-RSP_GENERAL_ERR  =  9
+RSP_BAD_STRUCTURE = -3
+RSP_BAD_CRC       = -2
+RSP_BAD_STX       = -1
+RSP_UNSUPPORTED   =  5
+RSP_OK            =  6
+RSP_CMD_CRC_ERR   =  7
+RSP_RCV_CHAR_ERR  =  8
+RSP_GENERAL_ERR   =  9
 
-error_map = {
+status_map = {
+    RSP_BAD_CRC      : "Bad Structure",
     RSP_BAD_CRC      : "Bad CRC Value",
     RSP_BAD_STX      : "Bad STX Value",
     RSP_UNSUPPORTED  : "Unsupported Command Number",
+    RSP_OK           : "Okay",
     RSP_CMD_CRC_ERR  : "Command CRC Error",
     RSP_RCV_CHAR_ERR : "Received Character Error",
     RSP_GENERAL_ERR  : "General Error",
@@ -125,32 +590,42 @@ class Response(object):
         object.__init__(self)
         self.status  = None
         self.data    = None
-        self.strings = None
+        self.strings = []
 
         crc = CRC()
 
         self.status = struct.unpack(">B", message[:1])[0]
-        if self.status < RSP_UNSUPPORTED or self.status > RSP_GENERAL_ERROR:
-        if self.status == RSP_OK:
-            stx = struct.unpack(">B", message[1:2])[0]
-            if stx != 0x2:
-                self.status = RSP_BAD_STX
-                return
-            crc = struct.unpack(">H", message[-2:])[0]
-            crc.add(message[:-2])
-            if crc.getCRC() != crc:
-                self.status = RSP_BAD_CRC
-                return
+        if self.status != RSP_OK:
+            return
+        stx = struct.unpack(">B", message[1:2])[0]
+        if stx != 0x2:
+            self.status = RSP_BAD_STX
+            return
+        crc = struct.unpack(">H", message[-2:])[0]
+        crc.add(message[:-2])
+        if stx != 0x2:
+            self.status = RSP_BAD_STX
+            return
+        term = struct.unpack(">H", message[-2:-1])[0]
+        if term != 0:
+            self.status = RSP_BAD_STRUCTURE
+            return
+
+        rem = message[2:]
+        count = struct.unpack(">B", rem[0:1])[0]
+        while count:
+            self.strings.append(">%ds" % count, rem[1:1+count])[0]
+            rem = rem[1+count:]
+            count = struct.unpack(">B", rem[0:1])[0]
 
     def okay(self):
         return self.status == RSP_OK
 
     def error_str(self):
-        if self.status == RSP_OK:
-            return "OKAY"
-        if self.error_map.has_key(self.status):
-            return error_map[self.status]
-        return "Unrecognized Status"
+        try:
+            return status_map[self.status]
+        except KeyError:
+            return "Unrecognized Status"
 
 
 # === CommThread Class /*{{{*/
@@ -161,7 +636,16 @@ class CommThread(threading.Thread):
         self.parent  = parent
         self.queue   = Queue.Queue()
         self.running = False
-        self.port    = None
+        self.cancelled = False
+
+        self.args    = {
+            "port"      : 0,
+            "baudrate"  : 9600,
+            "bytesize"  : serial.EIGHTBITS,
+            "parity"    : PARITY_ODD,
+            "stopbits"  : STOPBITS_ONE,
+            "rtscts"    : True,
+        }
 
     def halt(self):
         self.running = False
@@ -170,11 +654,32 @@ class CommThread(threading.Thread):
     def notify(self):
         self.queue.put(("HALT",None))
 
+    def cancel(self):
+        self.cancelled = True
+
     def run(self):
         self.running = True
+        self.connect()
         while self.running:
             try:
+                self.cancelled = False
                 cmd,data = self.queue.get()
+                if cmd == "GET-STATUS":
+                    self.get_status()
+                if cmd == "READ-CODES":
+                    self.read_codes()
+                if cmd == "CLEAR-CODES":
+                    self.clear_codes()
+                if cmd == "POWER-DOWN":
+                    self.power_down()
+                if cmd == "READ-CONFIG":
+                    self.read_config()
+                if cmd == "WRITE-CONFIG":
+                    self.write_config()
+                if cmd == "GET-TIME":
+                    self.get_time()
+                if cmd == "SET-TIME":
+                    self.set_time()
             except Queue.Empty:
                 pass
             except KeyboardInterrupt:
@@ -182,12 +687,36 @@ class CommThread(threading.Thread):
             except:
                 pass
 
+    def get_status(self):
+        command = Command(CMD_INTERROGATE, )
+
+    def read_codes(self):
+        command = Command(CMD_UPDLOAD_BARCODE_DATA, )
+
+    def clear_codes(self):
+        command = Command(CMD_CLEAR_BAR_CODES, )
+
+    def power_down(self):
+        command = Command(CMD_POWER_DOWN, )
+
+    def read_config(self):
+        command = Command(CMD_UPLOAD_PARAMETERS, )
+
+    def write_config(self):
+        command = Command(CMD_DOWNLOAD_PARAMETERS, )
+
+    def get_time(self):
+        command = Command(CMD_GET_TIME, )
+
+    def set_time(self):
+        command = Command(CMD_SET_TIME, )
+
     def connect(self):
         # detect platform first...
         if self.platform == 'win32':
-            self.port = jtk.serial.serialwin32.Win32Serial()
+            self.port = serial.serialwin32.Win32Serial(**self.args)
         else:
-            self.port = jtk.serial.serialposix.PosixSerial()
+            self.port = serial.serialposix.PosixSerial(**self.args)
 
 #/*}}}*/
         
@@ -348,7 +877,7 @@ class SymbolUI:
 
         self.files  = []
         self.log_queue = Queue.Queue()
-        self.comm_thread = CommThread()
+        self.comm_thread = CommThread(self)
         self.comm_thread.start()
 
 # ===== Callbacks ==================================================
