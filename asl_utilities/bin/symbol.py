@@ -5,14 +5,20 @@ import glob
 import inspect
 import optparse
 import os
+import platform
 import Queue
 import re
 import stat
 import struct
 import sys
 import threading
+import time
+import traceback
 
 import pyserial
+from jtk.gtk.utils import LEFT
+from jtk.gtk.utils import RIGHT
+from jtk import hexdump
 
 HAS_GUI=True
 try:
@@ -25,6 +31,7 @@ except:
     HAS_GUI=False
     pass
 
+# === CRC /*{{{*/
 crc_table = [
 0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301, 0x03C0, 0x0280, 0xC241,
 0xC601, 0x06C0, 0x0780, 0xC741, 0x0500, 0xC5C1, 0xC481, 0x0440,
@@ -69,7 +76,7 @@ class CRC:
         self.hi  = 0xFF
 
     def add(self, string):
-        values = struct.unpack(">%dB" % len(string))
+        values = struct.unpack(">%dB" % len(string), string)
         for v in values:
             tmp = (self.hi & 0xFF) ^ (crc_table[((self.lo & 0xFF) ^ v) & 0xFF])
             self.hi = (tmp >> 8) & 0xFF
@@ -77,9 +84,9 @@ class CRC:
 
     def getCRC(self):
         return (self.lo & 0xFF) | ((self.hi & 0xFF) << 8)
+#/*}}}*/
 
-
-# === PARAMETERS ========
+# === PARAMETERS /*{{{*/
 def conv2of5(L1, L2):
     result = {"type": None}
     if L2 == 0:
@@ -534,8 +541,9 @@ parameters = {
         },
         "default": None},
 }
+#/*}}}*/
 
-# === COMMANDS ==========
+# === Command Class and Data /*{{{*/
 CMD_INTERROGATE         =  1
 CMD_CLEAR_BAR_CODES     =  2
 CMD_DOWNLOAD_PARAMETERS =  3
@@ -545,6 +553,8 @@ CMD_UPLOAD_BARCODE_DATA =  7
 CMD_UPLOAD_PARAMETERS   =  8
 CMD_SET_TIME            =  9
 CMD_GET_TIME            = 10
+
+SPECIAL_FACTORY_DEFAULTS = 1
 
 class Command(object):
     def __init__(self, command, strings):
@@ -562,8 +572,11 @@ class Command(object):
         crc = CRC()
         crc.add(self.message)
         self.message += struct.pack(">H", crc.getCRC())
+        return self.message
+#/*}}}*/
 
-
+# === Response Class and Data /*{{{*/
+RSP_NOT_CONNECTED = -4
 RSP_BAD_STRUCTURE = -3
 RSP_BAD_CRC       = -2
 RSP_BAD_STX       = -1
@@ -573,78 +586,130 @@ RSP_CMD_CRC_ERR   =  7
 RSP_RCV_CHAR_ERR  =  8
 RSP_GENERAL_ERR   =  9
 
+SYSTEM_STATUS_OK = 0
+SYSTEM_STATUS_LOW_BATTERY = 22
+
 status_map = {
-    RSP_BAD_CRC      : "Bad Structure",
-    RSP_BAD_CRC      : "Bad CRC Value",
-    RSP_BAD_STX      : "Bad STX Value",
-    RSP_UNSUPPORTED  : "Unsupported Command Number",
-    RSP_OK           : "Okay",
-    RSP_CMD_CRC_ERR  : "Command CRC Error",
-    RSP_RCV_CHAR_ERR : "Received Character Error",
-    RSP_GENERAL_ERR  : "General Error",
+    RSP_NOT_CONNECTED : "Not Connected",
+    RSP_BAD_STRUCTURE : "Bad Structure",
+    RSP_BAD_CRC       : "Bad CRC Value",
+    RSP_BAD_STX       : "Bad STX Value",
+    RSP_UNSUPPORTED   : "Unsupported Command Number",
+    RSP_OK            : "Okay",
+    RSP_CMD_CRC_ERR   : "Command CRC Error",
+    RSP_RCV_CHAR_ERR  : "Received Character Error",
+    RSP_GENERAL_ERR   : "General Error",
 }
 
-
 class Response(object):
-    def __init__(self, message):
+    def __init__(self, message, cmd=None, status=None):
         object.__init__(self)
-        self.status  = None
+        self.status  = status
+        self.cmd     = cmd
         self.data    = None
         self.strings = []
+        self.serial  = None
+        self.protocol_version = None
+        self.system_status    = None
+        self.serial_number    = None
+        self.software_version = None
 
+        if (message is None) or self.status:
+            return
         crc = CRC()
 
         self.status = struct.unpack(">B", message[:1])[0]
         if self.status != RSP_OK:
             return
+
         stx = struct.unpack(">B", message[1:2])[0]
         if stx != 0x2:
             self.status = RSP_BAD_STX
             return
+
         crc = struct.unpack(">H", message[-2:])[0]
         crc.add(message[:-2])
         if stx != 0x2:
             self.status = RSP_BAD_STX
             return
+
         term = struct.unpack(">H", message[-2:-1])[0]
         if term != 0:
             self.status = RSP_BAD_STRUCTURE
             return
 
-        rem = message[2:]
+        data_start = 2
+        if self.cmd == CMD_UPLOAD_BARCODE_DATA:
+            self.serial = struct.unpack(">Q", message[2:10])[0]
+            data_start = 10
+        elif self.cmd == CMD_INTERROGATE:
+            _,_,p,s,n,v,_,_ = struct.unpack(">BBBB8s8sBH", message)
+            self.protocol_version = p
+            self.system_status    = s
+            self.serial_number    = n
+            self.software_version = v
+            data_start = 20 # skip to the null
+
+        rem = message[data_start:]
         count = struct.unpack(">B", rem[0:1])[0]
         while count:
             self.strings.append(">%ds" % count, rem[1:1+count])[0]
             rem = rem[1+count:]
             count = struct.unpack(">B", rem[0:1])[0]
 
+    def get_strings(self):
+        return self.strings
+
     def okay(self):
         return self.status == RSP_OK
 
-    def error_str(self):
+    def status_str(self):
         try:
             return status_map[self.status]
         except KeyError:
             return "Unrecognized Status"
-
+#/*}}}*/
 
 # === CommThread Class /*{{{*/
 class CommThread(threading.Thread):
-    def __init__(self, parent):
+    def __init__(self, parent, keep_alive=False):
         threading.Thread.__init__(self)
         self.daemon  = True
         self.parent  = parent
         self.queue   = Queue.Queue()
         self.running = False
         self.cancelled = False
+        self.active  = False
+        self.comm_timeout = 5.0 
+        self.last_comm_time = 0.0
+        self.comm_wait = 0.2
+        self.char_timeout = 0.1
+        self.result = None
+        self.keep_alive = keep_alive
 
-        self.args    = {
+        self.args = {
             "port"      : 0,
             "baudrate"  : 9600,
             "bytesize"  : pyserial.serialutil.EIGHTBITS,
             "parity"    : pyserial.serialutil.PARITY_ODD,
             "stopbits"  : pyserial.serialutil.STOPBITS_ONE,
-            "rtscts"    : True,
+            "timeout"   : self.char_timeout,
+            "xonxoff"   : False,
+            "rtscts"    : False,
+            "dsrdtr"    : False,
+            "writeTimeout" : self.comm_wait,
+        }
+
+        self.cmd_map = {
+            "GET-STATUS"       : (CMD_INTERROGATE,          self.no_strings),
+            "READ-CODES"       : (CMD_UPLOAD_BARCODE_DATA,  self.no_strings),
+            "CLEAR-CODES"      : (CMD_CLEAR_BAR_CODES,      self.no_strings),
+            "POWER-DOWN"       : (CMD_POWER_DOWN,           self.no_strings),
+            "READ-CONFIG"      : (CMD_UPLOAD_PARAMETERS,    None),
+            "WRITE-CONFIG"     : (CMD_DOWNLOAD_PARAMETERS,  None),
+            "GET-TIME"         : (CMD_GET_TIME,             self.no_strings),
+            "SET-TIME"         : (CMD_SET_TIME,             self.time_string),
+            "FACTORY-DEFAULTS" : (CMD_SPECIAL,              self.factory_defaults_string),
         }
 
     def halt(self):
@@ -654,75 +719,186 @@ class CommThread(threading.Thread):
     def notify(self):
         self.queue.put(("HALT",None))
 
+    def request(self, command, data):
+        self.queue.put((command, data))
+
     def cancel(self):
         self.cancelled = True
+        self.queue.put(("CANCEL",None))
+
+    def is_active(self):
+        return self.active
+
+    def is_connected(self):
+        now = time.time()
+        return (now - self.last_comm_time) < self.comm_timeout
 
     def run(self):
         self.running = True
-        self.connect()
+        self.open_port()
+        print "Port:"
+        print self.port.__repr__()
         while self.running:
             try:
                 self.cancelled = False
-                cmd,data = self.queue.get()
-                if cmd == "GET-STATUS":
-                    self.get_status()
-                if cmd == "READ-CODES":
-                    self.read_codes()
-                if cmd == "CLEAR-CODES":
-                    self.clear_codes()
-                if cmd == "POWER-DOWN":
-                    self.power_down()
-                if cmd == "READ-CONFIG":
-                    self.read_config()
-                if cmd == "WRITE-CONFIG":
-                    self.write_config()
-                if cmd == "GET-TIME":
-                    self.get_time()
-                if cmd == "SET-TIME":
-                    self.set_time()
+                sleep = (self.comm_timeout - (time.time() - self.last_comm_time)) - self.comm_wait
+                if sleep < 0:
+                    sleep = None
+                cmd,data = self.queue.get(block=True, timeout=sleep)
+                print "Command:", cmd
+                if cmd in ("CANCEL", "HALT"):
+                    self.queue.clear()
+                    rsp = None
+                else:
+                    self.active = True
+                    rsp = self.perform_cmd(cmd, data)
+                    self.port.setDTR(0)
+                    self.active = False
+                self.parent.command_complete(cmd, rsp)
             except Queue.Empty:
-                pass
+                if self.keep_alive:
+                    self.queue.put(("GET-STATUS",None))
             except KeyboardInterrupt:
                 pass
-            except:
-                pass
+            except Exception, e:
+                print "Exception:", str(e)
+                (ex_f, ex_s, trace) = sys.exc_info()
+                traceback.print_tb(trace)
 
-    def get_status(self):
-        command = Command(CMD_INTERROGATE, )
+    def perform_cmd(self, cmd, data):
+        response = None
+        if self.cmd_map.has_key(cmd):
+            cmd_id,func = self.cmd_map[cmd]
+            if not self.is_connected() and (cmd_id != CMD_INTERROGATE):
+                response = Response(None, cmd_id, RSP_NOT_CONNECTED)
+            else:
+                if func is not None:
+                    data = func(data)
+                command = Command(cmd_id, data)
+                message = command.build()
+                wait = self.comm_wait - (time.time() - self.last_comm_time)
+                if wait > 0:
+                    time.sleep(wait)
+                if self.cancelled: return
 
-    def read_codes(self):
-        command = Command(CMD_UPDLOAD_BARCODE_DATA, )
+              # === Write Logic
+                print "Writing message to serial port"
+                self.port.setDTR(1)
+                self.port.setDTR(0)
+                time.sleep(0.25)
+                self.port.setDTR(1)
+                write_timeout = 5.0
+                write_start = time.time()
+                wait_limit = 1.0
+                first_write = 0.0
+                bytes_written = 1
+                # Wait up to wait_limit for the first write.
+                # Wait a total of write_timeout to write the entire message.
+                # If we have written our first character, and we timed out on
+                # the last write, we are done.
+                while ((first_write) or \
+                       ((time.time() - write_start) < wait_limit)) or \
+                      ((bytes_written > 0) and \
+                       ((time.time() - write_start) < write_timeout)):
+                    if self.cancelled: return
+                    try:
+                        bytes_written = self.port.write(message)
+                        if not first_write:
+                            first_write = time.time()
+                    except:
+                        bytes_written = 0
 
-    def clear_codes(self):
-        command = Command(CMD_CLEAR_BAR_CODES, )
+                    if bytes_written == len(message):
+                        break
+                    else:
+                        message = message[bytes_written:]
+                write_end = time.time()
+                print "write_start:  ", write_start
+                print "write_end:    ", write_end
+                print "first_write:  ", first_write
+                print "bytes_written:", bytes_written
+                print "message:      ", hexdump.hexdump(message)
+                if self.cancelled: return
 
-    def power_down(self):
-        command = Command(CMD_POWER_DOWN, )
+                self.port.setDTR(0)
+                time.sleep(0.25)
+                self.port.setDTR(1)
+                # Give the device some time to respond
+                time.sleep(0.05)
+                if self.cancelled: return
 
-    def read_config(self):
-        command = Command(CMD_UPLOAD_PARAMETERS, )
+              # === Read Logic
+                print "Reading reply from serial port"
+                reply_msg = ""
+                read_timeout = 5.0
+                read_start = time.time()
+                wait_limit = 2.0
+                first_read = 0.0
+                bytes_read = 1
+                # Wait up to wait_limit for the first read.
+                # Wait a total of read_timeout to read the entire response.
+                # If we have read our first character, and we timed out on
+                # the last read, we are done.
+                while ((first_read) or \
+                       ((time.time() - read_start) < wait_limit)) or \
+                      ((bytes_read > 0) and \
+                       ((time.time() - read_start) < read_timeout)):
+                    if self.cancelled: return
+                    msg = self.port.read(512)
+                    bytes_read = len(msg)
+                    if bytes_read > 0:
+                        reply_msg += msg
+                        if not first_read:
+                            first_read = time.time()
+                read_end = time.time()
+                print "read_start:", read_start
+                print "read_end:  ", read_end
+                print "first_read:", first_read
+                print "bytes_read:", bytes_read
+                print "reply:     ", hexdump.hexdump(reply_msg)
+                if len(reply_msg):
+                    self.last_comm_time = time.time()
+                    response = Response(reply_msg, cmd_id)
+                self.port.setDTR(0)
 
-    def write_config(self):
-        command = Command(CMD_DOWNLOAD_PARAMETERS, )
+        return response
 
-    def get_time(self):
-        command = Command(CMD_GET_TIME, )
+    def no_strings(self, data):
+        return []
 
-    def set_time(self):
-        command = Command(CMD_SET_TIME, )
+    def factory_defaults_string(self, data):
+        return [struct.pack(">B", SPECIAL_FACTORY_DEFAULTS)]
 
-    def connect(self):
-        # detect platform first...
-        if self.platform == 'win32':
+    def time_string(self, data):
+        try:
+            time_str = "%02d-%02d-%02d-%02d-%02d-%02d" % struct.unpack(">BBBBBB", data[0])
+            time.strptime(time_str, "%S-%M-%H-%d-%m-%y")
+            result = [data[0]]
+        except:
+            year,month,day,hour,minute,seconds,_,_,_ = time.gmtime()
+            result = [struct.pack(">BBBBBB", second, minute, hour, day, month, year - 2000)]
+        return result
+
+    def open_port(self):
+        # Determine which version of serial to use.
+        if platform.system() == 'Windows':
             self.port = pyserial.serialwin32.Win32Serial(**self.args)
+        elif platform.system() == 'Java':
+            self.port = pyserial.serialjava.JavaSerial(**self.args)
         else:
             self.port = pyserial.serialposix.PosixSerial(**self.args)
-
+        self.port.close()
+        self.port.open()
+        self.port.setDTR(0)
+        self.port.setRTS(0)
 #/*}}}*/
         
 # === CalsUI Class (GTK+ Graphical Interface) /*{{{*/
 class SymbolUI:
     def __init__(self):
+        self.result_queue = Queue.Queue()
+        self.awaiting_response = 0
+
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("Motorola Symbol")
         self.window.set_icon(asl.new_icon('barcode'))
@@ -730,51 +906,84 @@ class SymbolUI:
 # ===== Widget Creation ============================================
         self.vbox_main = gtk.VBox()
 
-        self.hbox_verbosity = gtk.HBox()
-        self.hbox_records   = gtk.HBox()
-        self.hbox_types     = gtk.HBox()
-        self.hbox_report    = gtk.HBox()
-        self.hbox_stdout    = gtk.HBox()
+        self.table_status   = gtk.Table()
+        self.hbox_device    = gtk.HBox()
         self.hbox_display   = gtk.HBox()
         self.hbox_control   = gtk.HBox()
 
       # User Interaction Widgets
-        self.checkbutton_succinct = gtk.CheckButton(label="Succinct")
-        self.label_verbosity = gtk.Label("Verbosity")
-        self.adjustment_verbosity = gtk.Adjustment(value=0, lower=0, upper=2**64, step_incr=1, page_incr=5, page_size=1)
-        self.spinbutton_verbosity = gtk.SpinButton(self.adjustment_verbosity)
+        self.image_battery = gtk.Image()
+        self.image_battery.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon("battery-blank"),height=20))
+        self.label_serial_number = gtk.Label("Serial Number:")
+        self.entry_serial_number = gtk.Entry()
+        self.label_software_version = gtk.Label("Software Version:")
+        self.entry_software_version = gtk.Entry()
+        self.label_protocol_version = gtk.Label("Protocol Version:")
+        self.entry_protocol_version = gtk.Entry()
+        self.label_rtc_time = gtk.Label("RTC Time:")
+        self.entry_rtc_time = gtk.Entry()
 
-        self.checkbutton_circular = gtk.CheckButton(label="Files are Circular Buffers")
-        self.label_num_records = gtk.Label("Max Records")
-        self.adjustment_num_records = gtk.Adjustment(value=0, lower=0, upper=2**64, step_incr=1, page_incr=256, page_size=1)
-        self.spinbutton_num_records = gtk.SpinButton(self.adjustment_num_records)
-
-        self.checkbutton_unknowns = gtk.CheckButton(label="Display Non-Cal. Blockettes")
-        self.checkbutton_report = gtk.CheckButton(label="Report File Names")
-        self.checkbutton_stdout = gtk.CheckButton(label="Print to Console (stdout)")
+        self.button_time = gtk.Button(stock=None, use_underline=True)
+        self.hbox_time   = gtk.HBox()
+        self.image_time  = gtk.Image()
+        self.image_time.set_from_stock(gtk.STOCK_REFRESH, gtk.ICON_SIZE_MENU)
+        self.label_time  = gtk.Label('Sync to UTC')
+        self.button_time.add(self.hbox_time)
+        self.hbox_time.pack_start(self.image_time, padding=1)
+        self.hbox_time.pack_start(self.label_time, padding=1)
 
         self.textbuffer_display = gtk.TextBuffer()
         self.textview_display   = gtk.TextView(buffer=self.textbuffer_display)
         self.scrolledwindow_display = gtk.ScrolledWindow()
         self.scrolledwindow_display.add(self.textview_display)
 
-        self.button_files = gtk.Button(stock=None, use_underline=True)
-        self.hbox_files   = gtk.HBox()
-        self.image_files  = gtk.Image()
-        self.image_files.set_from_stock(gtk.STOCK_OPEN, gtk.ICON_SIZE_MENU)
-        self.label_files  = gtk.Label('Select Files')
-        self.button_files.add(self.hbox_files)
-        self.hbox_files.pack_start(self.image_files, padding=1)
-        self.hbox_files.pack_start(self.label_files, padding=1)
+        self.image_connected = gtk.Image()
+        self.image_connected.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon("circle_red"),height=20))
 
-        self.button_find = gtk.Button(stock=None, use_underline=True)
-        self.hbox_find   = gtk.HBox()
-        self.image_find  = gtk.Image()
-        self.image_find.set_from_stock(gtk.STOCK_ZOOM_IN, gtk.ICON_SIZE_MENU)
-        self.label_find  = gtk.Label('Find Cals')
-        self.button_find.add(self.hbox_find)
-        self.hbox_find.pack_start(self.image_find, padding=1)
-        self.hbox_find.pack_start(self.label_find, padding=1)
+        self.button_connect = gtk.Button(stock=None, use_underline=True)
+        self.hbox_connect   = gtk.HBox()
+        self.image_connect  = gtk.Image()
+        self.image_connect.set_from_stock(gtk.STOCK_CONNECT, gtk.ICON_SIZE_MENU)
+        self.label_connect  = gtk.Label('Connect')
+        self.button_connect.add(self.hbox_connect)
+        self.hbox_connect.pack_start(self.image_connect, padding=1)
+        self.hbox_connect.pack_start(self.label_connect, padding=1)
+
+        self.button_off = gtk.Button(stock=None, use_underline=True)
+        self.hbox_off   = gtk.HBox()
+        self.image_off  = gtk.Image()
+        self.image_off.set_from_stock(gtk.STOCK_CLOSE, gtk.ICON_SIZE_MENU)
+        self.label_off  = gtk.Label('Power Off')
+        self.button_off.add(self.hbox_off)
+        self.hbox_off.pack_start(self.image_off, padding=1)
+        self.hbox_off.pack_start(self.label_off, padding=1)
+
+        self.button_clear = gtk.Button(stock=None, use_underline=True)
+        self.hbox_clear   = gtk.HBox()
+        self.image_clear  = gtk.Image()
+        self.image_clear.set_from_stock(gtk.STOCK_CLEAR, gtk.ICON_SIZE_MENU)
+        self.label_clear  = gtk.Label('Clear Device')
+        self.button_clear.add(self.hbox_clear)
+        self.hbox_clear.pack_start(self.image_clear, padding=1)
+        self.hbox_clear.pack_start(self.label_clear, padding=1)
+
+        self.button_read = gtk.Button(stock=None, use_underline=True)
+        self.hbox_read   = gtk.HBox()
+        self.image_read  = gtk.Image()
+        self.image_read.set_from_stock(gtk.STOCK_CONVERT, gtk.ICON_SIZE_MENU)
+        self.label_read  = gtk.Label('Read Barcodes')
+        self.button_read.add(self.hbox_read)
+        self.hbox_read.pack_start(self.image_read, padding=1)
+        self.hbox_read.pack_start(self.label_read, padding=1)
+
+        self.button_cancel = gtk.Button(stock=None, use_underline=True)
+        self.hbox_cancel   = gtk.HBox()
+        self.image_cancel  = gtk.Image()
+        self.image_cancel.set_from_stock(gtk.STOCK_STOP, gtk.ICON_SIZE_MENU)
+        self.label_cancel  = gtk.Label('Cancel')
+        self.button_cancel.add(self.hbox_cancel)
+        self.hbox_cancel.pack_start(self.image_cancel, padding=1)
+        self.hbox_cancel.pack_start(self.label_cancel, padding=1)
 
         self.button_copy = gtk.Button(stock=None, use_underline=True)
         self.hbox_copy   = gtk.HBox()
@@ -784,15 +993,6 @@ class SymbolUI:
         self.button_copy.add(self.hbox_copy)
         self.hbox_copy.pack_start(self.image_copy, padding=1)
         self.hbox_copy.pack_start(self.label_copy, padding=1)
-
-        self.button_cancel = gtk.Button(stock=None, use_underline=True)
-        self.hbox_cancel   = gtk.HBox()
-        self.image_cancel  = gtk.Image()
-        self.image_cancel.set_from_stock(gtk.STOCK_CANCEL, gtk.ICON_SIZE_MENU)
-        self.label_cancel  = gtk.Label('Cancel')
-        self.button_cancel.add(self.hbox_cancel)
-        self.hbox_cancel.pack_start(self.image_cancel, padding=1)
-        self.hbox_cancel.pack_start(self.label_cancel, padding=1)
 
         self.button_quit = gtk.Button(stock=None, use_underline=True)
         self.hbox_quit   = gtk.HBox()
@@ -805,49 +1005,53 @@ class SymbolUI:
 
 # ===== Layout Configuration =======================================
         self.window.add(self.vbox_main)
-        self.window.set_size_request(550, 300)
+        self.window.set_size_request(500, 500)
 
-        self.vbox_main.pack_start(self.hbox_verbosity, False, True,  0)
-        self.vbox_main.pack_start(self.hbox_records,   False, True,  0)
-        self.vbox_main.pack_start(self.hbox_types,     False, True,  0)
-        self.vbox_main.pack_start(self.hbox_report,    False, True,  0)
-        self.vbox_main.pack_start(self.hbox_stdout,    False, True,  0)
+        self.vbox_main.pack_start(self.table_status,   False, True,  0)
+        self.vbox_main.pack_start(self.hbox_device,    False, True,  5)
         self.vbox_main.pack_start(self.hbox_display,   True,  True,  0)
         self.vbox_main.pack_start(self.hbox_control,   False, True,  0)
 
-        self.hbox_verbosity.pack_start(self.checkbutton_succinct, False, False, 0)
-        self.hbox_verbosity.pack_end(self.spinbutton_verbosity, False, False, 0)
-        self.hbox_verbosity.pack_end(self.label_verbosity, False, False, 0)
+        self.table_status.attach(LEFT(self.label_serial_number),    0, 1, 1, 2, gtk.FILL, 0, 5, 2)
+        self.table_status.attach(self.entry_serial_number,          1, 3, 1, 2, gtk.FILL | gtk.EXPAND, 0, 5, 2)
+        self.table_status.attach(LEFT(self.label_software_version), 0, 1, 2, 3, gtk.FILL, 0, 5, 2)
+        self.table_status.attach(self.entry_software_version,       1, 3, 2, 3, gtk.FILL | gtk.EXPAND, 0, 5, 2)
+        self.table_status.attach(LEFT(self.label_protocol_version), 0, 1, 3, 4, gtk.FILL, 0, 5, 2)
+        self.table_status.attach(self.entry_protocol_version,       1, 3, 3, 4, gtk.FILL | gtk.EXPAND, 0, 5, 2)
+        self.table_status.attach(LEFT(self.label_rtc_time),         0, 1, 4, 5, gtk.FILL, 0, 5, 2)
+        self.table_status.attach(self.entry_rtc_time,               1, 2, 4, 5, gtk.FILL | gtk.EXPAND, 0, 5, 2)
+        self.table_status.attach(self.button_time,                  2, 3, 4, 5, gtk.FILL, 0, 5, 2)
 
-        self.hbox_records.pack_start(self.checkbutton_circular, False, False, 0)
-        self.hbox_records.pack_end(self.spinbutton_num_records, False, False, 0)
-        self.hbox_records.pack_end(self.label_num_records, False, False, 0)
-
-        self.hbox_types.pack_start(self.checkbutton_unknowns, False, False, 0)
-
-        self.hbox_report.pack_start(self.checkbutton_report, False, False, 0)
-
-        self.hbox_stdout.pack_start(self.checkbutton_stdout, False, False, 0)
+        self.hbox_device.pack_start(self.button_connect, False, False, 0)
+        align_image_connected = gtk.Alignment(yalign=0.5)
+        align_image_connected.set_padding(0, 0, 10, 0)
+        align_image_connected.add(self.image_connected)
+        self.hbox_device.pack_start(align_image_connected, False, False, 0)
+        align_image_battery = gtk.Alignment(yalign=0.5)
+        align_image_battery.set_padding(0, 0, 10, 0)
+        align_image_battery.add(self.image_battery)
+        self.hbox_device.pack_start(align_image_battery, False, False, 0)
+        self.hbox_device.pack_end(self.button_clear, False, False, 0)
+        self.hbox_device.pack_end(self.button_off, False, False, 0)
 
         self.hbox_display.pack_start(self.scrolledwindow_display, True, True, 0)
 
-        self.hbox_control.pack_start(self.button_files, False, False, 0)
-        self.hbox_control.pack_start(self.button_find,  False, False, 0)
-        self.hbox_control.pack_start(self.button_copy,  False, False, 0)
+        self.hbox_control.pack_start(self.button_read,  False, False, 0)
+        self.hbox_control.pack_start(self.button_cancel,  False, False, 0)
         self.hbox_control.pack_end(self.button_quit,    False, False, 0)
-        self.hbox_control.pack_end(self.button_cancel,  False, False, 0)
+        self.hbox_control.pack_end(self.button_copy,  False, False, 0)
 
 # ===== Widget Configurations ======================================
-        self.checkbutton_succinct.set_active(False)
-        self.spinbutton_verbosity.set_value(0)
-        self.checkbutton_circular.set_active(False)
-        self.spinbutton_num_records.set_value(0)
-        self.checkbutton_unknowns.set_active(False)
-        self.checkbutton_report.set_active(False)
-        self.checkbutton_stdout.set_active(False)
         self.textbuffer_display.set_text('')
+        self.entry_serial_number.set_editable(False)
+        self.entry_software_version.set_editable(False)
+        self.entry_protocol_version.set_editable(False)
         self.textview_display.set_editable(False)
-        self.button_find.set_sensitive(False)
+        self.button_time.set_sensitive(False)
+        self.button_connect.set_sensitive(True)
+        self.button_off.set_sensitive(False)
+        self.button_clear.set_sensitive(False)
+        self.button_read.set_sensitive(False)
         self.button_copy.set_sensitive(False)
         self.button_cancel.set_sensitive(False)
 
@@ -860,8 +1064,10 @@ class SymbolUI:
         self.window.connect("destroy-event", self.callback_quit, None)
         self.window.connect("delete-event",  self.callback_quit, None)
 
-        self.button_files.connect("clicked", self.callback_files, None)
-        self.button_find.connect("clicked", self.callback_find, None)
+        self.button_connect.connect("clicked", self.callback_connect, None)
+        self.button_off.connect("clicked", self.callback_off, None)
+        self.button_clear.connect("clicked", self.callback_clear, None)
+        self.button_read.connect("clicked", self.callback_read, None)
         self.button_copy.connect("clicked", self.callback_copy, None)
         self.button_cancel.connect("clicked", self.callback_cancel, None)
         self.button_quit.connect("clicked", self.callback_quit, None)
@@ -872,8 +1078,8 @@ class SymbolUI:
         self.window.show_all()
 
       # Hidden Buttons (Used for Threaded GUI update)
-        self.hbutton_refresh_display = gtk.Button()
-        self.hbutton_refresh_display.connect('clicked', self.callback_refresh_display, None)
+        self.hbutton_command_complete = gtk.Button()
+        self.hbutton_command_complete.connect('clicked', self.callback_command_complete, None)
 
         self.files  = []
         self.log_queue = Queue.Queue()
@@ -888,67 +1094,134 @@ class SymbolUI:
             elif event.keyval == ord('c'):
                 if not (self, self.button_copy.state & gtk.STATE_INSENSITIVE):
                     self.text_to_clipboard()
-            elif event.keyval == ord('f'):
-                if not (self, self.button_find.state & gtk.STATE_INSENSITIVE):
+            elif event.keyval == ord('r'):
+                if not (self, self.button_read.state & gtk.STATE_INSENSITIVE):
                     self.callback_find(widget, event, data)
             elif event.keyval == ord('s'):
                 self.select_files()
             elif event.keyval == ord('x'):
                 self.cancel()
             self.update_interface()
-                
+
     def callback_quit(self, widget, event, data=None):
         self.cancel()
-        self.thread_writer.halt()
+        self.comm_thread.halt()
         self.close_application(widget, event, data)
 
-    def callback_files(self, widget, event, data=None):
-        self.select_files()
+    def callback_connect(self, widget, event, data=None):
+        self.comm_thread.request("GET-STATUS", None)
+        self.awaiting_response += 1
         self.update_interface()
 
-    def callback_find(self, widget, event, data=None):
-        self.find()
+    def callback_off(self, widget, event, data=None):
+        self.comm_thread.request("POWER-OFF", None)
+        self.awaiting_response += 1
+        self.update_interface()
+
+    def callback_clear(self, widget, event, data=None):
+        self.comm_thread.request("CLEAR-CODES", None)
+        self.awaiting_response += 1
+        self.update_interface()
+
+    def callback_read(self, widget, event, data=None):
+        self.comm_thread.request("READ-CODES", None)
+        self.awaiting_response += 1
+        self.update_interface()
+
+    def callback_cancel(self, widget, event, data=None):
+        self.cancel()
+        self.update_interface()
+
+    def callback_set_time(self, widget, event, data=None):
+        self.comm_thread.request("SET-TIME", None)
+        self.awaiting_response += 1
         self.update_interface()
 
     def callback_copy(self, widget, event, data=None):
         self.text_to_clipboard()
 
-    def callback_cancel(self, widget, event, data=None):
-        self.cancel()
-
-    def callback_refresh_display(self, widget, event, data=None):
+    def callback_command_complete(self, widget, event, data=None):
         try:
             while 1:
-                command,message = self.log_queue.get_nowait()
-                if command == "CLEAR":
-                    self.textbuffer_display.set_text("")
-                elif command == "APPEND":
-                    self.textbuffer_display.insert_at_cursor(message)
-                elif command == "SET":
-                    self.textbuffer_display.set_text(message)
+                command,response = self.result_queue.get_nowait()
+                if response is None:
+                    print "Received Response: [%s]> None" % command
+                else:
+                    print "Received Response: [%s]> %s" % (command, response.status_str())
+                if command in ("READ-CODES", "READ-CONFIG"):
+                    self.textbuffer_display.set_text(str(response.get_strings()))
+                elif command == "GET-TIME":
+                    try:
+                        utc = time.gmtime()
+                        rtc = time.strptime(response.get_strings()[0])
+                        off = calendar.timegm(rtc) - calendar.timegm(utc)
+                        time_str = time.strftime("%%Y/%%m/%%d %%H:%%M:%%S (%+d seconds off UTC)" % off, rtc)
+                    except:
+                        time_str = "Could not read time"
+                    self.entry_rtc_time.set_text()
+                elif command == "GET-STATUS":
+                    if (response is None) or (response.status != RSP_OK):
+                        self.image_battery.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon('battery-blank'), height=20))
+                        self.image_connected.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon('circle_red'), height=20))
+                    else:
+                        self.image_connected.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon('circle_green'), height=20))
+                        if response.system_status == SYSTEM_STATUS_LOW_BATTERY:
+                            self.image_battery.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon('battery-empty'), height=20))
+                        else:
+                            self.image_battery.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon('battery-full'), height=20))
+                        self.entry_serial_number.set_text(response.serial_number)
+                        self.entry_software_version.set_text(response.software_version)
+                        self.entry_protocol_version.set_text(response.protocol_version)
+
+                if (command == "CANCEL") or (self.awaiting_response < 1):
+                    self.awaiting_response = 0
+                else:
+                    self.awaiting_response -= 1
         except Queue.Empty:
             pass
+        self.update_interface()
 
 # ===== Methods ====================================================
     def update_interface(self):
-        if len(self.files):
-            self.button_find.set_sensitive(True)
+        if self.comm_thread.is_connected():
+            self.button_connect.set_sensitive(False)
+            if self.awaiting_response:
+                self.button_time.set_sensitive(False)
+                self.button_clear.set_sensitive(False)
+                self.button_off.set_sensitive(False)
+                self.button_read.set_sensitive(False)
+                self.button_cancel.set_sensitive(True)
+            else:
+                self.button_time.set_sensitive(True)
+                self.button_clear.set_sensitive(True)
+                self.button_off.set_sensitive(True)
+                self.button_read.set_sensitive(True)
+                self.button_cancel.set_sensitive(False)
         else:
-            self.button_find.set_sensitive(False)
+            self.button_time.set_sensitive(False)
+            self.button_clear.set_sensitive(False)
+            self.button_off.set_sensitive(False)
+            self.button_read.set_sensitive(False)
+            if self.awaiting_response:
+                self.button_cancel.set_sensitive(True)
+                self.button_connect.set_sensitive(False)
+            else:
+                self.button_cancel.set_sensitive(False)
+                self.button_connect.set_sensitive(True)
 
         if self.textbuffer_display.get_char_count() > 0:
             self.button_copy.set_sensitive(True)
         else:
             self.button_copy.set_sensitive(False)
 
-        if self.reader.is_running():
-            self.button_cancel.set_sensitive(True)
-        else:
-            self.button_cancel.set_sensitive(False)
-
+    def command_complete(self, cmd, data):
+        self.result_queue.put((cmd,data))
+        gobject.idle_add(gobject.GObject.emit, self.hbutton_command_complete, 'clicked')
+                
     def cancel(self):
-        if self.reader.is_running():
-            self.thread_reader.halt()
+        if self.awaiting_response:
+            self.comm_thread.cancel()
+        self.awaiting_response = 1
     
     def text_to_clipboard(self):
         s,e = self.textbuffer_display.get_bounds()
@@ -983,51 +1256,11 @@ class SymbolUI:
             self.files = file_chooser.get_filenames()
         file_chooser.destroy()
 
-    def dir_from_file_path(self, file):
-        dir = ""
-        dir_parts = file.rsplit("/", 1)
-        if len(dir_parts) != 2:
-            dir_parts = file.rsplit("\\", 1)
-        if len(dir_parts):
-            dir = dir_parts[0]
-        return dir
-
-    def find(self):
-        self.textbuffer_display.set_text('')
-
-        self.reader.succinct = False
-        if self.checkbutton_succinct.get_active():
-            self.reader.succinct = True
-
-        self.reader.verbosity = self.spinbutton_verbosity.get_value()
-
-        self.reader.print_unknowns = False
-        if self.checkbutton_unknowns.get_active():
-            self.reader.print_unknowns = True
-
-        self.reader.circular = False
-        if self.checkbutton_circular.get_active():
-            self.reader.circular = True
-
-        self.reader.num_records = self.spinbutton_num_records.get_value()
-        self.reader.report_file_names = self.checkbutton_report.get_active()
-
-        self.thread_writer.to_stdout(False)
-        if self.checkbutton_stdout.get_active():
-            self.thread_writer.to_stdout(True)
-
-        self.reader.clear_files()
-        if len(self.files):
-            self.reader.add_files(self.files)
-
-        self.thread_reader = ReadThread()
-        self.thread_reader.set_reader(self.reader)
-        self.thread_reader.start()
 #/*}}}*/
 
 # === main /*{{{*/
 def main():
-    reader = None
+    core = None
     try:
         option_list = []
         #option_list.append(optparse.make_option("-c", "--circular-buffer", dest="circular", action="store_true", help="files should be treated as circular buffers with matching idx file"))
@@ -1044,25 +1277,21 @@ def main():
                 print "System does not support the GUI component."
                 parser.print_help()
                 sys.exit(1)
-            reader = SymbolUI()
+            core = SymbolUI()
             gtk.main()
         else:
-            reader = SEEDReader()
-            reader.verbosity         = options.verbosity
-            for arg in args:
-                reader.add_files(glob.glob(arg))
-            thread = ReadThread()
-            thread.set_reader(reader)
-            thread.start()
-            while thread.isAlive() or reader.is_running() or reader.log_queue.qsize():
+            core = CommThread()
+            core.verbosity = options.verbosity
+            core.start()
+            while core.isAlive() or reader.is_running() or reader.log_queue.qsize():
                 try:
                     sys.stdout.write(reader.log_queue.get(False, 0.2))
                 except Queue.Empty:
                     pass
     except KeyboardInterrupt:
-        if reader and reader.is_running():
-            thread.halt()
-            thread.join()
+        if core and core.is_running():
+            core.halt()
+            core.join()
         print "Keyboard Interrupt [^C]"
 
 # /*}}}*/
