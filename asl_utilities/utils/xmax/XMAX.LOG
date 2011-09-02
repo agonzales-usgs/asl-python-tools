@@ -9636,3 +9636,138 @@
 2011-07-22 06:31:02,831  WARN Unknown file format: org.openoffice.Office.Recovery.dat
 2011-07-22 06:31:02,871  WARN Unknown file format: .generate_report.py.un~
 2011-08-15 11:46:01,225 ERROR LoadDataCommand error: java.lang.RuntimeException: java.io.EOFException
+2011-08-23 16:03:42,653 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2011-08-23 16:05:41,484 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2011-08-24 08:00:59,458 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2011-08-25 06:50:58,190 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2011-08-25 06:51:22,747 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2011-08-25 06:52:40,029  WARN Deleting PlotDataProvider: IU/DAV/92/OCF due to absence of data
+2011-08-25 06:52:40,030  WARN Deleting PlotDataProvider: IU/DAV/91/OCF due to absence of data
+2011-08-25 06:52:40,030  WARN Deleting PlotDataProvider: IU/DAV/90/OFC due to absence of data
+2011-08-25 06:52:40,031  WARN Deleting PlotDataProvider: IU/DAV/92/ACE due to absence of data
+2011-08-25 06:52:40,031  WARN Deleting PlotDataProvider: IU/DAV/91/ACE due to absence of data
+2011-08-25 06:52:40,480 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2011-08-25 06:52:41,053 ERROR File temp.dav.seed: Can't decompress data of block 1909, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,054 ERROR File temp.dav.seed: Can't decompress data of block 1910, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,055 ERROR File temp.dav.seed: Can't decompress data of block 1911, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,055 ERROR File temp.dav.seed: Can't decompress data of block 1912, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,056 ERROR File temp.dav.seed: Can't decompress data of block 1913, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,056 ERROR File temp.dav.seed: Can't decompress data of block 1914, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,057 ERROR File temp.dav.seed: Can't decompress data of block 1915, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,058 ERROR File temp.dav.seed: Can't decompress data of block 1916, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,058 ERROR File temp.dav.seed: Can't decompress data of block 1917, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,059 ERROR File temp.dav.seed: Can't decompress data of block 1918, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,060 ERROR File temp.dav.seed: Can't decompress data of block 1919, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,060 ERROR File temp.dav.seed: Can't decompress data of block 1920, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,061 ERROR File temp.dav.seed: Can't decompress data of block 1921, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,061 ERROR File temp.dav.seed: Can't decompress data of block 1922, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,062 ERROR File temp.dav.seed: Can't decompress data of block 1923, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,063 ERROR File temp.dav.seed: Can't decompress data of block 1924, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,204 ERROR File temp.dav.seed: Can't decompress data of block 1925, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,205 ERROR File temp.dav.seed: Can't decompress data of block 1926, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,206 ERROR File temp.dav.seed: Can't decompress data of block 1927, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,206 ERROR File temp.dav.seed: Can't decompress data of block 1928, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,207 ERROR File temp.dav.seed: Can't decompress data of block 1929, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,208 ERROR File temp.dav.seed: Can't decompress data of block 1930, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,208 ERROR File temp.dav.seed: Can't decompress data of block 1931, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,209 ERROR File temp.dav.seed: Can't decompress data of block 1932, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,210 ERROR File temp.dav.seed: Can't decompress data of block 1933, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,210 ERROR File temp.dav.seed: Can't decompress data of block 1934, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,211 ERROR File temp.dav.seed: Can't decompress data of block 1935, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,063 ERROR File temp.dav.seed: Can't decompress data of block 1658, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,677 ERROR File temp.dav.seed: Can't decompress data of block 1659, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,677 ERROR File temp.dav.seed: Can't decompress data of block 1660, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,678 ERROR File temp.dav.seed: Can't decompress data of block 1661, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,678 ERROR File temp.dav.seed: Can't decompress data of block 1662, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,678 ERROR File temp.dav.seed: Can't decompress data of block 1663, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,678 ERROR File temp.dav.seed: Can't decompress data of block 1664, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,679 ERROR File temp.dav.seed: Can't decompress data of block 1665, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,679 ERROR File temp.dav.seed: Can't decompress data of block 1666, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,679 ERROR File temp.dav.seed: Can't decompress data of block 1667, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,679 ERROR File temp.dav.seed: Can't decompress data of block 1668, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,680 ERROR File temp.dav.seed: Can't decompress data of block 1669, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,680 ERROR File temp.dav.seed: Can't decompress data of block 1670, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,680 ERROR File temp.dav.seed: Can't decompress data of block 1671, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,680 ERROR File temp.dav.seed: Can't decompress data of block 1672, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,681 ERROR File temp.dav.seed: Can't decompress data of block 1673, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,681 ERROR File temp.dav.seed: Can't decompress data of block 1674, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,681 ERROR File temp.dav.seed: Can't decompress data of block 1675, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,731 ERROR File temp.dav.seed: Can't decompress data of block 1676, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,732 ERROR File temp.dav.seed: Can't decompress data of block 1677, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,732 ERROR File temp.dav.seed: Can't decompress data of block 1678, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,732 ERROR File temp.dav.seed: Can't decompress data of block 1679, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,733 ERROR File temp.dav.seed: Can't decompress data of block 1680, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,733 ERROR File temp.dav.seed: Can't decompress data of block 1681, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,735 ERROR File temp.dav.seed: Can't decompress data of block 1682, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,735 ERROR File temp.dav.seed: Can't decompress data of block 1683, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:41,736 ERROR File temp.dav.seed: Can't decompress data of block 1684, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:52:43,131  WARN File temp.dav.seed: Skipping block 515 due to absence of data
+2011-08-25 06:52:43,132  WARN File temp.dav.seed: Skipping block 516 due to absence of data
+2011-08-25 06:52:43,132  WARN File temp.dav.seed: Skipping block 517 due to absence of data
+2011-08-25 06:52:43,132  WARN File temp.dav.seed: Skipping block 518 due to absence of data
+2011-08-25 06:52:43,132  WARN File temp.dav.seed: Skipping block 519 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 520 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 521 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 522 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 523 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 524 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 525 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 526 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 527 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 377 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 378 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 379 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 380 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 381 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 382 due to absence of data
+2011-08-25 06:52:43,133  WARN File temp.dav.seed: Skipping block 383 due to absence of data
+2011-08-25 06:52:43,139  WARN File temp.dav.seed: Skipping block 172 due to absence of data
+2011-08-25 06:52:43,141  WARN File temp.dav.seed: Skipping block 366 due to absence of data
+2011-08-25 06:52:43,142  WARN File temp.dav.seed: Skipping block 367 due to absence of data
+2011-08-25 06:52:43,142  WARN File temp.dav.seed: Skipping block 368 due to absence of data
+2011-08-25 06:52:43,142  WARN File temp.dav.seed: Skipping block 369 due to absence of data
+2011-08-25 06:52:43,142  WARN File temp.dav.seed: Skipping block 370 due to absence of data
+2011-08-25 06:52:43,142  WARN File temp.dav.seed: Skipping block 371 due to absence of data
+2011-08-25 06:52:43,142  WARN File temp.dav.seed: Skipping block 372 due to absence of data
+2011-08-25 06:52:43,234  WARN File temp.dav.seed: Skipping block 164 due to absence of data
+2011-08-25 06:54:24,608  WARN Deleting PlotDataProvider: IU/DAV/92/OCF due to absence of data
+2011-08-25 06:54:24,608  WARN Deleting PlotDataProvider: IU/DAV/91/OCF due to absence of data
+2011-08-25 06:54:24,611  WARN Deleting PlotDataProvider: IU/DAV/90/OFC due to absence of data
+2011-08-25 06:54:25,243 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2011-08-25 06:54:25,804 ERROR File temp.dav.seed: Can't decompress data of block 1899, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,805 ERROR File temp.dav.seed: Can't decompress data of block 1900, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,805 ERROR File temp.dav.seed: Can't decompress data of block 1901, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,806 ERROR File temp.dav.seed: Can't decompress data of block 1902, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,806 ERROR File temp.dav.seed: Can't decompress data of block 1903, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,807 ERROR File temp.dav.seed: Can't decompress data of block 1904, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,807 ERROR File temp.dav.seed: Can't decompress data of block 1905, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,808 ERROR File temp.dav.seed: Can't decompress data of block 1906, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,808 ERROR File temp.dav.seed: Can't decompress data of block 1907, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,809 ERROR File temp.dav.seed: Can't decompress data of block 1908, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,820 ERROR File temp.dav.seed: Can't decompress data of block 1648, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,821 ERROR File temp.dav.seed: Can't decompress data of block 1649, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,821 ERROR File temp.dav.seed: Can't decompress data of block 1650, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,822 ERROR File temp.dav.seed: Can't decompress data of block 1651, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,822 ERROR File temp.dav.seed: Can't decompress data of block 1652, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,823 ERROR File temp.dav.seed: Can't decompress data of block 1653, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,823 ERROR File temp.dav.seed: Can't decompress data of block 1654, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,829 ERROR File temp.dav.seed: Can't decompress data of block 1655, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,829 ERROR File temp.dav.seed: Can't decompress data of block 1656, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:25,830 ERROR File temp.dav.seed: Can't decompress data of block 1657, setting block data to 0: edu.iris.Fissures.FissuresException: IDL:iris.edu/Fissures/FissuresException:1.0 Codec Exception: Type 0 is not supported at this time.
+2011-08-25 06:54:26,936  WARN File temp.dav.seed: Skipping block 512 due to absence of data
+2011-08-25 06:54:26,936  WARN File temp.dav.seed: Skipping block 513 due to absence of data
+2011-08-25 06:54:26,936  WARN File temp.dav.seed: Skipping block 514 due to absence of data
+2011-08-25 06:54:26,937  WARN File temp.dav.seed: Skipping block 166 due to absence of data
+2011-08-25 06:54:26,937  WARN File temp.dav.seed: Skipping block 167 due to absence of data
+2011-08-25 06:54:26,937  WARN File temp.dav.seed: Skipping block 168 due to absence of data
+2011-08-25 06:54:26,937  WARN File temp.dav.seed: Skipping block 169 due to absence of data
+2011-08-25 06:54:26,937  WARN File temp.dav.seed: Skipping block 170 due to absence of data
+2011-08-25 06:54:26,937  WARN File temp.dav.seed: Skipping block 171 due to absence of data
+2011-08-25 06:54:26,939  WARN File temp.dav.seed: Skipping block 158 due to absence of data
+2011-08-25 06:54:26,939  WARN File temp.dav.seed: Skipping block 159 due to absence of data
+2011-08-25 06:54:26,939  WARN File temp.dav.seed: Skipping block 160 due to absence of data
+2011-08-25 06:54:26,939  WARN File temp.dav.seed: Skipping block 161 due to absence of data
+2011-08-25 06:54:26,939  WARN File temp.dav.seed: Skipping block 162 due to absence of data
+2011-08-25 06:54:26,939  WARN File temp.dav.seed: Skipping block 163 due to absence of data
+2011-08-25 06:55:58,650 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2011-08-25 07:08:34,824 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file

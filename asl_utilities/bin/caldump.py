@@ -379,8 +379,6 @@ class SEEDReader:
                         self._log("  Stop Time:  %04u,%03u %02u:%02u:%02u.%04u\n" % (year, jday, hour, min, sec, tmsec))
                 else:
                     if self.print_unknowns:
-                        if blockette_type in (1000, 1001):
-                            continue
                         self._log("Skipping non-calibration blockette [type %d]\n" % blockette_type)
                     continue
 
