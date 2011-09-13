@@ -46,11 +46,34 @@ def new_icon_gtk(id, enone=False):
 def new_icon_none(id):
     return None
 
+def scale_pixbuf_gtk(pix, width=None, height=None, lock=True, interp_type=gtk.gdk.INTERP_HYPER):
+    if (not width) or (not height):
+        old_width = pix.get_width()
+        old_height = pix.get_height()
+        if width:
+            if lock:
+                height = width * old_height / old_width
+            else:
+                height = old_height
+        elif height:
+            if lock:
+                width = height * old_width / old_height
+            else:
+                width = old_width
+        else:
+            return None
+    return pix.scale_simple(width, height, interp_type)
+
+def scale_pixbuf_none(pix, height=None, width=None, lock=True, interp_type=None):
+    return None
+
 # Point the function to a stub if we don't have GTK support
 if GTK:
     new_icon = new_icon_gtk
+    scale_pixbuf = scale_pixbuf_gtk
 else:
     new_icon = new_icon_none
+    scale_pixbuf = scale_pixbuf_none
 
 asl_path_file = ""
 if os.environ.has_key('ASL_UTILITIES_PATH_FILE'):
