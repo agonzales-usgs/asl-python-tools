@@ -9,8 +9,10 @@ try:
     import gtk
     import gobject
     GTK = True
+    default_interp = gtk.gdk.INTERP_HYPER
 except:
     GTK = False
+    default_interp = None
 
 icons = {}
 
@@ -46,7 +48,7 @@ def new_icon_gtk(id, enone=False):
 def new_icon_none(id):
     return None
 
-def scale_pixbuf_gtk(pix, width=None, height=None, lock=True, interp_type=gtk.gdk.INTERP_HYPER):
+def scale_pixbuf_gtk(pix, width=None, height=None, lock=True, interp_type=default_interp):
     if (not width) or (not height):
         old_width = pix.get_width()
         old_height = pix.get_height()
