@@ -680,7 +680,7 @@ class CommThread(threading.Thread):
         self.running = False
         self.cancelled = False
         self.active  = False
-        self.comm_timeout = 5.0 
+        self.comm_timeout = 15.0
         self.last_comm_time = 0.0
         self.comm_wait = 0.2
         self.char_timeout = 0.1
@@ -712,6 +712,9 @@ class CommThread(threading.Thread):
             "FACTORY-DEFAULTS" : (CMD_SPECIAL,              self.factory_defaults_string),
         }
 
+    def set_keep_alive(self, keep_alive=True):
+        self.keep_alive = keep_alive
+
     def halt(self):
         self.running = False
         self.notify()
@@ -732,6 +735,17 @@ class CommThread(threading.Thread):
     def is_connected(self):
         now = time.time()
         return (now - self.last_comm_time) < self.comm_timeout
+
+    def device_has_data(self):
+        if self.is_connected():
+            has_data = self.port.getDSR()
+        else:
+            self.port.setDTR(1)
+            time.sleep(0.2)
+            has_data = self.port.getDSR()
+            time.sleep(0.2)
+            self.port.setDTR(0)
+        return has_data
 
     def run(self):
         self.running = True
@@ -777,89 +791,94 @@ class CommThread(threading.Thread):
                 command = Command(cmd_id, data)
                 message = command.build()
                 wait = self.comm_wait - (time.time() - self.last_comm_time)
+                tries = 1
+                if cmd_id == CMD_INTERROGATE:
+                    tries = 5
                 if wait > 0:
                     time.sleep(wait)
                 if self.cancelled: return
 
-              # === Write Logic
-                print "Writing message to serial port"
-                self.port.setDTR(1)
-                self.port.setDTR(0)
-                time.sleep(0.25)
-                self.port.setDTR(1)
-                write_timeout = 5.0
-                write_start = time.time()
-                wait_limit = 1.0
-                first_write = 0.0
-                bytes_written = 1
-                # Wait up to wait_limit for the first write.
-                # Wait a total of write_timeout to write the entire message.
-                # If we have written our first character, and we timed out on
-                # the last write, we are done.
-                while ((first_write) or \
-                       ((time.time() - write_start) < wait_limit)) or \
-                      ((bytes_written > 0) and \
-                       ((time.time() - write_start) < write_timeout)):
+                while tries > 0:
+                    tries -= 1
+
+                  # === Establish a new session 
+                    if not self.is_connected():
+                        self.port.setDTR(1)
+                        self.port.setDTR(0)
+                        time.sleep(1.0)
+                        self.port.setDTR(1)
+
+                  # === Write Logic
+                    print "Writing message to serial port"
+                    write_timeout = 5.0
+                    wait_limit = 1.0
+                    first_write = 0.0
+                    bytes_written = 1
+                    write_start = time.time()
+                    # Wait up to wait_limit for the first write.
+                    # Wait a total of write_timeout to write the entire message.
+                    # If we have written our first character, and we timed out on
+                    # the last write, we are done.
+                    while ((first_write) or \
+                           ((time.time() - write_start) < wait_limit)) or \
+                          ((bytes_written > 0) and \
+                           ((time.time() - write_start) < write_timeout)):
+                        if self.cancelled: return
+                        try:
+                            bytes_written = self.port.write(message)
+                            if not first_write:
+                                first_write = time.time()
+                        except:
+                            bytes_written = 0
+
+                        if bytes_written == len(message):
+                            break
+                        else:
+                            message = message[bytes_written:]
+
+                    write_end = time.time()
+                    print "write_start:  ", write_start
+                    print "write_end:    ", write_end
+                    print "first_write:  ", first_write
+                    print "bytes_written:", bytes_written
+                    print "message:      ", hexdump.hexdump(message)
                     if self.cancelled: return
-                    try:
-                        bytes_written = self.port.write(message)
-                        if not first_write:
-                            first_write = time.time()
-                    except:
-                        bytes_written = 0
 
-                    if bytes_written == len(message):
-                        break
-                    else:
-                        message = message[bytes_written:]
-                write_end = time.time()
-                print "write_start:  ", write_start
-                print "write_end:    ", write_end
-                print "first_write:  ", first_write
-                print "bytes_written:", bytes_written
-                print "message:      ", hexdump.hexdump(message)
-                if self.cancelled: return
-
-                self.port.setDTR(0)
-                time.sleep(0.25)
-                self.port.setDTR(1)
-                # Give the device some time to respond
-                time.sleep(0.05)
-                if self.cancelled: return
-
-              # === Read Logic
-                print "Reading reply from serial port"
-                reply_msg = ""
-                read_timeout = 5.0
-                read_start = time.time()
-                wait_limit = 2.0
-                first_read = 0.0
-                bytes_read = 1
-                # Wait up to wait_limit for the first read.
-                # Wait a total of read_timeout to read the entire response.
-                # If we have read our first character, and we timed out on
-                # the last read, we are done.
-                while ((first_read) or \
-                       ((time.time() - read_start) < wait_limit)) or \
-                      ((bytes_read > 0) and \
-                       ((time.time() - read_start) < read_timeout)):
-                    if self.cancelled: return
-                    msg = self.port.read(512)
-                    bytes_read = len(msg)
-                    if bytes_read > 0:
-                        reply_msg += msg
-                        if not first_read:
-                            first_read = time.time()
-                read_end = time.time()
-                print "read_start:", read_start
-                print "read_end:  ", read_end
-                print "first_read:", first_read
-                print "bytes_read:", bytes_read
-                print "reply:     ", hexdump.hexdump(reply_msg)
-                if len(reply_msg):
-                    self.last_comm_time = time.time()
-                    response = Response(reply_msg, cmd_id)
-                self.port.setDTR(0)
+                  # === Read Logic
+                    print "Reading reply from serial port"
+                    reply_msg = ""
+                    read_timeout = 10.0
+                    wait_limit = 2.25
+                    first_read = 0.0
+                    bytes_read = 1
+                    read_start = time.time()
+                    # Wait up to wait_limit for the first read.
+                    # Wait a total of read_timeout to read the entire response.
+                    # If we have read our first character, and we timed out on
+                    # the last read, we are done.
+                    while ((first_read) or \
+                           ((time.time() - read_start) < wait_limit)) or \
+                          ((bytes_read > 0) and \
+                           ((time.time() - read_start) < read_timeout)):
+                        if self.cancelled: return
+                        msg = self.port.read(512)
+                        bytes_read = len(msg)
+                        if bytes_read > 0:
+                            reply_msg += msg
+                            if not first_read:
+                                first_read = time.time()
+                    read_end = time.time()
+                    print "read_start:", read_start
+                    print "read_end:  ", read_end
+                    print "first_read:", first_read
+                    print "bytes_read:", bytes_read
+                    print "reply:     ", hexdump.hexdump(reply_msg)
+                    if len(reply_msg):
+                        if cmd_id == CMD_POWER_DOWN:
+                            self.last_comm_time = 0.0
+                        else:
+                            self.last_comm_time = time.time()
+                        response = Response(reply_msg, cmd_id)
 
         return response
 
@@ -912,8 +931,6 @@ class SymbolUI:
         self.hbox_control   = gtk.HBox()
 
       # User Interaction Widgets
-        self.image_battery = gtk.Image()
-        self.image_battery.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon("battery-blank"),height=20))
         self.label_serial_number = gtk.Label("Serial Number:")
         self.entry_serial_number = gtk.Entry()
         self.label_software_version = gtk.Label("Software Version:")
@@ -937,8 +954,12 @@ class SymbolUI:
         self.scrolledwindow_display = gtk.ScrolledWindow()
         self.scrolledwindow_display.add(self.textview_display)
 
+        self.image_battery = gtk.Image()
+        self.image_battery.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon("battery-blank"),height=20))
         self.image_connected = gtk.Image()
         self.image_connected.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon("circle_red"),height=20))
+        self.image_data = gtk.Image()
+        self.image_data.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon("aluminum_inactive"),height=20))
 
         self.button_connect = gtk.Button(stock=None, use_underline=True)
         self.hbox_connect   = gtk.HBox()
@@ -1031,6 +1052,10 @@ class SymbolUI:
         align_image_battery.set_padding(0, 0, 10, 0)
         align_image_battery.add(self.image_battery)
         self.hbox_device.pack_start(align_image_battery, False, False, 0)
+        align_image_data = gtk.Alignment(yalign=0.5)
+        align_image_data.set_padding(0, 0, 10, 0)
+        align_image_data.add(self.image_data)
+        self.hbox_device.pack_start(align_image_data, False, False, 0)
         self.hbox_device.pack_end(self.button_clear, False, False, 0)
         self.hbox_device.pack_end(self.button_off, False, False, 0)
 
@@ -1183,6 +1208,10 @@ class SymbolUI:
 
 # ===== Methods ====================================================
     def update_interface(self):
+        if self.comm_thread.device_has_data():
+            self.image_data.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon('aluminum_active'), height=20))
+        else:
+            self.image_data.set_from_pixbuf(asl.scale_pixbuf(asl.new_icon('aluminum_inactive'), height=20))
         if self.comm_thread.is_connected():
             self.button_connect.set_sensitive(False)
             if self.awaiting_response:
