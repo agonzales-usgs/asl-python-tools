@@ -427,6 +427,7 @@ class Station(threading.Thread):
             self._log("address:  %s" % self.address)
             self._log("port:     %s" % str(self.port))
             self._log("username: %s" % self.username)
+            self._log("sync-multiplier: %s" % str(self.sync_multiplier))
             try:
                 pass_len = len(self.password)
             except:

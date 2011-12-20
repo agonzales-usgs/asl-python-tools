@@ -467,6 +467,8 @@ class ThreadLoop(threading.Thread):
             list = info['server'].split(',')
             for item in list:
                 station.add_server_log(item)
+        if info.has_key('sync-multiplier'):
+            station.sync_multiplier = int(info['sync-multiplier'])
         station.info = info
 
     def prep_proxy(self, proxy, info, station=None):
@@ -490,6 +492,8 @@ class ThreadLoop(threading.Thread):
             proxy.local_address = "127.0.0.1"
         if info.has_key('local-port'):
             proxy.local_port = info['local-port']
+        if info.has_key('sync-multiplier'):
+            proxy.sync_multiplier = int(info['sync-multiplier'])
         if station is not None:
             proxy.station_address = station.address
             proxy.station_port = station.port
