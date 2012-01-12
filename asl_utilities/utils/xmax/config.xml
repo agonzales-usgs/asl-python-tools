@@ -9,15 +9,15 @@
 	 1.07 Added separated plugin configuration
  -->
 <XMAXSessionConfiguration>
-	<Version>
+<Version>
 		<Major>1</Major>
 		<Minor>6</Minor>
 	</Version>
-	<!--  Sets start time for display. Recovers by -b option-->
-	<!--  StartTime>2007,055,05:00:00</StartTime-->
-	<!--  Sets end time for display. Recovers by -e option-->
-	<!--  EndTime>2007,055,10:00:00</EndTime-->
-	<Configuration>
+<!--  Sets start time for display. Recovers by -b option-->
+<!--  StartTime>2007,055,05:00:00</StartTime-->
+<!--  Sets end time for display. Recovers by -e option-->
+<!--  EndTime>2007,055,10:00:00</EndTime-->
+<Configuration>
 		<Data>
 			<!--  Wildcarded mask of data files to load. Recovers by -d option. Default is "./DATA/*"-->
 			<DataMask>./DATA/*</DataMask>
@@ -70,15 +70,12 @@
 			</PSD>
 		</Plugins>
 	</Configuration>
-
-
-
 <SessionData>
 <ExportDir/>
 <Frame>
-<State>NORMAL</State>
-<PosY>25</PosY>
-<PosX>0</PosX>
+<State>ICONIFIED</State>
+<PosY>152</PosY>
+<PosX>207</PosX>
 <Width>1440</Width>
 <Heigth>850</Heigth>
 </Frame>

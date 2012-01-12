@@ -56,15 +56,128 @@ For TCP this should include:
 'ACCEPT'  (Pipe -> Host: confirms a new TCP Pipe)
 'CLOSE'   (either direction: deletes a TCP Pipe)
 
+
+
+We may need to handle multiple simultaneous connections to
+TCP hosts whether remote or not. This means generating a new
+connection every time we receive a connect event from the
+client side, and disposing of them correctly when either end
+terminates the connection. Compare this with how we are doing
+it now.
 """
 
 # === Exceptions /*{{{*/
-class ExServerDied(Exception):
+class UPipeException(Exception):
+    pass
+
+class CoreTypeException(UPipeException):
+    pass
+class ExServerDied(UPipeException):
+    pass
+
+class ClientException(UPipeException):
+    pass
+
+class ConfigException(UPipeException):
+    pass
+class ConfigNotAFileException(ConfigException):
+    pass
+class ConfigNotFoundException(ConfigException):
+    pass
+class InvalidConfigException(ConfigException):
+    pass
+
+class HostException(UPipeException):
+    pass
+class DuplicateHostException(HostException):
+    pass
+class HostBindException(HostException):
     pass
 #/*}}}*/
 
+# === Helper Functions /*{{{*/
+def verify_port(port):
+    try:
+        port = int(port)
+        if 0 > port > 65535:
+            return None
+    except:
+        return None
+    return port
+
+def verify_address(address):
+    if type(address) != str:
+        return None
+    try:
+        address = socket.gethostbyname(address)
+    except:
+        return None
+    return address
+
+def verify_pipe(pipe_str):
+    pipe = None
+    parts = pipe_str.split(':')[::-1]
+    if len(parts) < 3:
+        return None
+    if len(parts) > 5:
+        return None
+    bind_address = ''
+    bind_port = 0
+    pipe_type = parts[0]
+    port = verify_port(parts[1])
+    address = verify_address(parts[2])
+    if len(parts) > 3:
+        bind_port = verify_port(parts[3]) 
+    if len(parts) > 4:
+        bind_address = verify_address(parts[4]) 
+
+    if pipe_type not in ("TCP", "UDP"): return None
+    if address is None: return None
+    if port is None: return None
+    if bind_address is None: return None
+    if bind_port is None: return None
+
+    return (bind_address,bind_port,address,port,pipe_type)
+
+
+def parse_config(config_file):
+    config = {}
+    pipes = []
+    if not os.path.exists(config_file):
+        raise ConfigNotFoundException("config path '%s' does not exist" % config_file)
+    if not os.path.isfile(config_file):
+        raise ConfigNotAFileException("config path '%s' is not a regular file" % config_file)
+    try:
+        lines = open(config_file, 'r').readlines()
+        line_index = 0
+        for line in map(lambda l: l.strip(), lines):
+            if len(line) == 0:
+                continue
+            if line[0] == '#':
+                continue
+            parts = map(lambda p: p.strip(), line.split('='))
+            if len(parts) != 2:
+                raise InvalidConfigException("bad entry on line %d" % line_index)
+            key,value = parts
+            if key == 'pipe':
+                pipes.append(value)
+            else:
+                if config.has_key(key):
+                    raise InvalidConfigException("duplicate entry on line %d" % line_index)
+                config[key] = value
+
+            line_index += 1
+        if len(pipes):
+            config['pipes'] = pipes
+    except:
+        raise ConfigReadError("could not read config file '%s'" % config_file)
+
+    return config
+#/*}}}*/
+
 # === Counter Class /*{{{*/
-# A simple counter class that keeps track of state (not thread safe)
+# A simple counter class that keeps track of state
+# methods ending in _t are thread safe
 class Counter(object):
     def __init__(self, value=0, stride=1):
         self.stride = stride
@@ -84,27 +197,27 @@ class Counter(object):
     def set_stride(self, stride):
         self.stride = stride
 
-    # Post increment
-    def inc_t(self, value): self.lock.acquire(); self.inc(); self.lock.release()
+    # Pre increment
+    def inc_t(self): self.lock.acquire(); self.inc(); self.lock.release()
     def inc(self):
         self.value += self.stride
         return self.value
 
-    # Post decrement
-    def dec_t(self, value): self.lock.acquire(); self.dec(); self.lock.release()
+    # Pre decrement
+    def dec_t(self): self.lock.acquire(); self.dec(); self.lock.release()
     def dec(self):
         self.value -= self.stride
         return self.value
 
-    # Pre increment
-    def inc_p_t(self, value): self.lock.acquire(); self.inc_p(); self.lock.release()
+    # Post increment
+    def inc_p_t(self): self.lock.acquire(); self.inc_p(); self.lock.release()
     def inc_p(self):
         temp = self.value
         self.value += self.stride
         return temp
 
-    # Pre decrement
-    def dec_p_t(self, value): self.lock.acquire(); self.dec_p(); self.lock.release()
+    # Post decrement
+    def dec_p_t(self): self.lock.acquire(); self.dec_p(); self.lock.release()
     def dec_p(self):
         temp = self.value
         self.value -= self.stride
@@ -115,28 +228,32 @@ class Counter(object):
 # Base class for all network communications classes which are
 # attached to asyncore
 class PipeBase(asyncore.dispatcher):
-    def __init__(self, master=None):
+    def __init__(self, master=None, id=None):
+        self._master = master # MultiPipe class instance that "owns" this Pipe component
+        self._id = id
+
         asyncore.dispatcher.__init__(self)
-        self._hostname      = None  # Remote host name
-        self._address       = None  # Remote host (IP,Port)
-        self._socket_type   = None  # Connection type (UDP/TCP)
+        self._hostname = None # Remote host name
+        self._address = None # Remote host (IP,Port)
+        self._socket_type = None # Connection type (UDP/TCP)
 
-        self._buffers       = []    # Queued write data for this PipeBase object
-        self._write_buffer  = ''    # Write buffer which is currently being processed
-        self._write_address = None  # Address associated with the current write buffer
+        self._buffers = [] # Queued write data for this PipeBase object
+        self._write_buffer = '' # Write buffer which is currently being processed
+        self._write_address = None # Address associated with the current write buffer
 
-        self._rx_packets    = 0     # Number of packets received
-        self._rx_bytes      = 0     # Number of bytes received
-        self._tx_packets    = 0     # Number of packets sent
-        self._tx_bytes      = 0     # Number of bytes sent
+        self._rx_packets = 0 # Number of packets received
+        self._rx_bytes = 0 # Number of bytes received
+        self._tx_packets = 0 # Number of packets sent
+        self._tx_bytes = 0 # Number of bytes sent
 
         # TCP Connections Only
-        self._remote_key    = None  # Key for the remote host format "xxx.xxx.xxx.xxx-ppppp-TCP"
-        self._connecting    = False # True when the connection is being initialized
-        self._connected     = False # True when the connection has been established
+        self._remote_key = None  # Key for the remote host format "xxx.xxx.xxx.xxx-ppppp-TCP"
+        self._connecting = False # True when the connection is being initialized
+        self._connected = False # True when the connection has been established
         self._disconnecting = False # True when a request has been made to close the connection
 
-        self._master = master # MultiPipe class instance that "owns" this Pipe component
+    def get_id(self):
+        return self._id
 
     def log(self, string, verbosity=1):
         if self._master:
@@ -190,6 +307,13 @@ class PipeBase(asyncore.dispatcher):
     def get_key(self):
         if self._address and self._socket_type:
             return "%s-%d-%s" % (self._address[0], self._address[1], self.get_socket_type_str())
+        return ""
+
+    def __str__(self):
+        if self._address and self._socket_type:
+            ip,port = self._address
+            bind_ip,bind_port = self.getsockname()
+            return "%s %s:%s:%s:%s" % (self.get_socket_type_str(),bind_ip,bind_port,ip,port)
         return ""
 
     # Add packet to buffer list for transmission
@@ -287,8 +411,8 @@ class PipeBase(asyncore.dispatcher):
 # Hosts send/receive as if they were the actual host.
 # They communicate directly with the initializing client.
 class Host(PipeBase):
-    def __init__(self, master, address, socket_type='UDP', local_port=None):
-        PipeBase.__init__(self, master)
+    def __init__(self, master, address, socket_type='UDP', bind_port=0, bind_address='', id=None):
+        PipeBase.__init__(self, master, id=id)
         self._original_socket = None # Socket on which the Host listens for TCP connections
 
         self.set_address(address)
@@ -297,12 +421,13 @@ class Host(PipeBase):
         self.set_socket(self._original_socket)
         self.set_reuse_addr()
         try:
-            lport = int(local_port)
-            self.bind(('', lport))
+            self.bind((bind_address, bind_port))
         except:
-            self.bind(('', 0))
+            c_address,c_port = address
+            raise HostBindException("Failed to bind to %s:%s for host %s:%s" % (bind_address, str(bind_port), c_address, str(c_port)))
         if self._socket_type == socket.SOCK_STREAM:
             self._original_socket.listen(5)
+
 
     def _handle_read(self):
         self.log("Host::_handle_read()", 4)
@@ -388,8 +513,8 @@ class Host(PipeBase):
 # Pipes send/receive as if they were the actual client.
 # They communicate directly with the target host.
 class Pipe(PipeBase):
-    def __init__(self, master, address, host_key, socket_type='UDP'):
-        PipeBase.__init__(self, master)
+    def __init__(self, master, address, host_key, socket_type='UDP', id=None):
+        PipeBase.__init__(self, master, id=id)
         self._last_activity = calendar.timegm(time.gmtime())
         self._original_socket = None # Just keeping with convention.
 
@@ -446,8 +571,8 @@ class Pipe(PipeBase):
 #   issue still, as we do not tend to destroy the Client/Host after the
 #   notification is done...
 class Notifier(PipeBase):
-    def __init__(self, master):
-        PipeBase.__init__(self, master)
+    def __init__(self, master, id=None):
+        PipeBase.__init__(self, master, id=id)
         self.sock_in = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock_in.bind(('', 0))
         self.set_address(('127.0.0.1', self.sock_in.getsockname()[1]))
@@ -468,8 +593,8 @@ class Notifier(PipeBase):
 
 # Base class for TCP communication between upipe instances
 class Internal(PipeBase):
-    def __init__(self, master):
-        PipeBase.__init__(self, master)
+    def __init__(self, master, id=None):
+        PipeBase.__init__(self, master, id=id)
         self.r_cmd  = "[A-Za-z0-9_]+" # Command character set regex
         self.r_ip   = "(?:\d{1,3})[.](?:\d{1,3})[.](?:\d{1,3})[.](?:\d{1,3})" # IP address regex
         self.r_key  = "%s[-]\d+[-][a-zA-Z]+" % self.r_ip # key regex
@@ -586,6 +711,13 @@ class MultiPipe(threading.Thread):
         self._log = log == True
         self._verbosity = verbosity
         self._local = True
+        self._id_counter = Counter()
+
+    def set_verbosity(verbosity):
+        self._verbosity = verbosity 
+        
+    def get_verbosity():
+        return self._verbosity
 
     def enable_packet_logging(self):
         self._log = True
@@ -605,6 +737,7 @@ class MultiPipe(threading.Thread):
             self.log(str(self._sockets), 6)
             self.log(str(self._get_map()), 6)
             asyncore.loop(30.0, False, self._get_map(), 1)
+
         self._remove_all_pipes()
 
         try: self._sockets['INTERNAL'].close() 
@@ -619,12 +752,30 @@ class MultiPipe(threading.Thread):
     def notify(self):
         self._sockets['NOTIFIER'].notify()
 
-    def add_host(self, address, socket_type='UDP', local_port=None):
-        host = Host(self, address, socket_type, local_port)
+    def add_host(self, address, socket_type='UDP', bind_port=0, bind_address=''):
+        host = Host(self, address, socket_type, bind_port, bind_address, id=self._id_counter.inc())
         if not self._sockets.has_key(host.get_key()):
             self._sockets[host.get_key()] = host
             self.log("New Host: %s" % str(host.socket.getsockname()), 0)
             self.notify()
+        else:
+            c_address,c_port = address
+            raise DuplicateHostException("%s:%d:%s:%d" % (bind_address,bind_port,c_address,c_port))
+
+    def get_hosts(self):
+        hosts = []
+        for k,v in self._sockets.items():
+            if k not in ('NOTIFIER', 'INTERNAL'):
+                hosts.append(v)
+        return hosts
+
+    def get_host_keys(self):
+        keys = []
+        for k,v in self._sockets.items():
+            if k not in ('NOTIFIER', 'INTERNAL'):
+                keys.append(k)
+        return keys
+
 
     def del_host(self, key):
         if self._sockets.has_key(key): 
@@ -815,8 +966,8 @@ class MultiPipeClients(MultiPipeTCP):
         self.src_to_dst(command, host_key, client_key, packet)
 #/*}}}*/
 
-# === User Interface /*{{{*/
-class PipeUI:
+# === Graphical User Interface /*{{{*/
+class PipeGUI:
     def __init__(self, local=True, log=False, verbosity=0):
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("Multi-Pipe")
@@ -824,28 +975,30 @@ class PipeUI:
             self.window.set_icon(asl.new_icon('upipe'))
 
 # ===== Widget Creation ===========================================
-        self.vbox_main    = gtk.VBox()
-        self.vbox_hosts   = gtk.VBox()
-        self.hbox_new     = gtk.HBox()
+        self.vbox_main = gtk.VBox()
+        self.vbox_hosts = gtk.VBox()
+        self.hbox_new = gtk.HBox()
         self.hbox_control = gtk.HBox()
 
         #self.table_hosts = gtk.Table()
         self.hosts = {}
 
       # User Interaction Widgets
-        self.entry_lport   = gtk.Entry()
-        self.label_sep1    = gtk.Label(":")
-        self.entry_ip      = gtk.Entry()
-        self.label_sep2    = gtk.Label(":")
-        self.entry_port    = gtk.Entry()
+        self.entry_bind_address = gtk.Entry()
+        self.label_sep1 = gtk.Label(":")
+        self.entry_bind_port = gtk.Entry()
+        self.label_sep2 = gtk.Label(":")
+        self.entry_address = gtk.Entry()
+        self.label_sep3 = gtk.Label(":")
+        self.entry_port = gtk.Entry()
         self.combobox_type = gtk.combo_box_new_text()
-        self.button_add    = gtk.Button(stock=gtk.STOCK_ADD)
+        self.button_add = gtk.Button(stock=gtk.STOCK_ADD)
 
         self.button_add = gtk.Button(stock=None)
-        self.hbox_add   = gtk.HBox()
-        self.image_add  = gtk.Image()
+        self.hbox_add = gtk.HBox()
+        self.image_add = gtk.Image()
         self.image_add.set_from_stock(gtk.STOCK_ADD, gtk.ICON_SIZE_MENU)
-        self.label_add  = gtk.Label('Add')
+        self.label_add = gtk.Label('Add')
         self.button_add.add(self.hbox_add)
         self.hbox_add.pack_start(self.image_add, padding=1)
         self.hbox_add.pack_start(self.label_add, padding=1)
@@ -853,8 +1006,8 @@ class PipeUI:
         self.checkbutton_log_packets = gtk.CheckButton("Log Packets")
 
         self.button_quit = gtk.Button(stock=None)
-        self.hbox_quit   = gtk.HBox()
-        self.image_quit  = gtk.Image()
+        self.hbox_quit = gtk.HBox()
+        self.image_quit = gtk.Image()
         self.image_quit.set_from_stock(gtk.STOCK_QUIT, gtk.ICON_SIZE_MENU)
         self.label_quit  = gtk.Label('Quit')
         self.button_quit.add(self.hbox_quit)
@@ -866,27 +1019,31 @@ class PipeUI:
         self.window.add(self.vbox_main)
         #self.window.set_size_request(250,250)
 
-        self.vbox_main.pack_start(self.hbox_new,     False, True, 0)
-        self.vbox_main.pack_start(self.vbox_hosts,   False, True, 0)
+        self.vbox_main.pack_start(self.hbox_new, False, True, 0)
+        self.vbox_main.pack_start(self.vbox_hosts, False, True, 0)
         self.vbox_main.pack_start(self.hbox_control, True,  True, 0)
 
-        self.hbox_new.pack_start(self.entry_lport,   False, False, 0)
-        self.hbox_new.pack_start(self.label_sep1,    False, False, 0)
-        self.hbox_new.pack_start(self.entry_ip,      False, False, 0)
-        self.hbox_new.pack_start(self.label_sep2,    False, False, 0)
-        self.hbox_new.pack_start(self.entry_port,    False, False, 0)
+        self.hbox_new.pack_start(self.entry_bind_address, False, False, 0)
+        self.hbox_new.pack_start(self.label_sep1, False, False, 0)
+        self.hbox_new.pack_start(self.entry_bind_port, False, False, 0)
+        self.hbox_new.pack_start(self.label_sep2, False, False, 0)
+        self.hbox_new.pack_start(self.entry_address, False, False, 0)
+        self.hbox_new.pack_start(self.label_sep3, False, False, 0)
+        self.hbox_new.pack_start(self.entry_port, False, False, 0)
         self.hbox_new.pack_start(self.combobox_type, False, False, 0)
-        self.hbox_new.pack_start(self.button_add,    False, False, 0)
+        self.hbox_new.pack_start(self.button_add, False, False, 0)
 
         self.hbox_control.pack_start(self.checkbutton_log_packets, False, False, 0)
         self.hbox_control.pack_end(self.button_quit, False, False, 0)
 
 
 # ===== Widget Configurations =====================================
-        self.entry_lport.set_text("0")
-        self.entry_lport.set_width_chars(5)
-        self.entry_ip.set_text("")
-        self.entry_ip.set_width_chars(20)
+        self.entry_bind_address.set_text("")
+        self.entry_bind_address.set_width_chars(20)
+        self.entry_bind_port.set_text("0")
+        self.entry_bind_port.set_width_chars(5)
+        self.entry_address.set_text("")
+        self.entry_address.set_width_chars(20)
         self.entry_port.set_text("")
         self.entry_port.set_width_chars(5)
         self.combobox_type.append_text('TCP')
@@ -913,9 +1070,7 @@ class PipeUI:
         if local:
             self.core = MultiPipe(log=log)
         else:
-            self.dialog = gtk.Dialog(title="Select Tunneling Server", 
-                                     buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
-                                              gtk.STOCK_OK,     gtk.RESPONSE_ACCEPT))
+            self.dialog = gtk.Dialog(title="Select Tunneling Server", buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, gtk.STOCK_OK, gtk.RESPONSE_ACCEPT))
             if ASL:
                 self.dialog.set_icon(asl.new_icon('upipe'))
             dialog_hbox = gtk.HBox()
@@ -948,9 +1103,7 @@ class PipeUI:
                 try:
                     host = socket.gethostbyname(host)
                 except:
-                    dialog = gtk.MessageDialog(type=gtk.MESSAGE_WARNING,
-                                               buttons=gtk.BUTTONS_OK,
-                                               message_format="Invalid host")
+                    dialog = gtk.MessageDialog(type=gtk.MESSAGE_WARNING, buttons=gtk.BUTTONS_OK, message_format="Invalid host")
                     dialog.run()
                     dialog.destroy()
                     sys.exit(1)
@@ -960,9 +1113,7 @@ class PipeUI:
                     assert port > 0
                     assert port < 65536
                 except:
-                    dialog = gtk.MessageDialog(type=gtk.MESSAGE_WARNING,
-                                               buttons=gtk.BUTTONS_OK,
-                                               message_format="Invalid port")
+                    dialog = gtk.MessageDialog(type=gtk.MESSAGE_WARNING, buttons=gtk.BUTTONS_OK, message_format="Invalid port")
                     dialog.run()
                     dialog.destroy()
                     sys.exit(1)
@@ -998,15 +1149,34 @@ class PipeUI:
 
     def callback_add(self, widget, event, data=None):
         try:
-            lport = int(self.entry_lport.get_text())
+            bind_address = socket.gethostbyname(self.entry_bind_address.get_text())
         except:
-            lport = None
+            self.log("Invalid bind address")
+            return
+
         try:
-            ip = socket.gethostbyname(self.entry_ip.get_text())
-            port = int(self.entry_port.get_text())
-            ptype = self.combobox_type.get_active_text()
-            self._add_host(ip, port, ptype, lport)
+            bind_port = int(self.entry_bind_port.get_text())
         except:
+            self.log("Invalid bind port")
+            return
+
+        try:
+            address = socket.gethostbyname(self.entry_address.get_text())
+        except:
+            self.log("Invalid address")
+            return
+
+        try:
+            port = int(self.entry_port.get_text())
+        except:
+            self.log("Invalid port")
+            return
+
+        try:
+            port_type = self.combobox_type.get_active_text()
+            self._add_host(address, port, port_type, bind_port, bind_address)
+        except Exception, e:
+            self.log("Failed to add host %s:%d:%s:%d > %s" % (bind_address,bind_port,address,port,str(e)))
             pass
 
     def callback_delete(self, widget, event, data=None):
@@ -1029,59 +1199,73 @@ class PipeUI:
         self.core.log(string, verbosity)
 
 # ===== Private Methods ===========================================
-    def _add_host(self, host, port, ptype='UDP', local_port=None):
+    def _add_host(self, host, port, port_type='UDP', bind_port=0, bind_address=''):
         ip = socket.gethostbyname(host)
-        key = "%s-%d-%s" % (ip, port, ptype)
+        key = "%s-%d-%s" % (ip, port, port_type)
         if self.hosts.has_key(key):
             self.log('Host exists, cannot re-add...', 0)
             return
-        self.core.add_host((ip, port), ptype, local_port)
+        try:
+            self.core.add_host((ip, port), port_type, bind_port, bind_address)
+        except DuplicateHostException:
+            self.log('Host exists, cannot re-add...', 0)
+            return
+        except HostBindException:
+            self.log('Could not bind to requested address (%s:%d)' % (bind_address,bind_port), 0)
+            return
+
         if not self.core._sockets.has_key(key):
             self.log('Failed to add new host...', 0)
             return
         host = {}
-        host['vbox-host']     = gtk.VBox()
-        host['hbox-host']     = gtk.HBox()
-        host['vbox-clients']  = gtk.VBox()
+        host['vbox-host'] = gtk.VBox()
+        host['hbox-host'] = gtk.HBox()
+        host['vbox-clients'] = gtk.VBox()
 
-        host['entry-lport']   = gtk.Entry()
-        host['label-sep1']    = gtk.Label(":")
-        host['entry-ip']      = gtk.Entry()
-        host['label-sep2']    = gtk.Label(":")
-        host['entry-port']    = gtk.Entry()
-        host['entry-type']    = gtk.Entry()
-        host['button-del']    = gtk.Button(stock=None)
-        host['hbox-del']      = gtk.HBox()
-        host['image-del']     = gtk.Image()
+        host['entry-bind-ip'] = gtk.Entry()
+        host['label-sep1'] = gtk.Label(":")
+        host['entry-bind-port'] = gtk.Entry()
+        host['label-sep2'] = gtk.Label(":")
+        host['entry-ip'] = gtk.Entry()
+        host['label-sep3'] = gtk.Label(":")
+        host['entry-port'] = gtk.Entry()
+        host['entry-type'] = gtk.Entry()
+        host['button-del'] = gtk.Button(stock=None)
+        host['hbox-del'] = gtk.HBox()
+        host['image-del'] = gtk.Image()
         host['image-del'].set_from_stock(gtk.STOCK_DELETE, gtk.ICON_SIZE_MENU)
-        host['label-del']     = gtk.Label('Delete')
+        host['label-del'] = gtk.Label('Delete')
         host['button-del'].add(host['hbox-del'])
         host['hbox-del'].pack_start(host['image-del'], padding=1)
         host['hbox-del'].pack_start(host['label-del'], padding=1)
 
-        self.vbox_hosts.pack_start(host['vbox-host'],       False, True, 0)
-        host['vbox-host'].pack_start(host['hbox-host'],     False, True, 0)
-        host['vbox-host'].pack_start(host['vbox-clients'],  False, True, 0)
+        self.vbox_hosts.pack_start(host['vbox-host'], False, True, 0)
+        host['vbox-host'].pack_start(host['hbox-host'], False, True, 0)
+        host['vbox-host'].pack_start(host['vbox-clients'], False, True, 0)
 
-        host['hbox-host'].pack_start(host['entry-lport'],   False, False, 0)
-        host['hbox-host'].pack_start(host['label-sep1'],    False, False, 0)
-        host['hbox-host'].pack_start(host['entry-ip'],      False, False, 0)
-        host['hbox-host'].pack_start(host['label-sep2'],    False, False, 0)
-        host['hbox-host'].pack_start(host['entry-port'],    False, False, 0)
-        host['hbox-host'].pack_start(host['entry-type'],    False, False, 0)
-        host['hbox-host'].pack_start(host['button-del'],    False, False, 0)
+        host['hbox-host'].pack_start(host['entry-bind-ip'], False, False, 0)
+        host['hbox-host'].pack_start(host['label-sep1'], False, False, 0)
+        host['hbox-host'].pack_start(host['entry-bind-port'], False, False, 0)
+        host['hbox-host'].pack_start(host['label-sep2'], False, False, 0)
+        host['hbox-host'].pack_start(host['entry-ip'], False, False, 0)
+        host['hbox-host'].pack_start(host['label-sep3'], False, False, 0)
+        host['hbox-host'].pack_start(host['entry-port'], False, False, 0)
+        host['hbox-host'].pack_start(host['entry-type'], False, False, 0)
+        host['hbox-host'].pack_start(host['button-del'], False, False, 0)
 
-        host['entry-lport'].set_text(str(self.core._sockets[key].getsockname()[1]))
-        host['entry-lport'].set_editable(False)
-        host['entry-lport'].set_width_chars(5)
+        host['entry-bind-ip'].set_text(str(self.core._sockets[key].getsockname()[0]))
+        host['entry-bind-ip'].set_editable(False)
+        host['entry-bind-ip'].set_width_chars(20)
+        host['entry-bind-port'].set_text(str(self.core._sockets[key].getsockname()[1]))
+        host['entry-bind-port'].set_editable(False)
+        host['entry-bind-port'].set_width_chars(5)
         host['entry-ip'].set_text(ip)
-        #host['entry-ip'].set_text(host) # Host addition fails with this approach
         host['entry-ip'].set_editable(False)
         host['entry-ip'].set_width_chars(20)
         host['entry-port'].set_text(str(port))
         host['entry-port'].set_editable(False)
         host['entry-port'].set_width_chars(5)
-        host['entry-type'].set_text(str(ptype))
+        host['entry-type'].set_text(str(port_type))
         host['entry-type'].set_editable(False)
         host['entry-type'].set_width_chars(5)
 
@@ -1104,21 +1288,150 @@ class PipeUI:
 
 #/*}}}*/
 
+# === Command Interface /*{{{*/
+class PipeCI(threading.Thread):
+    def __init__(self, core, log=False, verbosity=0, print_function=None, stop_queue=None):
+        threading.Thread.__init__(self)
+        self.core = core
+        self.running = False
+        self.stop_queue = stop_queue
+
+        self.commands = {
+            "add"    : (self.add_pipe,    "Add a new pipe", "[[bind_address:]bind_port:]address:port:TCP|UDP"),
+            "help"   : (self.print_help,  "Show this list of commands", ""),
+            "list"   : (self.list_pipes,  "List the existing pipes", ""),
+            "quit"   : (self.quit,        "Close the program", ""),
+            "remove" : (self.remove_pipe, "Remove an existing pipe", "pipe_id"),
+        }
+
+        self._print = self._to_stdout
+        if print_function:
+            self._print = print_function
+
+        # Start the asyncore manager thread
+        self.core.start()
+
+    def _to_stdout(self, text):
+        print text
+
+    def run(self):
+
+        self.running = True
+        while self.running:
+            try:
+                cmd_string = raw_input("> ")
+                self.process_command(cmd_string)
+            except EOFError:
+                print
+                continue
+            except KeyboardInterrupt:
+                try:
+                    print
+                except EOFError:
+                    pass
+                continue
+            except:
+                self.stop_core()
+                raise
+        self.stop_core()
+        self.stop_queue.put("DONE")
+
+    def process_command(self, cmd_string):
+        parts = map(lambda p: p.strip(), cmd_string.split(' ', 1))
+        command = parts[0]
+        if command == "":
+            return
+        arg_string = ""
+        if len(parts) > 1:
+            arg_string = parts[1]
+        if not self.commands.has_key(command):
+            self._print("Unrecognized command")
+            return
+        self.commands[command][0](arg_string)
+
+    def print_help(self, arg_line=''):
+        max_key_len = max(map(len, self.commands.keys()))
+        for command in sorted(self.commands.keys()):
+            _,description,arg_spec = self.commands[command]
+            if len(arg_spec):
+                print "%s : %s (%s %s)" % (command.rjust(max_key_len), description, command, arg_spec)
+            else:
+                print "%s : %s" % (command.rjust(max_key_len), description)
+
+    def add_pipe(self, arg_line):
+        parts = verify_pipe(arg_line)
+        if parts is None:
+            self._print("Invalid pipe definition")
+            return
+        bind_address,bind_port,address,port,pipe_type = parts
+        self.core.add_host((address,port), pipe_type, bind_port, bind_address)
+
+    def list_pipes(self, arg_line=''):
+        hosts = self.core.get_hosts()
+        ids = []
+        pipes = []
+        if len(hosts) < 1:
+            self._print("No open pipes.")
+            return
+
+        for host in hosts:
+            id = host.get_id()
+            ids.append(id)
+            pipes.append((id,host))
+        pipes = sorted(pipes)
+
+        max_id_len = max(map(len, map(str, ids)))
+        self._print("Open Pipes:")
+        for id,pipe in pipes:
+            self._print("  %s > %s" % (str(id).rjust(max_id_len), pipe))
+
+    def remove_pipe(self, arg_line):
+        try:
+            id = int(arg_line)
+        except:
+            self._print("Invalid host ID format")
+            return
+
+        key = None
+        hosts = self.core.get_hosts()
+        for host in hosts:
+            if host.get_id() == id:
+                key = host.get_key()
+
+        if key is None:
+            self._print("Could not find host with ID '%s'" % str(id))
+            return
+            
+        self.core.del_host(key)
+        self._print("Host deleted")
+
+    def quit(self, arg_line=''):
+        self.running = False
+    
+    def stop_core(self):
+        self.core.stop()
+        self.core.join()
+#/*}}}*/
+
 # === main /*{{{*/
 def main():
     pipe = None
     gui = None
+    ci = None
     try:
-        use_message = """usage: %prog [options] [args]
-       U/C args -- udp_address udp_port
-       S args   -- [tcp_port]"""
+        use_message = """usage: %prog [options]
+
+PIPE_SPEC: [[bind_address:]bind_port:]remote_address:remote_port:TCP|UDP"""
         option_list = []
-        option_list.append(optparse.make_option("-a", "--address", dest="address", action="store", help="use this IP address if this is a client"))
+        option_list.append(optparse.make_option("-a", "--address", dest="address", action="store", help="The server or bind address for client or server respectively"))
+        option_list.append(optparse.make_option("-c", "--config-file", dest="config_file", action="store", help="configuration file from which to read connection information"))
+        option_list.append(optparse.make_option("-d", "--daemon", dest="daemon", action="store_true", help="run in daemon mode (disable program command line)"))
         option_list.append(optparse.make_option("-g", "--gui", dest="gui", action="store_true", help="launch in graphical mode"))
         option_list.append(optparse.make_option("-l", "--log", dest="log", action="store_true", help="log traffic"))
-        option_list.append(optparse.make_option("-p", "--port", dest="port", action="store", help="use this port for the TCP connection if this is a client"))
+        option_list.append(optparse.make_option("-p", "--port", dest="port", action="store", help="The server or bind port for client or server respectively"))
+        option_list.append(optparse.make_option("-P", "--pipe", dest="pipes", action="append", metavar="PIPE_SPEC", help="start with one or more pipes open"))
         option_list.append(optparse.make_option("-q", "--quiet", dest="quiet", action="store_true", help="Only report errors, no traffic information"))
-        option_list.append(optparse.make_option("-t", "--type", dest="type", type="string", action="store", help="type of pipe (S, C, U) S=Server(Remote Facing) C=Client(Local Facing) U=Unified"))
+        option_list.append(optparse.make_option("-s", "--server", dest="server", action="store_true", help="start as server instead of client or unified mode"))
         option_list.append(optparse.make_option("-v", action="count", dest="verbosity", help="specify multiple time to increase verbosity"))
         parser = optparse.OptionParser(option_list=option_list, usage=use_message)
         options, args = parser.parse_args()
@@ -1131,69 +1444,107 @@ def main():
             else:
                 verbosity = options.verbosity + 1
 
-        if options.gui or (len(sys.argv) < 2):
+        if options.gui:
             if not HAS_GUI:
                 print "System does not support the GUI component."
                 parser.print_help()
                 sys.exit(1)
-            local = False
-            address = None
-            if options.type == 'U':
-                local = True
-                #if len(args) < 2:
-                #    parser.print_help()
-                #    sys.exit(1)
-                #ip   = args[0]
-                #port = int(args[1])
-                #address = (ip, port)
-            gui = PipeUI(local=local, log=options.log, verbosity=verbosity)
+            gui = PipeGUI(local=False, log=options.log, verbosity=verbosity)
             gtk.main()
         else:
-            if options.type == 'S':
-                ip   = ''
+            ip   = None
+            port = None
+            core_type = None
+            pipe_strings = []
+            interactive = True
+
+            # Read options from config file
+            if options.config_file:
+                # get type UNIFIED|SERVER|CLIENT
+                config = parse_config(options.config_file)
+                if config.has_key('type'):
+                    core_type = config['type']
+                    if core_type not in ('CLIENT', 'SERVER', 'UNIFIED'):
+                        raise CoreTypeException("Invalid run type '%s'" % core_type)
+                if config.has_key('ip'):
+                    ip = config['ip']
+                if config.has_key('port'):
+                    port = int(config['port'])
+                if config.has_key('pipes'):
+                    pipe_strings.extend(config['pipes'])
+
+            if options.address:
+                ip = options.address
+            if options.port:
+                port = int(options.port)
+
+            if options.server:
+                core_type = 'SERVER'
+            elif not core_type: 
+                if ip or port:
+                    core_type = 'CLIENT'
+                else:
+                    core_type = 'UNIFIED'
+
+            if ip is None:
+                ip = ''
+            if port is None:
                 port = 8000
-                if len(args) > 0:
-                    port = int(args[0])
+
+            if options.daemon:
+                interactive = False
+
+            # Determine which mode to run
+            if core_type == 'SERVER':
                 pipe = MultiPipeClients((ip, port), log=options.log, verbosity=verbosity)
-            elif options.type == 'C':
-                t_ip = '0.0.0.0'
-                t_port = 8000
-                if options.address:
-                    t_ip = options.address
-                if options.port:
-                    t_port = int(options.port)
-                if len(args) < 2:
-                    parser.print_help()
-                    sys.exit(1)
-                ip   = args[0]
-                port = int(args[1])
-                pipe = MultiPipeHosts((t_ip, t_port), log=options.log, verbosity=verbosity)
-                pipe.add_host((ip, port))
-            else:
-                if len(args) < 2:
-                    parser.print_help()
-                    sys.exit(1)
-                ip   = args[0]
-                port = int(args[1])
+                interactive = False
+            elif core_type == 'CLIENT':
+                pipe = MultiPipeHosts((ip, port), log=options.log, verbosity=verbosity)
+            elif core_type == 'UNIFIED':
                 pipe = MultiPipe(log=options.log, verbosity=verbosity)
-                pipe.add_host((ip, port))
-            pipe.run()
+            else:
+                raise Exception("Invalid type specification")
+
+            
+            if options.pipes:
+                for pipe_def in options.pipes:
+                    pipe_strings.append(pipe_def)
+
+            for pipe_str in pipe_strings:
+                pipe_vals = verify_pipe(pipe_str)
+                if pipe_vals is None:
+                    raise Exception("Invalid pipe specification: %s" % pipe_str)
+                ba,bp,a,p,t = pipe_vals
+                pipe.add_host((a,p),t,bp,ba)
+
+            if interactive:
+                stop_queue = Queue.Queue()
+                ci = PipeCI(pipe, log=False, verbosity=options.verbosity, stop_queue=stop_queue)
+                ci.start()
+                stop_queue.get()
+            else:
+                pipe.run()
     except KeyboardInterrupt:
         print "Keyboard Interrupt [^C]"
         if gui:
             try: gui.close_application()
             except RuntimeError: pass
-        if pipe:
+        elif ci:
+            try: ci.quit()
+            except RuntimeError: pass
+        elif pipe:
             pipe.stop()
     except ExServerDied, e:
         print str(e)
+    except UPipeException, e:
+        print "%s: %s" % (e.__class__.__name__, str(e))
     except Exception, e:
         print e
         if type(e) != tuple:
             raise
         elif len(e) != 2:
             raise
-        elif e[0] != 9:
+        elif e[0] not in (9,):
             raise
         else:
             pass
