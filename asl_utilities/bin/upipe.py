@@ -105,14 +105,14 @@ def verify_port(port):
         return None
     return port
 
-def verify_address(address):
-    if type(address) != str:
+def verify_host(host):
+    if type(host) != str:
         return None
     try:
-        address = socket.gethostbyname(address)
+        host = socket.gethostbyname(host)
     except:
         return None
-    return address
+    return host
 
 def verify_pipe(pipe_str):
     pipe = None
@@ -121,23 +121,23 @@ def verify_pipe(pipe_str):
         return None
     if len(parts) > 5:
         return None
-    bind_address = ''
+    bind_host = ''
     bind_port = 0
     pipe_type = parts[0]
     port = verify_port(parts[1])
-    address = verify_address(parts[2])
+    host = verify_host(parts[2])
     if len(parts) > 3:
         bind_port = verify_port(parts[3]) 
     if len(parts) > 4:
-        bind_address = verify_address(parts[4]) 
+        bind_host = verify_host(parts[4]) 
 
     if pipe_type not in ("TCP", "UDP"): return None
-    if address is None: return None
+    if host is None: return None
     if port is None: return None
-    if bind_address is None: return None
+    if bind_host is None: return None
     if bind_port is None: return None
 
-    return (bind_address,bind_port,address,port,pipe_type)
+    return (bind_host,bind_port,host,port,pipe_type)
 
 
 def parse_config(config_file):
@@ -338,8 +338,7 @@ class PipeBase(asyncore.dispatcher):
             if self._connecting and not self._connected:
                 return False
         return True
-
-    # Call the underlying write handler, track the byte and packet counts
+# Call the underlying write handler, track the byte and packet counts
     # (Overrides the method in asyncore.dispatcher)
     def handle_write(self):
         self.log("In write handler for %s %s" % (self.__class__.__name__, str(self.get_key())), 4)
@@ -411,7 +410,7 @@ class PipeBase(asyncore.dispatcher):
 # Hosts send/receive as if they were the actual host.
 # They communicate directly with the initializing client.
 class Host(PipeBase):
-    def __init__(self, master, address, socket_type='UDP', bind_port=0, bind_address='', id=None):
+    def __init__(self, master, address, socket_type='UDP', bind_port=0, bind_host='', id=None):
         PipeBase.__init__(self, master, id=id)
         self._original_socket = None # Socket on which the Host listens for TCP connections
 
@@ -421,10 +420,10 @@ class Host(PipeBase):
         self.set_socket(self._original_socket)
         self.set_reuse_addr()
         try:
-            self.bind((bind_address, bind_port))
+            self.bind((bind_host, bind_port))
         except:
             c_address,c_port = address
-            raise HostBindException("Failed to bind to %s:%s for host %s:%s" % (bind_address, str(bind_port), c_address, str(c_port)))
+            raise HostBindException("Failed to bind to %s:%s for host %s:%s" % (bind_host, str(bind_port), c_address, str(c_port)))
         if self._socket_type == socket.SOCK_STREAM:
             self._original_socket.listen(5)
 
@@ -614,6 +613,17 @@ class Internal(PipeBase):
             self._src_to_dst(command, src_key, dst_key, packet)
         return len(data)
 
+    # Assemble a message from keys and data
+    def freeze(self, src_key, dst_key, packet, command='FWD_DATA'):
+        message = "<[%s](%s)(%s){%s}>" % (command, src_key, dst_key, base64.standard_b64encode(packet))
+        self.log("Freezing: %s" % str(message), 1)
+        match = self.regex_message.search(message)
+        if match:
+            self.log("Freeze Succeeded!", 3)
+            return message
+        self.log("Freeze Failed!", 3)
+        return None
+
     # Break down a message into keys and data
     def melt(self, message):
         self.log("Melting: %s" % str(message), 1)
@@ -627,17 +637,6 @@ class Internal(PipeBase):
             self.log("Melt Succeeded!", 3)
             return (command, src_key, dst_key, packet)
         self.log("Melt Failed!", 3)
-        return None
-
-    # Assemble a message from keys and data
-    def freeze(self, src_key, dst_key, packet, command='FWD_DATA'):
-        message = "<[%s](%s)(%s){%s}>" % (command, src_key, dst_key, base64.standard_b64encode(packet))
-        self.log("Freezing: %s" % str(message), 1)
-        match = self.regex_message.search(message)
-        if match:
-            self.log("Freeze Succeeded!", 3)
-            return message
-        self.log("Freeze Failed!", 3)
         return None
 
 
@@ -752,15 +751,15 @@ class MultiPipe(threading.Thread):
     def notify(self):
         self._sockets['NOTIFIER'].notify()
 
-    def add_host(self, address, socket_type='UDP', bind_port=0, bind_address=''):
-        host = Host(self, address, socket_type, bind_port, bind_address, id=self._id_counter.inc())
+    def add_host(self, address, socket_type='UDP', bind_port=0, bind_host=''):
+        host = Host(self, address, socket_type, bind_port, bind_host, id=self._id_counter.inc())
         if not self._sockets.has_key(host.get_key()):
             self._sockets[host.get_key()] = host
             self.log("New Host: %s" % str(host.socket.getsockname()), 0)
             self.notify()
         else:
             c_address,c_port = address
-            raise DuplicateHostException("%s:%d:%s:%d" % (bind_address,bind_port,c_address,c_port))
+            raise DuplicateHostException("%s:%d:%s:%d" % (bind_host,bind_port,c_address,c_port))
 
     def get_hosts(self):
         hosts = []
@@ -861,9 +860,13 @@ class MultiPipe(threading.Thread):
                 self.log("%s::host_to_client(): recieved 'FWD_DATA' command with invalid client key (%s)" % (self.__class__.__name__, client_key), 0)
                 return
             if not self._sockets.has_key(host_key):
-                self.log("%s::host_to_client(): recieved 'FWD_DATA' command with invalid host key (%s)" % (self.__class__.__name__, host_key), 0)
-                return
-            host   = self._sockets[host_key]
+                if type == 'TCP':
+                    self.log("%s::host_to_client(): recieved 'FWD_DATA' command with invalid host key (%s)" % (self.__class__.__name__, host_key), 0)
+                    return
+                host = Host(self, h_address, h_type)
+                self._sockets[host.get_key()] = host
+            else:
+                host = self._sockets[host_key]
             self.log("MultiPipe::host_to_client(): adding packet", 3)
             self.log("    host   : %s" % str(host_key), 3)
             self.log("    client : %s" % str(client_key), 3)
@@ -1149,7 +1152,7 @@ class PipeGUI:
 
     def callback_add(self, widget, event, data=None):
         try:
-            bind_address = socket.gethostbyname(self.entry_bind_address.get_text())
+            bind_host = socket.gethostbyname(self.entry_bind_address.get_text())
         except:
             self.log("Invalid bind address")
             return
@@ -1174,9 +1177,9 @@ class PipeGUI:
 
         try:
             port_type = self.combobox_type.get_active_text()
-            self._add_host(address, port, port_type, bind_port, bind_address)
+            self._add_host(address, port, port_type, bind_port, bind_host)
         except Exception, e:
-            self.log("Failed to add host %s:%d:%s:%d > %s" % (bind_address,bind_port,address,port,str(e)))
+            self.log("Failed to add host %s:%d:%s:%d > %s" % (bind_host,bind_port,address,port,str(e)))
             pass
 
     def callback_delete(self, widget, event, data=None):
@@ -1199,19 +1202,19 @@ class PipeGUI:
         self.core.log(string, verbosity)
 
 # ===== Private Methods ===========================================
-    def _add_host(self, host, port, port_type='UDP', bind_port=0, bind_address=''):
+    def _add_host(self, host, port, port_type='UDP', bind_port=0, bind_host=''):
         ip = socket.gethostbyname(host)
         key = "%s-%d-%s" % (ip, port, port_type)
         if self.hosts.has_key(key):
             self.log('Host exists, cannot re-add...', 0)
             return
         try:
-            self.core.add_host((ip, port), port_type, bind_port, bind_address)
+            self.core.add_host((ip, port), port_type, bind_port, bind_host)
         except DuplicateHostException:
             self.log('Host exists, cannot re-add...', 0)
             return
         except HostBindException:
-            self.log('Could not bind to requested address (%s:%d)' % (bind_address,bind_port), 0)
+            self.log('Could not bind to requested address (%s:%d)' % (bind_host,bind_port), 0)
             return
 
         if not self.core._sockets.has_key(key):
@@ -1297,7 +1300,7 @@ class PipeCI(threading.Thread):
         self.stop_queue = stop_queue
 
         self.commands = {
-            "add"    : (self.add_pipe,    "Add a new pipe", "[[bind_address:]bind_port:]address:port:TCP|UDP"),
+            "add"    : (self.add_pipe,    "Add a new pipe", "[[bind_host:]bind_port:]address:port:TCP|UDP"),
             "help"   : (self.print_help,  "Show this list of commands", ""),
             "list"   : (self.list_pipes,  "List the existing pipes", ""),
             "quit"   : (self.quit,        "Close the program", ""),
@@ -1363,8 +1366,8 @@ class PipeCI(threading.Thread):
         if parts is None:
             self._print("Invalid pipe definition")
             return
-        bind_address,bind_port,address,port,pipe_type = parts
-        self.core.add_host((address,port), pipe_type, bind_port, bind_address)
+        bind_host,bind_port,address,port,pipe_type = parts
+        self.core.add_host((address,port), pipe_type, bind_port, bind_host)
 
     def list_pipes(self, arg_line=''):
         hosts = self.core.get_hosts()
@@ -1421,12 +1424,12 @@ def main():
     try:
         use_message = """usage: %prog [options]
 
-PIPE_SPEC: [[bind_address:]bind_port:]remote_address:remote_port:TCP|UDP"""
+PIPE_SPEC: [[bind_host:]bind_port:]remote_host:remote_port:TCP|UDP"""
         option_list = []
-        option_list.append(optparse.make_option("-a", "--address", dest="address", action="store", help="The server or bind address for client or server respectively"))
         option_list.append(optparse.make_option("-c", "--config-file", dest="config_file", action="store", help="configuration file from which to read connection information"))
         option_list.append(optparse.make_option("-d", "--daemon", dest="daemon", action="store_true", help="run in daemon mode (disable program command line)"))
         option_list.append(optparse.make_option("-g", "--gui", dest="gui", action="store_true", help="launch in graphical mode"))
+        option_list.append(optparse.make_option("-h", "--host", dest="host", action="store", help="The server or bind host for client or server respectively"))
         option_list.append(optparse.make_option("-l", "--log", dest="log", action="store_true", help="log traffic"))
         option_list.append(optparse.make_option("-p", "--port", dest="port", action="store", help="The server or bind port for client or server respectively"))
         option_list.append(optparse.make_option("-P", "--pipe", dest="pipes", action="append", metavar="PIPE_SPEC", help="start with one or more pipes open"))
@@ -1473,8 +1476,8 @@ PIPE_SPEC: [[bind_address:]bind_port:]remote_address:remote_port:TCP|UDP"""
                 if config.has_key('pipes'):
                     pipe_strings.extend(config['pipes'])
 
-            if options.address:
-                ip = options.address
+            if options.host:
+                ip = options.host
             if options.port:
                 port = int(options.port)
 
