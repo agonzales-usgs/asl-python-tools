@@ -410,7 +410,7 @@ class PipeBase(asyncore.dispatcher):
 # Hosts send/receive as if they were the actual host.
 # They communicate directly with the initializing client.
 class Host(PipeBase):
-    def __init__(self, master, address, socket_type='UDP', bind_port=0, bind_host='', id=None):
+    def __init__(self, master, address, socket_type='UDP', bind_port=0, bind_host='', id=None, bind_to_any=False):
         PipeBase.__init__(self, master, id=id)
         self._original_socket = None # Socket on which the Host listens for TCP connections
 
@@ -422,8 +422,11 @@ class Host(PipeBase):
         try:
             self.bind((bind_host, bind_port))
         except:
-            c_address,c_port = address
-            raise HostBindException("Failed to bind to %s:%s for host %s:%s" % (bind_host, str(bind_port), c_address, str(c_port)))
+            if bind_to_any:
+                self.bind(('', 0))
+            else:
+                c_address,c_port = address
+                raise HostBindException("Failed to bind to %s:%s for host %s:%s" % (bind_host, str(bind_port), c_address, str(c_port)))
         if self._socket_type == socket.SOCK_STREAM:
             self._original_socket.listen(5)
 
@@ -512,7 +515,7 @@ class Host(PipeBase):
 # Pipes send/receive as if they were the actual client.
 # They communicate directly with the target host.
 class Pipe(PipeBase):
-    def __init__(self, master, address, host_key, socket_type='UDP', id=None):
+    def __init__(self, master, address, host_key, socket_type='UDP', bind_port=0, bind_host='', id=None):
         PipeBase.__init__(self, master, id=id)
         self._last_activity = calendar.timegm(time.gmtime())
         self._original_socket = None # Just keeping with convention.
@@ -522,7 +525,10 @@ class Pipe(PipeBase):
         self.set_socket_type(socket_type)
         self._original_socket = socket.socket(socket.AF_INET, self.get_socket_type())
         self.set_socket(self._original_socket)
-        self.bind(('', 0))
+        try:
+            self.bind((bind_host, bind_port))
+        except:
+            self.bind(('', 0))
 
     def _handle_read(self):
         self.log("Pipe::_handle_read()", 4)
@@ -863,7 +869,7 @@ class MultiPipe(threading.Thread):
                 if type == 'TCP':
                     self.log("%s::host_to_client(): recieved 'FWD_DATA' command with invalid host key (%s)" % (self.__class__.__name__, host_key), 0)
                     return
-                host = Host(self, h_address, h_type)
+                host = Host(self, h_address, h_type, bind_port=h_address[1])
                 self._sockets[host.get_key()] = host
             else:
                 host = self._sockets[host_key]
@@ -901,7 +907,7 @@ class MultiPipe(threading.Thread):
             client.begin_disconnect()
         elif command == 'CONNECT':
             if not self._sockets.has_key(client_key):
-                client = Pipe(self, c_address, host_key, type)
+                client = Pipe(self, c_address, host_key, type=type, bind_port=c_address[1])
                 self._sockets[client.get_key()] = client
                 client.connect(h_address)
             else:
@@ -911,7 +917,7 @@ class MultiPipe(threading.Thread):
                 if type == 'TCP':
                     self.log("%s::client_to_host(): received command 'FWD_DATA' for invalid client key (%s)" % (self.__class__.__name__, client_key), 0)
                     return
-                client = Pipe(self, c_address, host_key, type)
+                client = Pipe(self, c_address, host_key, type=type, bind_port=c_address[1])
                 self._sockets[client.get_key()] = client
             else:
                 client = self._sockets[client_key]
