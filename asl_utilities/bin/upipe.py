@@ -1429,7 +1429,7 @@ PIPE_SPEC: [[bind_host:]bind_port:]remote_host:remote_port:TCP|UDP"""
         option_list.append(optparse.make_option("-c", "--config-file", dest="config_file", action="store", help="configuration file from which to read connection information"))
         option_list.append(optparse.make_option("-d", "--daemon", dest="daemon", action="store_true", help="run in daemon mode (disable program command line)"))
         option_list.append(optparse.make_option("-g", "--gui", dest="gui", action="store_true", help="launch in graphical mode"))
-        option_list.append(optparse.make_option("-h", "--host", dest="host", action="store", help="The server or bind host for client or server respectively"))
+        option_list.append(optparse.make_option("-H", "--host", dest="host", action="store", help="The server or bind host for client or server respectively"))
         option_list.append(optparse.make_option("-l", "--log", dest="log", action="store_true", help="log traffic"))
         option_list.append(optparse.make_option("-p", "--port", dest="port", action="store", help="The server or bind port for client or server respectively"))
         option_list.append(optparse.make_option("-P", "--pipe", dest="pipes", action="append", metavar="PIPE_SPEC", help="start with one or more pipes open"))
