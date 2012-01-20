@@ -715,6 +715,9 @@ class CommThread(threading.Thread):
     def set_keep_alive(self, keep_alive=True):
         self.keep_alive = keep_alive
 
+    def set_com_port(self, index):
+        self.args["port"] = int(index)
+
     def halt(self):
         self.running = False
         self.notify()

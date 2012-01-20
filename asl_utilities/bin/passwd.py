@@ -33,7 +33,7 @@ class Main:
         option_list.append(optparse.make_option("-s", "--select", dest="selection", action="store", help="comma seperated list of hosts to update"))
         option_list.append(optparse.make_option("-x", "--exclude", dest="exclusion", action="store", help="comma seperated list of hosts to exclude from update"))
         self.parser = optparse.OptionParser(option_list=option_list)
-        self.parser.set_usage("""Usage: %prog [options] check  - check station health""")
+        self.parser.set_usage("""Usage: %prog [options] - update passwords on multiple systems simultaneously""")
 
         self.passwords = None
         self.hosts = {}
@@ -71,7 +71,7 @@ class Main:
             users = host.getElementsByTagName("user")
             if not users or len(users) != 1:
                 self.error("Malformed XML in Configuration File")
-            
+
             try: address = socket.gethostbyname(addresses[0].firstChild.data)
             except socket.gaierror: self.error("Invalid address for host '%s'" % id)
             print "address:", address
@@ -119,7 +119,7 @@ class Main:
             print "Failed to ssh to station '%s'" % host_id
             return
 
-        reader.sendline('passwd')
+        reader.sendline('passwd %s' % host['user'])
 
         for password in self.passwords:
             try:
