@@ -38,8 +38,8 @@ from jtk import Crypt        # wrapper for aescrypt
 from jtk.Logger import Logger     # logging mechanism
 from jtk.permissions import Permissions # UNIX permissions
 from jtk.station import Station680 # for diagnosing Q680 systems
-from jtk.station import Station330 # for diagnosing Q330 systems
-from jtk.station import Station330Direct # for diagnosing Q330 systems
+from jtk.station import StationSlate # for diagnosing Q330 systems
+from jtk.station import Station330 # for diagnosing Slate systems
 from jtk.station import Proxy
 
 
@@ -50,6 +50,8 @@ from jtk.station import ExStationDisabled
 
 
 # === Exception Classes /*{{{*/
+class ExceptionList(Exception):
+    """Raised when simply listing all station info."""
 class ExceptionLoop(Exception):
     def __init__(self, value):
         self.value = value
@@ -99,6 +101,7 @@ class Manager(threading.Thread):
         self.group_selection = None
 
         self.continuity_only = False
+        self.list_only = False
         self.versions_only = False
 
         self.station_file = ""
@@ -125,6 +128,9 @@ class Manager(threading.Thread):
 
     def set_continuity_only(self, only=True):
         self.continuity_only = only
+
+    def set_list_only(self, only=True):
+        self.list_only = only
 
     def set_versions_only(self, only=True):
         self.versions_only = only
@@ -156,6 +162,29 @@ class Manager(threading.Thread):
         try:
             self.init_dir()
             self.parse_configuration()
+            if self.list_only:
+                # List all stations
+                max_name_len = 0
+                groups = {'NONE' : {}}
+                for group in self.groups.keys():
+                    groups[group] = {}
+                for station in self.stations.keys():
+                    group = 'NONE'
+                    info = self.stations[station]
+                    if info.has_key('group'):
+                        group = info['group']
+                    groups[group][info['name']] = info
+                    max_name_len = max(max_name_len, len(station))
+                for group in sorted(groups.keys()):
+                    if group == 'NONE':
+                        print "No Group (%d stations):" % len(groups[group].keys())
+                    else:
+                        print "Group '%s' (%d stations):" % (group, len(groups[group].keys()))
+                    for station in sorted(groups[group].keys()):
+                        info = groups[group][station]
+                        name = station.ljust(max_name_len)
+                        print "  %s [%s]" % (name, info['type'])
+                raise ExceptionList()
             self.read_version_file()
             self.start_threads()
 
@@ -187,6 +216,7 @@ class Manager(threading.Thread):
                     loop.set_version_files(self.version_files)
                     loop.set_versions_only(self.versions_only)
                     loop.set_continuity_only(self.continuity_only)
+                    loop.set_list_only(self.list_only)
                     loop.set_output_directory(self.output_directory)
                     loop.logger.set_log_note("Loop:%s" % group)
                     self.logger.log("Starting new ThreadLoop for group '%s'" % group)
@@ -220,13 +250,16 @@ class Manager(threading.Thread):
                         self.logger.log("  Loop:%s has %d station thread(s) running [%s]." % (str(l.group), len(l.threads), ", ".join(running_threads)))
                 except KeyboardInterrupt, e:
                     self.logger.log("Thread Summary [%d]: %s" % (threading.activeCount(), str(threading.enumerate())))
+        except ExceptionList:
+            pass
         except Exception, e:
             self.logger.log("Exception in: %s" % str(e))
             (ex_f, ex_s, trace) = sys.exc_info()
             traceback.print_tb(trace)
 
-        self.logger.log("All loops complete.")
-        self.stop_threads()
+        if not self.list_only:
+            self.logger.log("All loops complete.")
+            self.stop_threads()
         self.stop_queue.put('DONE')
 
     def halt(self):
@@ -394,6 +427,7 @@ class ThreadLoop(threading.Thread):
         self.action = action
 
         self.continuity_only = False
+        self.list_only = False
         self.versions_only = False
         self.version_queue = version_queue
         self.version_files = {}
@@ -429,6 +463,9 @@ class ThreadLoop(threading.Thread):
 
     def set_continuity_only(self, only=True):
         self.continuity_only = only
+
+    def set_list_only(self, only=True):
+        self.list_only = only
 
     def set_versions_only(self, only=True):
         self.versions_only = only
@@ -598,6 +635,13 @@ class ThreadLoop(threading.Thread):
             station._log("CheckLoop::record() failed to record data to file. Exception: %s" % str(e))
 
     def run(self):
+        if self.list_only:
+            self.logger.log("Group: %s" % self.group)
+            for station in self.stations_fresh:
+                self.logger.log("  %s" % station)
+            self.manager.queue.put(('DONE', self))
+            return
+
         self.logger.log("Start: Starting Loop...")
         self.logger.log("Start: action      = %s" % self.action)
         self.logger.log("Start: max threads = %s" % str(self.max_threads))
@@ -679,19 +723,16 @@ class ThreadLoop(threading.Thread):
                         if self.action == 'update':
                             raise Exception("Software update, Q680s not supported")
                         station = Station680(station_info['name'], self.action, self.queue)
-                    elif station_info['type'] == 'Q330D':
+                    elif station_info['type'] == 'Q330':
                         if self.continuity_only:
                             raise Exception("Continuity checks, Slate required")
                         if self.versions_only:
                             raise Exception("Software version checks, Slate required")
                         if self.action == 'update':
                             raise Exception("Software update, Slate required")
-                        station = Station330Direct(station_info['name'], self.action, self.queue, station_info['cfg'])
-                    elif station_info['type'] in ('Q330', 'Q330C'):
-                        legacy = False
-                        if station_info['type'] == 'Q330C':
-                            lagacy = True
-                        station = Station330(station_info['name'], self.action, self.queue, legacy=legacy, continuity_only=self.continuity_only, versions_only=self.versions_only)
+                        station = Station330(station_info['name'], self.action, self.queue, station_info['cfg'])
+                    elif station_info['type'] == 'Slate':
+                        station = StationSlate(station_info['name'], self.action, self.queue, continuity_only=self.continuity_only, versions_only=self.versions_only)
                         station.set_version_queue(self.version_queue)
                         station.set_version_files(self.version_files)
                     else:
@@ -840,7 +881,7 @@ action:
 
         arg_file = args[0]
         arg_action = args[1]
-        if arg_action not in ('check', 'update'):
+        if arg_action not in ('check', 'list', 'update'):
             self.usage("Un-recognized action '%s'" % arg_action)
 
         networks_set = False
@@ -876,7 +917,9 @@ action:
                 print "Cannot select options -d and -v simultaneously"
                 self.parser.print_help()
                 sys.exit(1)
-            if arg_action == 'check':
+            if arg_action == 'list':
+                manager.set_list_only(True)
+            elif arg_action == 'check':
                 manager.set_continuity_only(arg_continuity)
                 manager.set_versions_only(arg_versions)
             manager.start()
