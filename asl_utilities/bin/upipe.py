@@ -839,7 +839,7 @@ class MultiPipe(threading.Thread):
             return
         h_address = (h_ip,int(h_port))
         c_address = (c_ip,int(c_port))
-        type = c_type
+        socket_type = c_type
 
         if command == 'CLOSE':
             if not self._sockets.has_key(host_key):
@@ -866,7 +866,7 @@ class MultiPipe(threading.Thread):
                 self.log("%s::host_to_client(): recieved 'FWD_DATA' command with invalid client key (%s)" % (self.__class__.__name__, client_key), 0)
                 return
             if not self._sockets.has_key(host_key):
-                if type == 'TCP':
+                if socket_type == 'TCP':
                     self.log("%s::host_to_client(): recieved 'FWD_DATA' command with invalid host key (%s)" % (self.__class__.__name__, host_key), 0)
                     return
                 host = Host(self, h_address, h_type, bind_port=h_address[1])
@@ -898,7 +898,7 @@ class MultiPipe(threading.Thread):
             return
         h_address = (h_ip,int(h_port))
         c_address = (c_ip,int(c_port))
-        type = c_type
+        socket_type = c_type
 
         if command == 'CLOSE':
             if not self._sockets.has_key(client_key):
@@ -907,17 +907,17 @@ class MultiPipe(threading.Thread):
             client.begin_disconnect()
         elif command == 'CONNECT':
             if not self._sockets.has_key(client_key):
-                client = Pipe(self, c_address, host_key, type=type, bind_port=c_address[1])
+                client = Pipe(self, c_address, host_key, socket_type=socket_type, bind_port=c_address[1])
                 self._sockets[client.get_key()] = client
                 client.connect(h_address)
             else:
                 self.log("Client Key '%s' already exists" % client_key, 0)
         elif command == 'FWD_DATA':
             if not self._sockets.has_key(client_key):
-                if type == 'TCP':
+                if socket_type == 'TCP':
                     self.log("%s::client_to_host(): received command 'FWD_DATA' for invalid client key (%s)" % (self.__class__.__name__, client_key), 0)
                     return
-                client = Pipe(self, c_address, host_key, type=type, bind_port=c_address[1])
+                client = Pipe(self, c_address, host_key, socket_type=socket_type, bind_port=c_address[1])
                 self._sockets[client.get_key()] = client
             else:
                 client = self._sockets[client_key]
@@ -1182,8 +1182,8 @@ class PipeGUI:
             return
 
         try:
-            port_type = self.combobox_type.get_active_text()
-            self._add_host(address, port, port_type, bind_port, bind_host)
+            socket_type = self.combobox_type.get_active_text()
+            self._add_host(address, port, socket_type, bind_port, bind_host)
         except Exception, e:
             self.log("Failed to add host %s:%d:%s:%d > %s" % (bind_host,bind_port,address,port,str(e)))
             pass
@@ -1208,14 +1208,14 @@ class PipeGUI:
         self.core.log(string, verbosity)
 
 # ===== Private Methods ===========================================
-    def _add_host(self, host, port, port_type='UDP', bind_port=0, bind_host=''):
+    def _add_host(self, host, port, socket_type='UDP', bind_port=0, bind_host=''):
         ip = socket.gethostbyname(host)
-        key = "%s-%d-%s" % (ip, port, port_type)
+        key = "%s-%d-%s" % (ip, port, socket_type)
         if self.hosts.has_key(key):
             self.log('Host exists, cannot re-add...', 0)
             return
         try:
-            self.core.add_host((ip, port), port_type, bind_port, bind_host)
+            self.core.add_host((ip, port), socket_type, bind_port, bind_host)
         except DuplicateHostException:
             self.log('Host exists, cannot re-add...', 0)
             return
@@ -1274,7 +1274,7 @@ class PipeGUI:
         host['entry-port'].set_text(str(port))
         host['entry-port'].set_editable(False)
         host['entry-port'].set_width_chars(5)
-        host['entry-type'].set_text(str(port_type))
+        host['entry-type'].set_text(str(socket_type))
         host['entry-type'].set_editable(False)
         host['entry-type'].set_width_chars(5)
 
