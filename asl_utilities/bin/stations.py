@@ -186,6 +186,10 @@ class Manager(threading.Thread):
                         print "  %s [%s]" % (name, info['type'])
                 raise ExceptionList()
             self.read_version_file()
+            #max_len = max(map(len, self.version_files.keys()))
+            #print "Version Files:"
+            #for key in sorted(self.version_files.keys()):
+            #    print "%s: %s" % (key.rjust(max_len),self.version_files[key][::-1])
             self.start_threads()
 
             group_names = self.groups.keys()

@@ -9775,3 +9775,8 @@
 2012-01-17 10:35:03,918 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
 2012-01-17 10:39:42,217 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
 2012-01-19 14:06:03,968 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2012-01-26 12:17:45,522  WARN Unknown file format: netindex.idx
+2012-01-26 12:17:45,532  WARN Unknown file format: indexidx.idx
+2012-01-26 12:17:51,385 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2012-01-26 12:18:13,059  WARN Unknown file format: netindex.idx
+2012-01-26 12:18:13,063  WARN Unknown file format: indexidx.idx
