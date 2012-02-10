@@ -1132,8 +1132,13 @@ class Station330(Station):
             for id in sorted(ids.keys()):
                 self.tmp_buffer = ""
                 comm.set_from_file(str(id), self.config_file)
-                comm.execute(action)
                 self._log("Performing QDP Ping on Q330 #%d..." % id)
+                self._log("  IP Address : %s" % str(comm.q330.getIPAddress()))
+                self._log("  Base Port  : %d" % comm.q330.getBasePort())
+                self._log("  Serial No. : %016lX" % comm.q330.getSerialNumber())
+                self._log("  Auth Code  : %016lX" % comm.q330.getAuthCode())
+                self._log("  Timeout    : %0.1f" % comm.q330.getReceiveTimeout())
+                comm.execute(action)
                 match = re.compile("Boot Time: (\d+[/]\d+[/]\d+ \d+[:]\d+ UTC)", re.M).search(self.tmp_buffer)
                 if not match:
                     self._log("Could not locate boot time for Q330 #%d" % id)
@@ -1142,16 +1147,18 @@ class Station330(Station):
                 boot_summary = " Q330 #%d boot time: %s" % (id, boot_time)
                 q330_boot_times.append(boot_summary)
                 qping_results[id] = self.tmp_buffer.strip()
+                self._log("qping_results[%d]:" % id)
+                self._log("%s" % qping_results[id])
 
             if len(q330_boot_times) > 0:
                 self.output += "[Q330]%s:" % name
                 self.output += ",".join(q330_boot_times) + ".\n\n"
                 for id in sorted(qping_results.keys()):
                     self.output += "Q330 #%d\n" % id
-                    self.output += self.tmp_buffer + "\n"
+                    self.output += qping_results[id] + "\n\n"
 
         except ImportError, e:
-            self._log("Failed to import CnC modules.")
+            self._log("Failed to import CnC modules required for Q330 status.")
         except Exception, e:
             self._log("Exception: %s" % str(e))
 
