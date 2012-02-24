@@ -139,8 +139,8 @@ class LissReader(asyncore.dispatcher, Class):
 
 # === LissThread Class /*{{{*/
 class LissThread(Thread):
-    def __init__(self, read_queue, status_port=4000, log_queue=None):
-        Thread.__init__(self, queue_max=1024, log_queue=log_queue)
+    def __init__(self, read_queue, status_port=4000, log_queue=None, name=None):
+        Thread.__init__(self, queue_max=1024, log_queue=log_queue, name=name)
         self.daemon = True
         self.read_queue = read_queue
         self.socket = None
@@ -181,7 +181,6 @@ class LissThread(Thread):
         self.halt()
 
     def halt(self):
-        self._log("thread halting...")
         self.running = False
         self.notifier.notify()
 
@@ -203,19 +202,32 @@ class LissThread(Thread):
         self.notifier = Notifier()
 
         self.running = True
+        last_print = 0
+        print_frequency = 10 # every 10 seconds
+        counts = {}
         while self.running:
             # If the LISS connection socket does not exist, create a new one.
             if self.socket == None:
-                self._log("Attempting to establish connection to %s:%d" % self.address)
+                now = time.time()
+                key = "%s:%d" % self.address
+                if not counts.has_key(key):
+                    counts[key] = 0
+                counts[key] += 1
+                if (now - last_print) >= print_frequency:
+                    for addr_str,fail_count in counts.items():
+                        self._log("%d failed attempt(s) to establish connection to %s" % (fail_count,addr_str), 'err')
+                    last_print = now
+                    counts = {}
                 self.socket = LissReader(self, log_queue=self.log_queue)
                 try:
                     self.socket.connect(self.address)
                 except socket.error:
-                    self._log("Could not establish LISS connection.")
+                    self._log("Could not establish LISS connection.", 'dbg')
                     del self.socket
                     self.socket = None
                     time.sleep(0.1)
                     continue
+
             map = {
                 self.notifier.socket : self.notifier,
                 self.socket.socket   : self.socket,
@@ -224,7 +236,7 @@ class LissThread(Thread):
             try:
                 asyncore.loop(timeout=5.0, use_poll=False, map=map, count=1)
             except socket.error, e:
-                self._log("asyncore.loop() caught an exception: %s" % str(e), 'err')
+                self._log("asyncore.loop() socket.error: %s" % str(e), 'err')
                 # If there is an issue with this socket, we need to create
                 # a new socket. Set it to disconnected, and it will be replaced.
                 self.socket._connected = False
@@ -252,8 +264,8 @@ class LissThread(Thread):
 
 # === ReadThread Class /*{{{*/
 class ReadThread(Thread):
-    def __init__(self, write_queue, log_queue=None):
-        Thread.__init__(self, log_queue=log_queue)
+    def __init__(self, write_queue, log_queue=None, name=None):
+        Thread.__init__(self, log_queue=log_queue, name=name)
         self.write_queue = write_queue
         self.buffer = None
 
@@ -374,8 +386,8 @@ class ReadThread(Thread):
 
 # === WriteThread Class /*{{{*/
 class WriteThread(Thread):
-    def __init__(self, log_queue=None):
-        Thread.__init__(self, queue_max=1024, log_queue=log_queue)
+    def __init__(self, log_queue=None, name=None):
+        Thread.__init__(self, queue_max=1024, log_queue=log_queue, name=name)
         self.stations = {}
         self.target_dir = ''
 
@@ -479,6 +491,9 @@ class Main(Class):
             self.context['write'] = WriteThread(log_queue=self.context['log'].queue)
             self.context['read']  = ReadThread(self.context['write'].queue, log_queue=self.context['log'].queue)
             self.context['liss']  = LissThread(self.context['read'].queue, log_queue=self.context['log'].queue)
+            self._log("===============")
+            self._log("=== ARCHIVE ===")
+            self._log("===============")
 
             archive_path = ''
             config_file  = ''
@@ -624,12 +639,12 @@ class Main(Class):
             self.context['write'].set_target_dir(archive_path)
 
             self._log("LISS archive process for host %s:%d" % self.context['liss'].get_address())
-            self._log("Configuration:     %s" % (config_file,))
-            self._log("Archive directory: %s" % (archive_path,))
-            self._log("Log directory:     %s" % log_path)
-            self._log("Screen logging:    %s" % str_screen_logging)
-            self._log("File logging:      %s" % str_file_logging)
-            self._log("Debug logging:     %s" % str_debug_logging)
+            self._log("     Configuration : %s" % (config_file,))
+            self._log(" Archive Directory : %s" % (archive_path,))
+            self._log("     Log Directory : %s" % log_path)
+            self._log("    Screen Logging : %s" % str_screen_logging)
+            self._log("      File Logging : %s" % str_file_logging)
+            self._log("     Debug Logging : %s" % str_debug_logging)
 
             self.context['write'].start()
             self.context['read'].start()
@@ -637,7 +652,18 @@ class Main(Class):
 
             self.context['running'] = True
 
-            self._log("Status port:       %s" % str(self.context['liss'].get_status_port()))
+            self._log("       Status Port : %s" % str(self.context['liss'].get_status_port()))
+
+            self._log("----------------")
+            self._log("--- Contexts ---")
+            contexts = ['log','write','read','liss','running']
+            max_key = max(map(len, contexts))
+            for key in contexts:
+                context = self.context[key]
+                if type(context) == bool:
+                    self._log("  %s : %s" % (key.rjust(max_key), str(context)))
+                else:
+                    self._log("  %s : %s (%s)" % (key.rjust(max_key), context.name, T(context.is_alive(),"Running","Halted")))
 
             while self.context['running']:
                 try: 
@@ -660,6 +686,7 @@ class Main(Class):
         check_alive = lambda c,k: c.has_key(k) and c[k] and c[k].isAlive()
         thread_list = ['liss', 'read', 'write', 'log']
         for key in thread_list:
+            self._log("halting %s..." % self.context[key].name)
             if check_alive(self.context, key):
                 if now:
                     self.context[key].halt_now()
@@ -729,6 +756,10 @@ def hex_dump(bytes):
         result += "  " + string + "\n"
     return result
 #/*}}}*/
+
+def T(s,t,f):
+    if s: return t
+    return f
 
 def main():
     main = Main()
