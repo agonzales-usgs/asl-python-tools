@@ -376,7 +376,7 @@ class ReadThread(Thread):
 class WriteThread(Thread):
     def __init__(self, log_queue=None):
         Thread.__init__(self, queue_max=1024, log_queue=log_queue)
-        self.file_handles = {}
+        self.stations = {}
         self.target_dir = ''
 
     def set_target_dir(self, target_dir):
@@ -398,22 +398,32 @@ class WriteThread(Thread):
                 return
 
             file_handle = None
-            key = "%s_%s_%s_%s" % tuple(map(str.strip, data[1:5]))
+
+            network,station,location,channel = tuple(map(str.strip, data[1:5]))
+            record = data[7]
+            rec_len = len(record)
+            st_dir = "%s_%s" % (network,station)
+            ch_file = "%s_%s.%d.seed" % (location,channel,rec_len)
             date = time.strftime("%Y/%j", time.gmtime(data[5] / 10000))
+
+            # Select the mapping for this station
+            if not self.stations.has_key(st_dir):
+                self.stations[st_dir] = {}
+            file_handles = self.stations[st_dir]
 
             # If there is already a file open for this station+channel key
             # retrieve it
-            if self.file_handles.has_key(key):
-                file_date,file_handle = self.file_handles[key]
+            if file_handles.has_key(ch_file):
+                file_date,file_handle = file_handles[ch_file]
                 # If this date is no longer valid, close the file
                 if date != file_date:
                     file_handle.close()
                     file_handle = None
-                    del self.file_handles[key]
+                    del file_handles[ch_file]
 
             # If the file handle for this station+channel is not open, open it
             if file_handle is None:
-                target_dir = self.target_dir + "/" + date
+                target_dir = "%s/%s/%s" % (self.target_dir, st_dir, date)
                 if not os.path.exists(target_dir):
                     try:
                         os.makedirs(target_dir)
@@ -423,23 +433,22 @@ class WriteThread(Thread):
                 if not os.path.isdir(target_dir):
                     self._log("Path '%s' is not a directory" % target_dir)
                     raise Exception("Archive path exists, but it is not a directory")
-                file = target_dir + '/' + key + '.seed'
+                file = "%s/%s" % (target_dir, ch_file)
                 if os.path.exists(file):
                     try:
-                        self.file_handles[key] = (date,open(file, 'a+b'))
+                        file_handles[ch_file] = (date,open(file, 'a+b'))
                     except:
-                        self._log("Could not open file '%s' for appending" % target_dir)
+                        self._log("Could not open file '%s' for appending" % file)
                         raise Exception("Could not append to archive file")
                 else:
                     try:
-                        self.file_handles[key] = (date,open(file, 'w+b'))
+                        file_handles[ch_file] = (date,open(file, 'w+b'))
                     except:
-                        self._log("Could not create file '%s'" % target_dir)
+                        self._log("Could not create file '%s'" % file)
                         raise Exception("Could not create archive file")
-                file_handle = self.file_handles[key][1]
+                file_handle = file_handles[ch_file][1]
 
-            record = data[7]
-            self._log("Writing %d bytes for %s" % (len(record), key), 'dbg')
+            self._log("Writing %d bytes for %s_%s %s-%s" % (rec_len,network,station,location,channel), 'dbg')
             file_handle.write(record)
             file_handle.flush()
         except KeyboardInterrupt:
@@ -518,7 +527,7 @@ class Main(Class):
             if not os.path.isdir(archive_path):
                 archive_path = '/opt/data/archive'
             if not os.path.exists(archive_path):
-                self._log("Archive directory '%s' does not exist. Exiting!", (archive_path,))
+                self._log("Archive directory '%s' does not exist. Exiting!" % archive_path)
                 raise KeyboardInterrupt()
 
             if not os.path.exists(log_path):
