@@ -13,6 +13,7 @@ import struct
 import sys
 import threading
 import time
+import traceback
 
 from jtk.Class import Class
 from jtk.Thread import Thread
@@ -380,7 +381,8 @@ class ReadThread(Thread):
         except KeyboardInterrupt:
             pass
         except Exception, e:
-            self._log("_run() Exception: %s" % str(e), 'err')
+            exc_type,exc_value,exc_traceback = sys.exc_info()
+            self._log(traceback.format_exc(), 'err')
 
 #/*}}}*/
 
@@ -390,6 +392,12 @@ class WriteThread(Thread):
         Thread.__init__(self, queue_max=1024, log_queue=log_queue, name=name)
         self.stations = {}
         self.target_dir = ''
+        self.last_report = time.time()
+        self.records = {}
+        self.year_in_day_path = False
+
+    def set_year_in_day_path(self, enable):
+        self.year_in_day_path = enable
 
     def set_target_dir(self, target_dir):
         self.target_dir = target_dir
@@ -409,6 +417,23 @@ class WriteThread(Thread):
                 self._log("Invalid message '%s'" % message, 'warn')
                 return
 
+            now = time.time()
+            last_tm = time.gmtime(self.last_report)
+            now_tm = time.gmtime(now)
+            if now_tm.tm_hour > last_tm.tm_hour or \
+               now_tm.tm_yday > last_tm.tm_yday or \
+               now_tm.tm_year > last_tm.tm_year:
+                self._log("Records received/written (%s - %s):" % (time.strftime("%H:%M:%S", last_tm), time.strftime("%H:%M:%S", now_tm)))
+                max_key = max(map(len, self.records.keys()))
+                for k in sorted(self.records.keys()):
+                    r = self.records[k]['r']
+                    w = self.records[k]['w']
+                    if r > 0:
+                        self._log("  %s: %d/%d" % (k.ljust(max_key),r,w))
+                self.records = {}
+                self.last_report = now
+            
+
             file_handle = None
 
             network,station,location,channel = tuple(map(str.strip, data[1:5]))
@@ -417,13 +442,21 @@ class WriteThread(Thread):
             st_dir = "%s_%s" % (network,station)
             ch_file = "%s_%s.%d.seed" % (location,channel,rec_len)
             date = time.strftime("%Y/%j", time.gmtime(data[5] / 10000))
+            date_path = date
+            if self.year_in_day_path:
+                y,d = date.split('/')
+                date_path = "%s/%s_%s" % (y,y,d)
+
+            if not self.records.has_key(st_dir):
+                self.records[st_dir] = {'r' : 0, 'w' : 0}
+            self.records[st_dir]['r'] += 1
 
             # Select the mapping for this station
             if not self.stations.has_key(st_dir):
                 self.stations[st_dir] = {}
             file_handles = self.stations[st_dir]
 
-            # If there is already a file open for this station+channel key
+            # If there is already a file open for this channel
             # retrieve it
             if file_handles.has_key(ch_file):
                 file_date,file_handle = file_handles[ch_file]
@@ -435,38 +468,45 @@ class WriteThread(Thread):
 
             # If the file handle for this station+channel is not open, open it
             if file_handle is None:
-                target_dir = "%s/%s/%s" % (self.target_dir, st_dir, date)
+                target_dir = "%s/%s/%s" % (self.target_dir, st_dir, date_path)
                 if not os.path.exists(target_dir):
                     try:
+                        self._log("Creating new directory '%s'" % target_dir)
                         os.makedirs(target_dir)
                     except:
-                        self._log("Could not create archive directory '%s'" % target_dir)
+                        self._log("Could not create archive directory '%s'" % target_dir, 'err')
                         raise Exception("Could not create archive directory")
                 if not os.path.isdir(target_dir):
-                    self._log("Path '%s' is not a directory" % target_dir)
+                    self._log("Path '%s' exists, but it is not a directory" % target_dir, 'err')
                     raise Exception("Archive path exists, but it is not a directory")
                 file = "%s/%s" % (target_dir, ch_file)
                 if os.path.exists(file):
                     try:
+                        self._log("Opening existing file '%s'" % file, 'dbg')
                         file_handles[ch_file] = (date,open(file, 'a+b'))
                     except:
-                        self._log("Could not open file '%s' for appending" % file)
+                        self._log("Could not open file '%s' for appending" % file, 'err')
                         raise Exception("Could not append to archive file")
                 else:
                     try:
+                        self._log("Creating new file '%s'" % file, 'dbg')
                         file_handles[ch_file] = (date,open(file, 'w+b'))
                     except:
-                        self._log("Could not create file '%s'" % file)
+                        self._log("Could not create file '%s'" % file, 'err')
                         raise Exception("Could not create archive file")
                 file_handle = file_handles[ch_file][1]
 
             self._log("Writing %d bytes for %s_%s %s-%s" % (rec_len,network,station,location,channel), 'dbg')
             file_handle.write(record)
             file_handle.flush()
+
+            self.records[st_dir]['w'] += 1
+
         except KeyboardInterrupt:
             pass
         except Exception, e:
-            self._log("_run() Exception: %s" % str(e), 'err')
+            exc_type,exc_value,exc_traceback = sys.exc_info()
+            self._log(traceback.format_exc(), 'err')
 #/*}}}*/
 
 # === Main Class /*{{{*/
@@ -544,6 +584,12 @@ class Main(Class):
             if not os.path.exists(archive_path):
                 self._log("Archive directory '%s' does not exist. Exiting!" % archive_path)
                 raise KeyboardInterrupt()
+
+            year_in_day_path = False
+            if configuration.has_key('archive-year-in-day-path') and \
+               configuration['archive-year-in-day-path'].lower() == 'true':
+                year_in_day_path = True
+            self.context['write'].set_year_in_day_path(year_in_day_path)
 
             if not os.path.exists(log_path):
                 log_path = archive_path
