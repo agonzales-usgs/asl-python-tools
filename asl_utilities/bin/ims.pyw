@@ -9,13 +9,18 @@ import stat
 import struct
 import sys
 import time
-#import threading
+import threading
 
 import pygtk
 pygtk.require('2.0')
 import gtk
 import gobject
-#gtk.gdk.threads_init()
+gtk.gdk.threads_init()
+
+try:
+    import sqlite3 as sqlite
+except ImportError, e:
+    from pysqlite2 import dbapi2 as sqlite
 
 # === DateTimeWindow Class /*{{{*/
 class DateTimeWindow:
@@ -368,7 +373,6 @@ class IMSGUI:
         self.boxes = {}
         self.hbox_command = gtk.HBox()
         for key in self.box_keys_ordered():
-            print key
             if key == 'CHANNELS':
                 self.boxes[key] = gtk.VBox()
             else:
@@ -380,12 +384,6 @@ class IMSGUI:
         self.label_command = gtk.Label("Command:")
         self.combobox_command = gtk.combo_box_new_text()
 
-        #self.label_msgid = gtk.Label("Message ID:")
-        #self.entry_msgid = gtk.Entry()
-
-        self.label_refid = gtk.Label("Reference ID:")
-        self.entry_refid = gtk.Entry()
-
         self.label_email = gtk.Label("E-mail:")
         self.entry_email = gtk.Entry()
 
@@ -393,7 +391,7 @@ class IMSGUI:
         self.entry_start_time  = gtk.Entry()
         self.button_start_time = gtk.Button(label="...", stock=None, use_underline=True)
 
-        self.label_stations     = gtk.Label("Stations:")
+        self.label_stations     = gtk.Label("Station:")
         self.combobox_stations  = gtk.combo_box_new_text()
 
         self.label_channels    = gtk.Label("Channels:")
@@ -403,7 +401,7 @@ class IMSGUI:
 
         self.label_duration = gtk.Label("Duration:")
         self.sample_duration = gtk.Label("")
-        self.adjustment_duration = gtk.Adjustment(value=85680.0, lower=0, upper=2**32, step_incr=60, page_incr=3600, page_size=1)
+        self.adjustment_duration = gtk.Adjustment(value=85680.0, lower=0, upper=2**32, step_incr=60, page_incr=3600)
         self.spinbutton_duration = gtk.SpinButton(self.adjustment_duration)
 
         #self.label_cal_type    = gtk.Label("Cal. Type:")
@@ -439,9 +437,6 @@ class IMSGUI:
         self.hbox_command.pack_start(self.label_command,  False, False, 0)
         self.hbox_command.pack_end(self.combobox_command, False, False, 0)
 
-        self.boxes['REF_ID'].pack_start(self.label_refid, False, False, 0)
-        self.boxes['REF_ID'].pack_end(self.entry_refid,   True, True, 0)
-
         self.boxes['EMAIL'].pack_start(self.label_email, False, False, 0)
         self.boxes['EMAIL'].pack_end(self.entry_email,   True, True, 0)
 
@@ -476,7 +471,6 @@ class IMSGUI:
         for t in self.commands:
             self.combobox_command.append_text(t)
         self.combobox_command.set_active(0)
-        self.entry_refid.set_text('')
         self.entry_email.set_text('gsnmaint@usgs.gov')
         self.entry_start_time.set_text(time.strftime("%Y/%m/%d 15:00:00", time.gmtime()))
         for t in self.stations:
@@ -505,7 +499,6 @@ class IMSGUI:
         self.window.connect("delete-event",  self.callback_quit, None)
 
         self.combobox_command.connect(   "changed", self.callback_command,      None)
-        self.entry_refid.connect(        "changed", self.callback_generate,     None)
         self.entry_email.connect(        "changed", self.callback_generate,     None)
         self.entry_start_time.connect(   "changed", self.callback_time_changed, None)
         self.button_start_time.connect(  "clicked", self.callback_start_time,   None)
@@ -660,6 +653,9 @@ class IMSGUI:
                 calper_string = channel['entry-calper'].get_text()
                 if calper_string == channel['entry-calper']._hint_text:
                     calper_string = ""
+                refid_string = channel['entry-refid'].get_text()
+                if refid_string == channel['entry-refid']._hint_text:
+                    refid_string = ""
 
               # === Construct IMS Message
                 message += "BEGIN IMS2.0\n"
@@ -667,7 +663,8 @@ class IMSGUI:
                 station = ''.join(self.combobox_stations.get_active_text().split('_'))
                 message += "MSG_ID %s\n" % (station+ "_" +message_type+ "_" +channel_string+ "_" +time.strftime("%Y/%m/%d_%H:%M:%S", time.gmtime()),)
                 if box.has_key("REF_ID"):
-                    message += "REF_ID %s\n" % self.entry_refid.get_text()
+                    message += "REF_ID %s\n" % refid_string
+
                 if box.has_key("EMAIL"):
                     message += "EMAIL %s\n" % self.entry_email.get_text()
                 if box.has_key("TIME_STAMP"):
@@ -718,7 +715,7 @@ class IMSGUI:
         channel = {}
         channel['hbox'] = gtk.HBox()
         channel['checkbutton-channel'] = gtk.CheckButton()
-        channel['adjustment'] = gtk.Adjustment(value=0, lower=0, upper=99, step_incr=10, page_incr=1, page_size=1)
+        channel['adjustment'] = gtk.Adjustment(value=0, lower=0, upper=99, step_incr=10, page_incr=1)
         channel['spinbutton'] = gtk.SpinButton(channel['adjustment'])
         channel['combobox-class'] = gtk.combo_box_new_text()
         for c in self.channels:
@@ -728,6 +725,7 @@ class IMSGUI:
             channel['combobox-axes'].append_text(axis)
         channel['entry-calib'] = gtk.Entry()
         channel['entry-calper'] = gtk.Entry()
+        channel['entry-refid'] = gtk.Entry()
         channel['button'] = gtk.Button(label="delete", stock=None, use_underline=True)
 
         self.boxes['CHANNELS'].pack_start(channel['hbox'], False, True,  0)
@@ -737,6 +735,7 @@ class IMSGUI:
         channel['hbox'].pack_start(channel['combobox-axes'], False, False, 0)
         channel['hbox'].pack_start(channel['entry-calib'], False, False, 0)
         channel['hbox'].pack_start(channel['entry-calper'], False, False, 0)
+        channel['hbox'].pack_start(channel['entry-refid'], True, True, 0)
         channel['hbox'].pack_start(channel['button'], False, False, 0)
 
         channel['checkbutton-channel'].set_active(False)
@@ -758,6 +757,13 @@ class IMSGUI:
         channel['entry-calper'].connect("focus-in-event", self.callback_calarg_focus_in, None)
         channel['entry-calper'].connect("focus-out-event", self.callback_calarg_focus_out, None)
         self.hint_text_show(channel['entry-calper'])
+
+        refid_identifier = str(channel_key)+":entry-refid"
+        channel['entry-refid']._hint_text = "REF_ID"
+        channel['entry-refid'].connect("changed", self.callback_calarg_changed, None, refid_identifier)
+        channel['entry-refid'].connect("focus-in-event", self.callback_calarg_focus_in, None)
+        channel['entry-refid'].connect("focus-out-event", self.callback_calarg_focus_out, None)
+        self.hint_text_show(channel['entry-refid'])
 
         channel['checkbutton-channel'].connect('toggled', self.callback_channel_toggle, None, channel_key)
         channel['spinbutton'].connect('value-changed', self.callback_location, None)
@@ -835,7 +841,6 @@ class IMSGUI:
             fields.append('%s=%s' % (k,v))
 
         mailto_cmd = "mailto:%s?%s" % (','.join(recipients), '&'.join(fields))
-        print mailto_cmd
         webbrowser.open(mailto_cmd)
 
     def close_application(self, widget, event, data=None):
