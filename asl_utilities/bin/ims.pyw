@@ -470,7 +470,7 @@ class IMSGUI:
 # ===== Widget Configurations ======================================
         for t in self.commands:
             self.combobox_command.append_text(t)
-        self.combobox_command.set_active(0)
+        self.combobox_command.set_active(1)
         self.entry_email.set_text('gsnmaint@usgs.gov')
         self.entry_start_time.set_text(time.strftime("%Y/%m/%d 15:00:00", time.gmtime()))
         for t in self.stations:
