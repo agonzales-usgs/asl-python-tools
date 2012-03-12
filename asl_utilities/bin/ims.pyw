@@ -420,6 +420,7 @@ class IMSGUI:
         self.scrolledwindow_display.add(self.textview_display)
 
         self.button_copy = gtk.Button(label="Copy", stock=None, use_underline=True)
+        self.button_email = gtk.Button(label="E-mail", stock=None, use_underline=True)
         self.button_quit = gtk.Button(label="Quit", stock=None, use_underline=True)
 
 # ===== Layout Configuration =======================================
@@ -468,6 +469,7 @@ class IMSGUI:
         self.hbox_display.pack_start(self.scrolledwindow_display, True, True, 0)
 
         self.hbox_control.pack_start(self.button_copy, False, False, 0)
+        self.hbox_control.pack_start(self.button_email, False, False, 0)
         self.hbox_control.pack_end(self.button_quit,   False, False, 0)
 
 # ===== Widget Configurations ======================================
@@ -485,6 +487,7 @@ class IMSGUI:
         self.textbuffer_display.set_text('')
         self.textview_display.set_editable(False)
         self.button_copy.set_sensitive(False)
+        self.button_email.set_sensitive(False)
 
         self.textview_display.set_size_request(-1, 300)
 
@@ -513,6 +516,7 @@ class IMSGUI:
         self.spinbutton_duration.connect("value-changed", self.callback_generate, None)
 
         self.button_copy.connect("clicked", self.callback_copy, None)
+        self.button_email.connect("clicked", self.callback_email, None)
         self.button_quit.connect("clicked", self.callback_quit, None)
 
 # ===== Event Bindings =============================================
@@ -560,6 +564,9 @@ class IMSGUI:
 
     def callback_copy(self, widget, event, data=None):
         self.text_to_clipboard()
+
+    def callback_email(self, widget, event, data=None):
+        self.mailto()
 
     def callback_generate(self, widget, event, data=None):
         self.generate()
@@ -703,7 +710,7 @@ class IMSGUI:
                 message += "\n"
 
         self.textbuffer_display.set_text(message)
-        #self.update_interface()
+        self.update_buttons()
             
 
     def _add_channel(self):
@@ -786,19 +793,50 @@ class IMSGUI:
                 else:
                     self.boxes[key].show_all()
 
-        s,e = self.textbuffer_display.get_bounds()
-        if len(self.textbuffer_display.get_text(s,e)) > 0:
-            self.button_copy.set_sensitive(True)
-        else:
-            self.button_copy.set_sensitive(False)
-
+        self.update_buttons()
         #w,h = self.window.size_request()
         #self.window.resize(w,h)
         self.window.resize_children()
 
+    def update_buttons(self):
+        s,e = self.textbuffer_display.get_bounds()
+        if len(self.textbuffer_display.get_text(s,e)) > 0:
+            self.button_copy.set_sensitive(True)
+            self.button_email.set_sensitive(True)
+        else:
+            self.button_copy.set_sensitive(False)
+            self.button_email.set_sensitive(False)
+
     def text_to_clipboard(self):
         s,e = self.textbuffer_display.get_bounds()
         self.clipboard.set_text(self.textbuffer_display.get_text(s,e))
+
+    def get_text_for_mail(self):
+        s,e = self.textbuffer_display.get_bounds()
+        return self.textbuffer_display.get_text(s,e)
+
+    def mailto(self):
+        from urllib import quote
+        import webbrowser
+        import string
+        message_type = self.combobox_command.get_active_text()
+        ims_cmd = self.box_keys[message_type]['message-type']
+        station = ''.join(self.combobox_stations.get_active_text().split('_'))
+        recipients = ['calibration@ctbto.org']
+        fields = {
+            'replyto' : 'gsnmaint@usgs.gov',
+            'cc' : 'gsn-%s@usgs.gov' % station,
+            'subject' : quote('%s_%s' % (ims_cmd, station)),
+            'body' : quote(self.get_text_for_mail()),
+        }
+        recipient_str = map(string.strip, recipients)
+        fields = []
+        for k,v in fields:
+            fields.append('%s=%s' % (k,v))
+
+        mailto_cmd = "mailto:%s?%s" % (','.join(recipients), '&'.join(fields))
+        webbrowser.open(mailto_cmd)
+
 
     def close_application(self, widget, event, data=None):
         gtk.main_quit()
