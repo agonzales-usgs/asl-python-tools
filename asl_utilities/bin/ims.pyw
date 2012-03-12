@@ -22,6 +22,21 @@ try:
 except ImportError, e:
     from pysqlite2 import dbapi2 as sqlite
 
+def LEFT(widget):
+    a = gtk.Alignment(xalign=0.0)
+    a.add(widget)
+    return a
+
+def RIGHT(widget):
+    a = gtk.Alignment(xalign=1.0)
+    a.add(widget)
+    return a
+
+def CENTER(widget):
+    a = gtk.Alignment(xalign=0.5)
+    a.add(widget)
+    return a
+
 # === DateTimeWindow Class /*{{{*/
 class DateTimeWindow:
     def __init__(self):
@@ -292,6 +307,11 @@ class Counter:
 # === IMSGUI Class /*{{{*/
 class IMSGUI:
     def __init__(self):
+        self._minimum_width  = 640
+        self._minimum_height = 640
+        self._default_width = self._minimum_width
+        self._default_height = self._minimum_height
+
         self.commands = [
             'CALIBRATE_START',
             'CALIBRATE_CONFIRM',
@@ -337,7 +357,7 @@ class IMSGUI:
                 'CHAN_LIST' : None,
                 'CHANNELS' : None,
                 'SENSOR' : None,
-                'TYPE' : None,
+                #'TYPE' : None,
             },
             'CALIBRATE_CONFIRM' : {
                 'message-type' : 'COMMAND_RESPONSE',
@@ -364,21 +384,19 @@ class IMSGUI:
       # Layout Control Widgets
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("Calibrations")
-        self.window.set_geometry_hints(min_width=480)
+        self.window.set_geometry_hints(min_width=640, min_height=640)
 
         self.vbox_main   = gtk.VBox()
         self.vbox_top    = gtk.VBox()
         self.vbox_bottom = gtk.VBox()
 
-        self.boxes = {}
-        self.hbox_command = gtk.HBox()
-        for key in self.box_keys_ordered():
-            if key == 'CHANNELS':
-                self.boxes[key] = gtk.VBox()
-            else:
-                self.boxes[key] = gtk.HBox()
+        self.table_parts = gtk.Table()
+        self.vbox_channels = gtk.VBox()
         self.hbox_display = gtk.HBox()
         self.hbox_control = gtk.HBox()
+
+        self.boxes = {}
+        self.boxes['CHANNELS'] = [self.vbox_channels]
 
       # User Interaction Widgets
         self.label_command = gtk.Label("Command:")
@@ -400,15 +418,13 @@ class IMSGUI:
         self.checkbutton_sensor = gtk.CheckButton(label="Include Sensor")
 
         self.label_duration = gtk.Label("Duration:")
-        self.sample_duration = gtk.Label("")
+        self.sample_duration = gtk.Entry()
         self.adjustment_duration = gtk.Adjustment(value=85680.0, lower=0, upper=2**32, step_incr=60, page_incr=3600)
         self.spinbutton_duration = gtk.SpinButton(self.adjustment_duration)
+        self.spacer_duration = gtk.Label("")
 
         #self.label_cal_type    = gtk.Label("Cal. Type:")
         #self.combobox_cal_type = gtk.combo_box_new_text()
-
-        #    'CALIB',
-        #    'CALPER',
 
         self.checkbutton_spec = gtk.CheckButton(label="In Specification")
 
@@ -423,43 +439,57 @@ class IMSGUI:
 
 # ===== Layout Configuration =======================================
         self.window.add(self.vbox_main)
-        #self.window.set_size_request(350, 550)
 
         self.vbox_main.pack_start(self.vbox_top,    False, True, 0)
         self.vbox_main.pack_start(self.vbox_bottom, True,  True, 0)
 
-        self.vbox_top.pack_start(self.hbox_command, False, True, 0)
-        for key in self.box_keys_ordered():
-            self.vbox_top.pack_start(self.boxes[key],  False, True, 0)
+        self.vbox_top.pack_start(self.table_parts, False, True, 0)
+        self.vbox_top.pack_start(self.vbox_channels, False, True, 0)
         self.vbox_bottom.pack_start(self.hbox_display, True,  True, 0)
         self.vbox_bottom.pack_start(self.hbox_control, False, True, 0)
 
-        self.hbox_command.pack_start(self.label_command,  False, False, 0)
-        self.hbox_command.pack_end(self.combobox_command, False, False, 0)
+        self.table_parts.attach(LEFT(self.label_command),       0, 1, 0, 1, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(LEFT(self.combobox_command),    1, 4, 0, 1, gtk.FILL, 0, 1, 1)
 
-        self.boxes['EMAIL'].pack_start(self.label_email, False, False, 0)
-        self.boxes['EMAIL'].pack_end(self.entry_email,   True, True, 0)
+        self.boxes['MSG_ID'] = []
+        self.boxes['REF_ID'] = []
 
-        self.boxes['START_TIME'].pack_start(self.label_start_time, False, False, 0)
-        self.boxes['START_TIME'].pack_end(self.button_start_time,  False, False, 0)
-        self.boxes['START_TIME'].pack_end(self.entry_start_time,   True, True, 0)
+        self.boxes['EMAIL'] = [self.label_email, self.entry_email]
+        self.table_parts.attach(LEFT(self.label_email),         0, 1, 1, 2, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(self.entry_email,               1, 4, 1, 2, gtk.FILL | gtk.EXPAND, 0, 1, 1)
 
-        self.boxes['STA_LIST'].pack_start(self.label_stations,  False, False, 0)
-        self.boxes['STA_LIST'].pack_end(self.combobox_stations, False, False, 0)
+        self.boxes['START_TIME'] = [self.label_start_time, self.button_start_time, self.entry_start_time]
+        self.table_parts.attach(LEFT(self.label_start_time),    0, 1, 2, 3, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(self.entry_start_time,          1, 4, 2, 3, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_parts.attach(self.button_start_time,         4, 5, 2, 3, 0, 0, 1, 1)
 
-        self.boxes['CHAN_LIST'].pack_start(self.label_channels, False, False, 0)
-        self.boxes['CHAN_LIST'].pack_end(self.button_channels,  False, False, 0)
+        self.boxes['STA_LIST'] = [self.label_stations, self.combobox_stations]
+        self.table_parts.attach(LEFT(self.label_stations),      0, 1, 3, 4, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(LEFT(self.combobox_stations),   1, 4, 3, 4, gtk.FILL, 0, 1, 1)
 
-        self.boxes['SENSOR'].pack_start(self.checkbutton_sensor, False, False, 0)
+        self.boxes['SENSOR'] = [self.checkbutton_sensor]
+        self.table_parts.attach(LEFT(self.checkbutton_sensor),  0, 4, 4, 5, gtk.FILL, 0, 1, 1)
 
-        #self.boxes['TYPE'].pack_start(self.label_cal_type,  False, False, 0)
-        #self.boxes['TYPE'].pack_end(self.combobox_cal_type, False, False, 0)
+        self.boxes['TYPE'] = []
+        #self.boxes['TYPE'] = [self.label_cal_type, self.combobox_cal_type]
+        #self.table_parts.attach(LEFT(self.label_cal_type),      0, 1, 5, 6, gtk.FILL, 0, 1, 1)
+        #self.table_parts.attach(LEFT(self.combobox_cal_type),   1, 4, 5, 6, gtk.FILL, 0, 1, 1)
 
-        self.boxes['CALIB_PARAM'].pack_start(self.label_duration, False, False, 0)
-        self.boxes['CALIB_PARAM'].pack_end(self.spinbutton_duration, False, False, 0)
-        self.boxes['CALIB_PARAM'].pack_end(self.sample_duration, False, False, 5)
+        self.boxes['CALIB_PARAM'] = [self.label_duration, self.spinbutton_duration, self.sample_duration]
+        self.table_parts.attach(LEFT(self.label_duration),      0, 1, 6, 7, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(LEFT(self.sample_duration),     1, 2, 6, 7, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(LEFT(self.spinbutton_duration), 2, 3, 6, 7, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(self.spacer_duration,           3, 4, 6, 7, gtk.FILL | gtk.EXPAND, 0, 1, 1)
 
-        self.boxes['IN_SPEC'].pack_start(self.checkbutton_spec,  False, False, 0)
+        self.boxes['CALIB'] = []
+        self.boxes['CALPER'] = []
+
+        self.boxes['IN_SPEC'] = [self.checkbutton_spec]
+        self.table_parts.attach(LEFT(self.checkbutton_spec),    0, 4, 7, 8, gtk.FILL, 0, 1, 1)
+
+        self.boxes['CHAN_LIST'] = [self.label_channels, self.button_channels]
+        self.table_parts.attach(LEFT(self.label_channels),      0, 1, 8, 9, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(RIGHT(self.button_channels),     3, 5, 8, 9, gtk.FILL, 0, 1, 1)
 
         self.hbox_display.pack_start(self.scrolledwindow_display, True, True, 0)
 
@@ -480,6 +510,7 @@ class IMSGUI:
         self.checkbutton_spec.set_active(True)
         self.textbuffer_display.set_text('')
         self.textview_display.set_editable(False)
+        self.sample_duration.set_editable(False)
         self.button_copy.set_sensitive(False)
         self.button_email.set_sensitive(False)
 
@@ -728,7 +759,7 @@ class IMSGUI:
         channel['entry-refid'] = gtk.Entry()
         channel['button'] = gtk.Button(label="delete", stock=None, use_underline=True)
 
-        self.boxes['CHANNELS'].pack_start(channel['hbox'], False, True,  0)
+        self.vbox_channels.pack_start(channel['hbox'], False, True,  0)
         channel['hbox'].pack_start(channel['checkbutton-channel'], False, False, 0)
         channel['hbox'].pack_start(channel['spinbutton'], False, False, 0)
         channel['hbox'].pack_start(channel['combobox-class'], False, False, 0)
@@ -779,7 +810,7 @@ class IMSGUI:
     def _del_channel(self, key):
         #if self.channel_widgets.has_key(key):
         self.channel_widgets[key]['hbox'].hide_all()
-        self.boxes['CHANNELS'].remove(self.channel_widgets[key]['hbox'])
+        self.vbox_channels.remove(self.channel_widgets[key]['hbox'])
         for k in self.channel_widgets[key].keys():
             del self.channel_widgets[key][k]
         del self.channel_widgets[key]
@@ -787,17 +818,14 @@ class IMSGUI:
 
     def update_interface(self):
         for key in self.box_keys['ALL']:
-            self.boxes[key].hide_all()
+            for widget in self.boxes[key]:
+                widget.hide_all()
 
         command_key = self.combobox_command.get_active_text()
         for key in self.box_keys['ALL'].keys():
             if self.box_keys[command_key].has_key(key):
-                if key == 'CHANNELS':
-                    self.boxes['CHANNELS'].show()
-                    for k in self.channel_widgets.keys():
-                        self.channel_widgets[k]['hbox'].show_all()
-                else:
-                    self.boxes[key].show_all()
+                for widget in self.boxes[key]:
+                    widget.show_all()
 
         self.update_buttons()
         #w,h = self.window.size_request()
