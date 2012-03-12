@@ -823,7 +823,7 @@ class IMSGUI:
         ims_cmd = self.box_keys[message_type]['message-type']
         station = ''.join(self.combobox_stations.get_active_text().split('_'))
         recipients = ['calibration@ctbto.org']
-        fields = {
+        field_map = {
             'replyto' : 'gsnmaint@usgs.gov',
             'cc' : 'gsn-%s@usgs.gov' % station,
             'subject' : quote('%s_%s' % (ims_cmd, station)),
@@ -831,12 +831,12 @@ class IMSGUI:
         }
         recipient_str = map(string.strip, recipients)
         fields = []
-        for k,v in fields:
+        for k,v in field_map.items():
             fields.append('%s=%s' % (k,v))
 
         mailto_cmd = "mailto:%s?%s" % (','.join(recipients), '&'.join(fields))
+        print mailto_cmd
         webbrowser.open(mailto_cmd)
-
 
     def close_application(self, widget, event, data=None):
         gtk.main_quit()
