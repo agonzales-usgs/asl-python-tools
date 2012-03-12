@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python -W all
 import glob
 import inspect
 import optparse
@@ -318,8 +318,8 @@ class IMSGUI:
                 'CHANNELS'      : key_counter.inc_p(),
                 'SENSOR'        : key_counter.inc_p(),
                 'TYPE'          : key_counter.inc_p(),
-                #'CALIB'         : key_counter.inc_p(),
-                #'CALPER'        : key_counter.inc_p(),
+                'CALIB'         : key_counter.inc_p(),
+                'CALPER'        : key_counter.inc_p(),
                 #'RESPONSE'      : key_counter.inc_p(),
                 'IN_SPEC'       : key_counter.inc_p(),
             },
@@ -349,8 +349,8 @@ class IMSGUI:
                 'CHAN_LIST' : None,
                 'CHANNELS' : None,
                 'IN_SPEC' : None,
-                #'CALIB' : None,
-                #'CALPER' : None,
+                'CALIB' : None,
+                'CALPER' : None,
                 #'RESPONSE' : None,
             },
         }
@@ -359,7 +359,7 @@ class IMSGUI:
       # Layout Control Widgets
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("Calibrations")
-        self.window.set_geometry_hints(min_width=350)
+        self.window.set_geometry_hints(min_width=480)
 
         self.vbox_main   = gtk.VBox()
         self.vbox_top    = gtk.VBox()
@@ -522,8 +522,8 @@ class IMSGUI:
         self.window.show_all()
         self.channel_counter = Counter()
         self.channel_widgets = {}
-        self.update_interface()
         self.generate()
+        self.update_interface()
         self.callback_time_changed(None, None, None)
 
 # ===== Callbacks ==================================================
@@ -539,10 +539,12 @@ class IMSGUI:
     def callback_add_channel(self, widget, event, data=None):
         self._add_channel()
         self.generate()
+        self.update_interface
 
     def callback_delete_channel(self, widget, event, data=None):
         self._del_channel(data)
         self.generate()
+        self.update_interface
                 
     def callback_quit(self, widget, event, data=None):
         self.close_application(widget, event, data)
@@ -561,6 +563,7 @@ class IMSGUI:
 
     def callback_generate(self, widget, event, data=None):
         self.generate()
+        self.update_interface
 
     def callback_time_changed(self, widget, event, data=None):
         time_string = self.entry_start_time.get_text() + " UTC"
@@ -568,18 +571,21 @@ class IMSGUI:
             date = time.strptime(time_string,"%Y/%m/%d %H:%M:%S %Z")
             self.time_window.set_date(date)
             self.generate()
+            self.update_interface()
         except ValueError:
             pass
 
     def callback_start_time(self, widget, event, data=None):
         self.time_window.create_window()
         self.generate()
+        self.update_interface()
 
     def callback_channel_toggle(self, widget, event, data=None):
         if data:
             channel = self.channel_widgets[data]
             channel['spinbutton'].set_sensitive(channel['checkbutton-channel'].get_active())
         self.generate()
+        self.update_interface()
 
     def callback_time_window_complete(self):
         self.entry_start_time.set_text(time.strftime("%Y/%m/%d %H:%M:%S", self.time_window.get_date()))
@@ -589,8 +595,35 @@ class IMSGUI:
         date = time.strptime(time_string,"%Y/%m/%d %H:%M:%S %Z")
         self.time_window.set_date(date)
         self.generate()
+        self.update_interface()
+
+    def callback_calarg_changed(self, widget, event, data=None):
+        #text = widget.get_text()
+        #if data is not None:
+        #    chan_key,entry = data.split(':', 1)
+        #    channel = self.channel_widgets[int(chan_key)]
+        #    if text == widget._hint_text:
+        #        text = ''
+        self.generate()
+
+    def callback_calarg_focus_out(self, widget, event, data=None):
+        self.hint_text_show(widget)
+
+    def callback_calarg_focus_in(self, widget, event, data=None):
+        self.hint_text_hide(widget)
+
 
 # ===== Methods ====================================================
+    def hint_text_show(self, widget):
+        if not len(widget.get_text()):
+            widget.set_text(widget._hint_text)
+            widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.color_parse('#888888'))
+
+    def hint_text_hide(self, widget):
+        if widget.get_text() == widget._hint_text:
+            widget.set_text('')
+        widget.modify_text(gtk.STATE_NORMAL, gtk.gdk.Color())
+
     def box_keys_ordered(self, group='ALL'):
         raw_pairs = self.box_keys[group].items()
         indexed = map(lambda p: p[::-1], raw_pairs)
@@ -603,67 +636,74 @@ class IMSGUI:
         box = self.box_keys[message_type]
 
       # === Prepare channel list
-        channel_list = []
         channel_keys = self.channel_widgets.keys()
+        message = ""
         if channel_keys and len(channel_keys):
             for key in channel_keys:
-                for boom in self.axes:
-                    if self.channel_widgets[key]["checkbutton%s" % boom].get_active():
-                        if self.channel_widgets[key]["checkbutton-channel"].get_active():
-                            channel_list.append("%02d-%s%s" % (int(self.channel_widgets[key]['spinbutton'].get_value()), self.channel_widgets[key]['combobox'].get_active_text(), boom))
-                        else:
-                            channel_list.append("%s%s" % (self.channel_widgets[key]['combobox'].get_active_text(), boom))
+                channel = self.channel_widgets[key]
+                location_text = ""
+                if channel["checkbutton-channel"].get_active():
+                    location_text = "%02d-" % int(channel['spinbutton'].get_value())
+                class_text = channel['combobox-class'].get_active_text()
+                axis_text = channel['combobox-axes'].get_active_text()
+                channel_string = "%s%s%s" % (location_text, class_text, axis_text)
+                calib_string = channel['entry-calib'].get_text()
+                if calib_string == channel['entry-calib']._hint_text:
+                    calib_string = ""
+                calper_string = channel['entry-calper'].get_text()
+                if calper_string == channel['entry-calper']._hint_text:
+                    calper_string = ""
 
-      # === Construct IMS Message
-        message = ""
-        message += "BEGIN IMS2.0\n"
-        message += "MSG_TYPE %s\n" % box['message-type']
-        station = ''.join(self.combobox_stations.get_active_text().split('_'))
-        message += "MSG_ID %s\n" % (station+ "_" +message_type+ "_" +"_".join(channel_list)+ "_" +time.strftime("%Y/%m/%d_%H:%M:%S", time.gmtime()),)
-        if box.has_key("REF_ID"):
-            message += "REF_ID %s\n" % self.entry_refid.get_text()
-        if box.has_key("EMAIL"):
-            message += "EMAIL %s\n" % self.entry_email.get_text()
-        if box.has_key("TIME_STAMP"):
-            message += "TIME_STAMP %s\n" % time.strftime("%Y/%m/%d %H:%M:%S", time.gmtime())
-        if box.has_key("START_TIME") and (message_type == 'CALIBRATE_START'):
-            message += "START_TIME %s\n" % self.entry_start_time.get_text()
-        if box.has_key("STA_LIST"):
-            message += "STA_LIST %s\n" % self.combobox_stations.get_active_text()
-        if box.has_key("CHAN_LIST"):
-                if len(channel_list):
-                    message += "CHAN_LIST %s\n" % ','.join(channel_list)
-        if box.has_key("START_TIME") and (message_type == 'CALIBRATE_CONFIRM'):
-            message += "START_TIME %s\n" % self.entry_start_time.get_text()
-        if box.has_key("SENSOR"):
-            if self.checkbutton_sensor.get_active():
-                message += "SENSOR YES\n"
-            else:
-                message += "SENSOR NO\n"
-        if box.has_key("TYPE"):
-            message += "TYPE RANDOM\n"
-        if box.has_key("CALIB_PARAM"):
-            duration = float(self.spinbutton_duration.get_value())
-            hours = duration / 3600
-            minutes = (duration % 3600) / 60
-            seconds = duration % 60
-            self.sample_duration.set_text("%02d:%02d:%02d" % (hours, minutes, seconds))
-            message += "CALIB_PARAM %.1f\n" % duration
-        message += "%s\n" % message_type
-        if box.has_key("IN_SPEC"):
-            if self.checkbutton_spec.get_active():
-                message += "IN_SPEC YES\n"
-            else:
-                message += "IN_SPEC NO\n"
-        #if box.has_key("CALIB"):
-        #    message += "CALIB\n"
-        #if box.has_key("CALPER"):
-        #    message += "CALPER\n"
-        #if box.has_key("RESPONSE"):
-        #    message += "RESPONSE\n"
-        message += "STOP\n"
+              # === Construct IMS Message
+                message += "BEGIN IMS2.0\n"
+                message += "MSG_TYPE %s\n" % box['message-type']
+                station = ''.join(self.combobox_stations.get_active_text().split('_'))
+                message += "MSG_ID %s\n" % (station+ "_" +message_type+ "_" +channel_string+ "_" +time.strftime("%Y/%m/%d_%H:%M:%S", time.gmtime()),)
+                if box.has_key("REF_ID"):
+                    message += "REF_ID %s\n" % self.entry_refid.get_text()
+                if box.has_key("EMAIL"):
+                    message += "EMAIL %s\n" % self.entry_email.get_text()
+                if box.has_key("TIME_STAMP"):
+                    message += "TIME_STAMP %s\n" % time.strftime("%Y/%m/%d %H:%M:%S", time.gmtime())
+                if box.has_key("START_TIME") and (message_type == 'CALIBRATE_START'):
+                    message += "START_TIME %s\n" % self.entry_start_time.get_text()
+                if box.has_key("STA_LIST"):
+                    message += "STA_LIST %s\n" % self.combobox_stations.get_active_text()
+                if box.has_key("CHAN_LIST"):
+                    message += "CHAN_LIST %s\n" % channel_string
+                if box.has_key("START_TIME") and (message_type == 'CALIBRATE_CONFIRM'):
+                    message += "START_TIME %s\n" % self.entry_start_time.get_text()
+                if box.has_key("SENSOR"):
+                    if self.checkbutton_sensor.get_active():
+                        message += "SENSOR YES\n"
+                    else:
+                        message += "SENSOR NO\n"
+                if box.has_key("TYPE"):
+                    message += "TYPE RANDOM\n"
+                if box.has_key("CALIB_PARAM"):
+                    duration = float(self.spinbutton_duration.get_value())
+                    hours = duration / 3600
+                    minutes = (duration % 3600) / 60
+                    seconds = duration % 60
+                    self.sample_duration.set_text("%02d:%02d:%02d" % (hours, minutes, seconds))
+                    message += "CALIB_PARAM %.1f\n" % duration
+                message += "%s\n" % message_type
+                if box.has_key("IN_SPEC"):
+                    if self.checkbutton_spec.get_active():
+                        message += "IN_SPEC YES\n"
+                    else:
+                        message += "IN_SPEC NO\n"
+                if box.has_key("CALIB") and len(calib_string):
+                    message += "CALIB %s\n" % calib_string
+                if box.has_key("CALPER") and len(calper_string):
+                    message += "CALPER %s\n" % calper_string
+                #if box.has_key("RESPONSE"):
+                #    message += "RESPONSE\n"
+                message += "STOP\n"
+                message += "\n"
 
         self.textbuffer_display.set_text(message)
+        #self.update_interface()
             
 
     def _add_channel(self):
@@ -673,32 +713,49 @@ class IMSGUI:
         channel['checkbutton-channel'] = gtk.CheckButton()
         channel['adjustment'] = gtk.Adjustment(value=0, lower=0, upper=99, step_incr=10, page_incr=1, page_size=1)
         channel['spinbutton'] = gtk.SpinButton(channel['adjustment'])
-        channel['combobox']   = gtk.combo_box_new_text()
+        channel['combobox-class'] = gtk.combo_box_new_text()
         for c in self.channels:
-            channel['combobox'].append_text(c)
-        for boom in self.axes:
-            channel["checkbutton%s" % boom] = gtk.CheckButton(label=boom)
+            channel['combobox-class'].append_text(c)
+        channel['combobox-axes'] = gtk.combo_box_new_text()
+        for axis in self.axes:
+            channel['combobox-axes'].append_text(axis)
+        channel['entry-calib'] = gtk.Entry()
+        channel['entry-calper'] = gtk.Entry()
         channel['button'] = gtk.Button(label="delete", stock=None, use_underline=True)
 
         self.boxes['CHANNELS'].pack_start(channel['hbox'], False, True,  0)
         channel['hbox'].pack_start(channel['checkbutton-channel'], False, False, 0)
-        channel['hbox'].pack_start(channel['spinbutton'],  False, False, 0)
-        channel['hbox'].pack_start(channel['combobox'],    False, False, 0)
-        for boom in self.axes:
-            channel['hbox'].pack_start(channel["checkbutton%s" % boom], False, False, 0)
-        channel['hbox'].pack_start(channel['button'],    False, False, 0)
+        channel['hbox'].pack_start(channel['spinbutton'], False, False, 0)
+        channel['hbox'].pack_start(channel['combobox-class'], False, False, 0)
+        channel['hbox'].pack_start(channel['combobox-axes'], False, False, 0)
+        channel['hbox'].pack_start(channel['entry-calib'], False, False, 0)
+        channel['hbox'].pack_start(channel['entry-calper'], False, False, 0)
+        channel['hbox'].pack_start(channel['button'], False, False, 0)
 
         channel['checkbutton-channel'].set_active(False)
-        channel['combobox'].set_active(1)
         channel['spinbutton'].set_sensitive(channel['checkbutton-channel'].get_active())
-        for boom in self.axes:
-            channel["checkbutton%s" % boom].set_active(False)
+        channel['combobox-class'].set_active(1)
+        channel['combobox-axes'].set_active(0)
+        calib_identifier = str(channel_key)+":entry-calib"
+        channel['entry-calib'].set_width_chars(8)
+        channel['entry-calib']._hint_text = "CALIB"
+        channel['entry-calib'].connect("changed", self.callback_calarg_changed, None, calib_identifier)
+        channel['entry-calib'].connect("focus-in-event", self.callback_calarg_focus_in, None)
+        channel['entry-calib'].connect("focus-out-event", self.callback_calarg_focus_out, None)
+        self.hint_text_show(channel['entry-calib'])
+
+        calper_identifier = str(channel_key)+":entry-calper"
+        channel['entry-calper'].set_width_chars(8)
+        channel['entry-calper']._hint_text = "CALPER"
+        channel['entry-calper'].connect("changed", self.callback_calarg_changed, None, calper_identifier)
+        channel['entry-calper'].connect("focus-in-event", self.callback_calarg_focus_in, None)
+        channel['entry-calper'].connect("focus-out-event", self.callback_calarg_focus_out, None)
+        self.hint_text_show(channel['entry-calper'])
 
         channel['checkbutton-channel'].connect('toggled', self.callback_channel_toggle, None, channel_key)
         channel['spinbutton'].connect('value-changed', self.callback_location, None)
-        channel['combobox'].connect('changed', self.callback_generate, None)
-        for boom in self.axes:
-            channel["checkbutton%s" % boom].connect('toggled', self.callback_generate, None)
+        channel['combobox-class'].connect('changed', self.callback_generate, None)
+        channel['combobox-axes'].connect('changed', self.callback_generate, None)
         channel['button'].connect('clicked', self.callback_delete_channel, None, channel_key)
         channel['hbox'].show_all()
         channel['spinbutton'].set_text('00')
@@ -730,7 +787,7 @@ class IMSGUI:
                     self.boxes[key].show_all()
 
         s,e = self.textbuffer_display.get_bounds()
-        if len(self.textbuffer_display.get_text(s,e)):
+        if len(self.textbuffer_display.get_text(s,e)) > 0:
             self.button_copy.set_sensitive(True)
         else:
             self.button_copy.set_sensitive(False)
