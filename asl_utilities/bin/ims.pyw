@@ -294,9 +294,9 @@ class IMSGUI:
     def __init__(self):
         home_dir = '.'
         if os.environ.has_key('HOME'):
-            self.pref_file = os.environ['HOME']
+            home_dir = os.environ['HOME']
         elif os.environ.has_key('USERPROFILE'):
-            self.pref_file = os.environ['USERPROFILE']
+            home_dir = os.environ['USERPROFILE']
         pref_file = os.path.abspath("%s/.ims-gui-prefs.db" % home_dir)
         self._prefs = StatefulClass(pref_file)
 
@@ -403,13 +403,23 @@ class IMSGUI:
 
         self.label_start_time  = gtk.Label("Start Time:")
         self.entry_start_time  = gtk.Entry()
-        self.button_start_time = gtk.Button(label="...", stock=None, use_underline=True)
+        self.button_start_time = gtk.Button()
+        self.image_start_time  = gtk.Image()
+        self.image_start_time.set_from_stock(gtk.STOCK_INDEX, gtk.ICON_SIZE_MENU)
+        self.button_start_time.add(self.image_start_time)
 
         self.label_stations     = gtk.Label("Station:")
         self.combobox_stations  = gtk.combo_box_new_text()
 
-        self.label_channels    = gtk.Label("Channels:")
-        self.button_channels   = gtk.Button(label="Add", stock=None, use_underline=True)
+        self.label_channels     = gtk.Label("Channels:")
+        self.button_add_channel = gtk.Button(stock=None, use_underline=True)
+        self.hbox_add_channel   = gtk.HBox()
+        self.image_add_channel  = gtk.Image()
+        self.image_add_channel.set_from_stock(gtk.STOCK_ADD, gtk.ICON_SIZE_MENU)
+        self.label_add_channel  = gtk.Label('Add Channel')
+        self.button_add_channel.add(self.hbox_add_channel)
+        self.hbox_add_channel.pack_start(self.image_add_channel, padding=1)
+        self.hbox_add_channel.pack_start(self.label_add_channel, padding=1)
 
         self.checkbutton_sensor = gtk.CheckButton(label="Include Sensor")
 
@@ -429,9 +439,32 @@ class IMSGUI:
         self.scrolledwindow_display = gtk.ScrolledWindow()
         self.scrolledwindow_display.add(self.textview_display)
 
-        self.button_copy = gtk.Button(label="Copy", stock=None, use_underline=True)
-        self.button_email = gtk.Button(label="E-mail", stock=None, use_underline=True)
-        self.button_quit = gtk.Button(label="Quit", stock=None, use_underline=True)
+        self.button_copy = gtk.Button(stock=None, use_underline=True)
+        self.hbox_copy   = gtk.HBox()
+        self.image_copy  = gtk.Image()
+        self.image_copy.set_from_stock(gtk.STOCK_COPY, gtk.ICON_SIZE_MENU)
+        self.label_copy  = gtk.Label('Copy')
+        self.button_copy.add(self.hbox_copy)
+        self.hbox_copy.pack_start(self.image_copy, padding=1)
+        self.hbox_copy.pack_start(self.label_copy, padding=1)
+
+        self.button_send_email = gtk.Button(stock=None, use_underline=True)
+        self.hbox_send_email   = gtk.HBox()
+        self.image_send_email  = gtk.Image()
+        self.image_send_email.set_from_stock(gtk.STOCK_EDIT, gtk.ICON_SIZE_MENU)
+        self.label_send_email  = gtk.Label('E-mail')
+        self.button_send_email.add(self.hbox_send_email)
+        self.hbox_send_email.pack_start(self.image_send_email, padding=1)
+        self.hbox_send_email.pack_start(self.label_send_email, padding=1)
+
+        self.button_quit = gtk.Button(stock=None, use_underline=True)
+        self.hbox_quit   = gtk.HBox()
+        self.image_quit  = gtk.Image()
+        self.image_quit.set_from_stock(gtk.STOCK_QUIT, gtk.ICON_SIZE_MENU)
+        self.label_quit  = gtk.Label('Quit')
+        self.button_quit.add(self.hbox_quit)
+        self.hbox_quit.pack_start(self.image_quit, padding=1)
+        self.hbox_quit.pack_start(self.label_quit, padding=1)
 
 # ===== Layout Configuration =======================================
         self.window.add(self.vbox_main)
@@ -483,14 +516,14 @@ class IMSGUI:
         self.boxes['IN_SPEC'] = [self.checkbutton_spec]
         self.table_parts.attach(LEFT(self.checkbutton_spec),    0, 4, 7, 8, gtk.FILL, 0, 1, 1)
 
-        self.boxes['CHAN_LIST'] = [self.label_channels, self.button_channels]
+        self.boxes['CHAN_LIST'] = [self.label_channels, self.button_add_channel]
         self.table_parts.attach(LEFT(self.label_channels),      0, 1, 8, 9, gtk.FILL, 0, 1, 1)
-        self.table_parts.attach(RIGHT(self.button_channels),     3, 5, 8, 9, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(RIGHT(self.button_add_channel),3, 5, 8, 9, gtk.FILL, 0, 1, 1)
 
         self.hbox_display.pack_start(self.scrolledwindow_display, True, True, 0)
 
         self.hbox_control.pack_start(self.button_copy, False, False, 0)
-        self.hbox_control.pack_start(self.button_email, False, False, 0)
+        self.hbox_control.pack_start(self.button_send_email, False, False, 0)
         self.hbox_control.pack_end(self.button_quit,   False, False, 0)
 
 # ===== Widget Configurations ======================================
@@ -508,7 +541,7 @@ class IMSGUI:
         self.textview_display.set_editable(False)
         self.sample_duration.set_editable(False)
         self.button_copy.set_sensitive(False)
-        self.button_email.set_sensitive(False)
+        self.button_send_email.set_sensitive(False)
 
         self.textview_display.set_size_request(-1, 300)
 
@@ -530,13 +563,13 @@ class IMSGUI:
         self.entry_start_time.connect(   "changed", self.callback_time_changed, None)
         self.button_start_time.connect(  "clicked", self.callback_start_time,   None)
         self.combobox_stations.connect(  "changed", self.callback_generate,     None)
-        self.button_channels.connect(    "clicked", self.callback_add_channel,  None)
+        self.button_add_channel.connect("clicked", self.callback_add_channel,  None)
         self.checkbutton_sensor.connect( "toggled", self.callback_generate,     None)
         self.checkbutton_spec.connect(   "toggled", self.callback_generate,     None)
         self.spinbutton_duration.connect("value-changed", self.callback_generate, None)
 
         self.button_copy.connect("clicked", self.callback_copy, None)
-        self.button_email.connect("clicked", self.callback_email, None)
+        self.button_send_email.connect("clicked", self.callback_email, None)
         self.button_quit.connect("clicked", self.callback_quit, None)
 
 # ===== Event Bindings =============================================
@@ -783,7 +816,16 @@ class IMSGUI:
         channel['entry-calib'] = gtk.Entry()
         channel['entry-calper'] = gtk.Entry()
         channel['entry-refid'] = gtk.Entry()
-        channel['button'] = gtk.Button(label="delete", stock=None, use_underline=True)
+
+        button_remove = gtk.Button(stock=None, use_underline=True)
+        hbox_remove   = gtk.HBox()
+        image_remove  = gtk.Image()
+        image_remove.set_from_stock(gtk.STOCK_REMOVE, gtk.ICON_SIZE_MENU)
+        label_remove  = gtk.Label('remove')
+        button_remove.add(hbox_remove)
+        hbox_remove.pack_start(image_remove, padding=1)
+        hbox_remove.pack_start(label_remove, padding=1)
+        channel['button'] = button_remove
 
         self.vbox_channels.pack_start(channel['hbox'], False, True,  0)
         channel['hbox'].pack_start(channel['checkbutton-channel'], False, False, 0)
@@ -862,10 +904,10 @@ class IMSGUI:
         s,e = self.textbuffer_display.get_bounds()
         if len(self.textbuffer_display.get_text(s,e)) > 0:
             self.button_copy.set_sensitive(True)
-            self.button_email.set_sensitive(True)
+            self.button_send_email.set_sensitive(True)
         else:
             self.button_copy.set_sensitive(False)
-            self.button_email.set_sensitive(False)
+            self.button_send_email.set_sensitive(False)
 
     def text_to_clipboard(self):
         s,e = self.textbuffer_display.get_bounds()
