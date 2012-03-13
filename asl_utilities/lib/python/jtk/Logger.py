@@ -189,8 +189,8 @@ class Logger(object):
 
 
 class LogThread(Thread):
-    def __init__(self, directory='.', prefix='', postfix='', extension='log', note='LOGGER', yday=False, pid=False):
-        Thread.__init__(self)
+    def __init__(self, directory='.', prefix='', postfix='', extension='log', note='LOGGER', yday=False, pid=False, name=None):
+        Thread.__init__(self, name=name)
         self.file_handles = {}
         self.logger = Logger(directory=directory, prefix=prefix, postfix=postfix, extension=extension, note=note, yday=yday)
         self._log_note = note

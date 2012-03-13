@@ -13,6 +13,7 @@ import struct
 import sys
 import threading
 import time
+import traceback
 
 from jtk.Class import Class
 from jtk.Thread import Thread
@@ -139,8 +140,8 @@ class LissReader(asyncore.dispatcher, Class):
 
 # === LissThread Class /*{{{*/
 class LissThread(Thread):
-    def __init__(self, read_queue, status_port=4000, log_queue=None):
-        Thread.__init__(self, queue_max=1024, log_queue=log_queue)
+    def __init__(self, read_queue, status_port=4000, log_queue=None, name=None):
+        Thread.__init__(self, queue_max=1024, log_queue=log_queue, name=name)
         self.daemon = True
         self.read_queue = read_queue
         self.socket = None
@@ -181,7 +182,6 @@ class LissThread(Thread):
         self.halt()
 
     def halt(self):
-        self._log("thread halting...")
         self.running = False
         self.notifier.notify()
 
@@ -203,19 +203,32 @@ class LissThread(Thread):
         self.notifier = Notifier()
 
         self.running = True
+        last_print = 0
+        print_frequency = 10 # every 10 seconds
+        counts = {}
         while self.running:
             # If the LISS connection socket does not exist, create a new one.
             if self.socket == None:
-                self._log("Attempting to establish connection to %s:%d" % self.address)
+                now = time.time()
+                key = "%s:%d" % self.address
+                if not counts.has_key(key):
+                    counts[key] = 0
+                counts[key] += 1
+                if (now - last_print) >= print_frequency:
+                    for addr_str,fail_count in counts.items():
+                        self._log("%d failed attempt(s) to establish connection to %s" % (fail_count,addr_str), 'err')
+                    last_print = now
+                    counts = {}
                 self.socket = LissReader(self, log_queue=self.log_queue)
                 try:
                     self.socket.connect(self.address)
                 except socket.error:
-                    self._log("Could not establish LISS connection.")
+                    self._log("Could not establish LISS connection.", 'dbg')
                     del self.socket
                     self.socket = None
                     time.sleep(0.1)
                     continue
+
             map = {
                 self.notifier.socket : self.notifier,
                 self.socket.socket   : self.socket,
@@ -224,7 +237,7 @@ class LissThread(Thread):
             try:
                 asyncore.loop(timeout=5.0, use_poll=False, map=map, count=1)
             except socket.error, e:
-                self._log("asyncore.loop() caught an exception: %s" % str(e), 'err')
+                self._log("asyncore.loop() socket.error: %s" % str(e), 'err')
                 # If there is an issue with this socket, we need to create
                 # a new socket. Set it to disconnected, and it will be replaced.
                 self.socket._connected = False
@@ -252,8 +265,8 @@ class LissThread(Thread):
 
 # === ReadThread Class /*{{{*/
 class ReadThread(Thread):
-    def __init__(self, write_queue, log_queue=None):
-        Thread.__init__(self, log_queue=log_queue)
+    def __init__(self, write_queue, log_queue=None, name=None):
+        Thread.__init__(self, log_queue=log_queue, name=name)
         self.write_queue = write_queue
         self.buffer = None
 
@@ -368,16 +381,23 @@ class ReadThread(Thread):
         except KeyboardInterrupt:
             pass
         except Exception, e:
-            self._log("_run() Exception: %s" % str(e), 'err')
+            exc_type,exc_value,exc_traceback = sys.exc_info()
+            self._log(traceback.format_exc(), 'err')
 
 #/*}}}*/
 
 # === WriteThread Class /*{{{*/
 class WriteThread(Thread):
-    def __init__(self, log_queue=None):
-        Thread.__init__(self, queue_max=1024, log_queue=log_queue)
-        self.file_handles = {}
+    def __init__(self, log_queue=None, name=None):
+        Thread.__init__(self, queue_max=1024, log_queue=log_queue, name=name)
+        self.stations = {}
         self.target_dir = ''
+        self.last_report = time.time()
+        self.records = {}
+        self.year_in_day_path = False
+
+    def set_year_in_day_path(self, enable):
+        self.year_in_day_path = enable
 
     def set_target_dir(self, target_dir):
         self.target_dir = target_dir
@@ -397,55 +417,96 @@ class WriteThread(Thread):
                 self._log("Invalid message '%s'" % message, 'warn')
                 return
 
-            file_handle = None
-            key = "%s_%s_%s_%s" % tuple(map(str.strip, data[1:5]))
-            date = time.strftime("%Y/%j", time.gmtime(data[5] / 10000))
+            now = time.time()
+            last_tm = time.gmtime(self.last_report)
+            now_tm = time.gmtime(now)
+            if now_tm.tm_hour > last_tm.tm_hour or \
+               now_tm.tm_yday > last_tm.tm_yday or \
+               now_tm.tm_year > last_tm.tm_year:
+                self._log("Records received/written (%s - %s):" % (time.strftime("%H:%M:%S", last_tm), time.strftime("%H:%M:%S", now_tm)))
+                max_key = max(map(len, self.records.keys()))
+                for k in sorted(self.records.keys()):
+                    r = self.records[k]['r']
+                    w = self.records[k]['w']
+                    if r > 0:
+                        self._log("  %s: %d/%d" % (k.ljust(max_key),r,w))
+                self.records = {}
+                self.last_report = now
+            
 
-            # If there is already a file open for this station+channel key
+            file_handle = None
+
+            network,station,location,channel = tuple(map(str.strip, data[1:5]))
+            record = data[7]
+            rec_len = len(record)
+            st_dir = "%s_%s" % (network,station)
+            ch_file = "%s_%s.%d.seed" % (location,channel,rec_len)
+            date = time.strftime("%Y/%j", time.gmtime(data[5] / 10000))
+            date_path = date
+            if self.year_in_day_path:
+                y,d = date.split('/')
+                date_path = "%s/%s_%s" % (y,y,d)
+
+            if not self.records.has_key(st_dir):
+                self.records[st_dir] = {'r' : 0, 'w' : 0}
+            self.records[st_dir]['r'] += 1
+
+            # Select the mapping for this station
+            if not self.stations.has_key(st_dir):
+                self.stations[st_dir] = {}
+            file_handles = self.stations[st_dir]
+
+            # If there is already a file open for this channel
             # retrieve it
-            if self.file_handles.has_key(key):
-                file_date,file_handle = self.file_handles[key]
+            if file_handles.has_key(ch_file):
+                file_date,file_handle = file_handles[ch_file]
                 # If this date is no longer valid, close the file
                 if date != file_date:
                     file_handle.close()
                     file_handle = None
-                    del self.file_handles[key]
+                    del file_handles[ch_file]
 
             # If the file handle for this station+channel is not open, open it
             if file_handle is None:
-                target_dir = self.target_dir + "/" + date
+                target_dir = "%s/%s/%s" % (self.target_dir, st_dir, date_path)
                 if not os.path.exists(target_dir):
                     try:
+                        self._log("Creating new directory '%s'" % target_dir)
                         os.makedirs(target_dir)
                     except:
-                        self._log("Could not create archive directory '%s'" % target_dir)
+                        self._log("Could not create archive directory '%s'" % target_dir, 'err')
                         raise Exception("Could not create archive directory")
                 if not os.path.isdir(target_dir):
-                    self._log("Path '%s' is not a directory" % target_dir)
+                    self._log("Path '%s' exists, but it is not a directory" % target_dir, 'err')
                     raise Exception("Archive path exists, but it is not a directory")
-                file = target_dir + '/' + key + '.seed'
+                file = "%s/%s" % (target_dir, ch_file)
                 if os.path.exists(file):
                     try:
-                        self.file_handles[key] = (date,open(file, 'a+b'))
+                        self._log("Opening existing file '%s'" % file, 'dbg')
+                        file_handles[ch_file] = (date,open(file, 'a+b'))
                     except:
-                        self._log("Could not open file '%s' for appending" % target_dir)
+                        self._log("Could not open file '%s' for appending" % file, 'err')
                         raise Exception("Could not append to archive file")
                 else:
                     try:
-                        self.file_handles[key] = (date,open(file, 'w+b'))
+                        self._log("Creating new file '%s'" % file, 'dbg')
+                        file_handles[ch_file] = (date,open(file, 'w+b'))
                     except:
-                        self._log("Could not create file '%s'" % target_dir)
+                        self._log("Could not create file '%s'" % file, 'err')
                         raise Exception("Could not create archive file")
-                file_handle = self.file_handles[key][1]
+                file_handle = file_handles[ch_file][1]
 
-            record = data[7]
-            self._log("Writing %d bytes for %s" % (len(record), key), 'dbg')
+            self._log("Writing %d bytes for %s_%s %s-%s" % (rec_len,network,station,location,channel), 'dbg')
             file_handle.write(record)
             file_handle.flush()
+
+            self.records[st_dir]['w'] += 1
+
         except KeyboardInterrupt:
             pass
         except Exception, e:
-            self._log("_run() Exception: %s" % str(e), 'err')
+            exc_type,exc_value,exc_traceback = sys.exc_info()
+            self._log(traceback.format_exc(), 'err')
 #/*}}}*/
 
 # === Main Class /*{{{*/
@@ -470,6 +531,9 @@ class Main(Class):
             self.context['write'] = WriteThread(log_queue=self.context['log'].queue)
             self.context['read']  = ReadThread(self.context['write'].queue, log_queue=self.context['log'].queue)
             self.context['liss']  = LissThread(self.context['read'].queue, log_queue=self.context['log'].queue)
+            self._log("===============")
+            self._log("=== ARCHIVE ===")
+            self._log("===============")
 
             archive_path = ''
             config_file  = ''
@@ -518,8 +582,14 @@ class Main(Class):
             if not os.path.isdir(archive_path):
                 archive_path = '/opt/data/archive'
             if not os.path.exists(archive_path):
-                self._log("Archive directory '%s' does not exist. Exiting!", (archive_path,))
+                self._log("Archive directory '%s' does not exist. Exiting!" % archive_path)
                 raise KeyboardInterrupt()
+
+            year_in_day_path = False
+            if configuration.has_key('archive-year-in-day-path') and \
+               configuration['archive-year-in-day-path'].lower() == 'true':
+                year_in_day_path = True
+            self.context['write'].set_year_in_day_path(year_in_day_path)
 
             if not os.path.exists(log_path):
                 log_path = archive_path
@@ -615,12 +685,12 @@ class Main(Class):
             self.context['write'].set_target_dir(archive_path)
 
             self._log("LISS archive process for host %s:%d" % self.context['liss'].get_address())
-            self._log("Configuration:     %s" % (config_file,))
-            self._log("Archive directory: %s" % (archive_path,))
-            self._log("Log directory:     %s" % log_path)
-            self._log("Screen logging:    %s" % str_screen_logging)
-            self._log("File logging:      %s" % str_file_logging)
-            self._log("Debug logging:     %s" % str_debug_logging)
+            self._log("     Configuration : %s" % (config_file,))
+            self._log(" Archive Directory : %s" % (archive_path,))
+            self._log("     Log Directory : %s" % log_path)
+            self._log("    Screen Logging : %s" % str_screen_logging)
+            self._log("      File Logging : %s" % str_file_logging)
+            self._log("     Debug Logging : %s" % str_debug_logging)
 
             self.context['write'].start()
             self.context['read'].start()
@@ -628,7 +698,18 @@ class Main(Class):
 
             self.context['running'] = True
 
-            self._log("Status port:       %s" % str(self.context['liss'].get_status_port()))
+            self._log("       Status Port : %s" % str(self.context['liss'].get_status_port()))
+
+            self._log("----------------")
+            self._log("--- Contexts ---")
+            contexts = ['log','write','read','liss','running']
+            max_key = max(map(len, contexts))
+            for key in contexts:
+                context = self.context[key]
+                if type(context) == bool:
+                    self._log("  %s : %s" % (key.rjust(max_key), str(context)))
+                else:
+                    self._log("  %s : %s (%s)" % (key.rjust(max_key), context.name, T(context.is_alive(),"Running","Halted")))
 
             while self.context['running']:
                 try: 
@@ -651,6 +732,7 @@ class Main(Class):
         check_alive = lambda c,k: c.has_key(k) and c[k] and c[k].isAlive()
         thread_list = ['liss', 'read', 'write', 'log']
         for key in thread_list:
+            self._log("halting %s..." % self.context[key].name)
             if check_alive(self.context, key):
                 if now:
                     self.context[key].halt_now()
@@ -720,6 +802,10 @@ def hex_dump(bytes):
         result += "  " + string + "\n"
     return result
 #/*}}}*/
+
+def T(s,t,f):
+    if s: return t
+    return f
 
 def main():
     main = Main()

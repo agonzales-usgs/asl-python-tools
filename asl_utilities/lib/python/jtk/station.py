@@ -2,7 +2,7 @@
 This module provides automated debugging and software upgrade 
 tools for various stations
 Station680 (Under Development): for debugging our Q680 stations
-Station330 (Completed): for debugging and upgrading our Q330 stations
+StationSlate (Completed): for debugging and upgrading our Q330 stations
 
 Expansion: Eventually I would like to modify this class to provide
            individual functions for each stage of the debug. The
@@ -1068,11 +1068,11 @@ class Station680(Station):
 
 # === Station680 Class (END)/*}}}*/
 
-# === Station330Direct Class/*{{{*/
+# === Station330 Class/*{{{*/
 """-
     Evaluate health of a Q330
 -"""
-class Station330Direct(Station):
+class Station330(Station):
     def __init__(self, name, action, loop_queue, config_file):
         Station.__init__(self, name, action, loop_queue)
 
@@ -1132,8 +1132,13 @@ class Station330Direct(Station):
             for id in sorted(ids.keys()):
                 self.tmp_buffer = ""
                 comm.set_from_file(str(id), self.config_file)
-                comm.execute(action)
                 self._log("Performing QDP Ping on Q330 #%d..." % id)
+                self._log("  IP Address : %s" % str(comm.q330.getIPAddress()))
+                self._log("  Base Port  : %d" % comm.q330.getBasePort())
+                self._log("  Serial No. : %016lX" % comm.q330.getSerialNumber())
+                self._log("  Auth Code  : %016lX" % comm.q330.getAuthCode())
+                self._log("  Timeout    : %0.1f" % comm.q330.getReceiveTimeout())
+                comm.execute(action)
                 match = re.compile("Boot Time: (\d+[/]\d+[/]\d+ \d+[:]\d+ UTC)", re.M).search(self.tmp_buffer)
                 if not match:
                     self._log("Could not locate boot time for Q330 #%d" % id)
@@ -1142,30 +1147,32 @@ class Station330Direct(Station):
                 boot_summary = " Q330 #%d boot time: %s" % (id, boot_time)
                 q330_boot_times.append(boot_summary)
                 qping_results[id] = self.tmp_buffer.strip()
+                self._log("qping_results[%d]:" % id)
+                self._log("%s" % qping_results[id])
 
             if len(q330_boot_times) > 0:
                 self.output += "[Q330]%s:" % name
                 self.output += ",".join(q330_boot_times) + ".\n\n"
                 for id in sorted(qping_results.keys()):
                     self.output += "Q330 #%d\n" % id
-                    self.output += self.tmp_buffer + "\n"
+                    self.output += qping_results[id] + "\n\n"
 
         except ImportError, e:
-            self._log("Failed to import CnC modules.")
+            self._log("Failed to import CnC modules required for Q330 status.")
         except Exception, e:
             self._log("Exception: %s" % str(e))
 
-# === Station330Direct Class (END)/*}}}*/
+# === Station330 Class (END)/*}}}*/
 
-# === Station330 Class/*{{{*/
+# === StationSlate Class/*{{{*/
 """-
 Evaluate health of a Q330 based station
     If we could not login due to receiving an unexpected
     public key from the Slate, throw an exception so
     the caller can log the issue.
 -"""
-class Station330(Station):
-    def __init__(self, name, action, loop_queue, legacy=False, continuity_only=False, versions_only=False):
+class StationSlate(Station):
+    def __init__(self, name, action, loop_queue, continuity_only=False, versions_only=False):
         Station.__init__(self, name, action, loop_queue)
 
         self.prompt_pass = ""
@@ -1176,7 +1183,6 @@ class Station330(Station):
         self.log_messages = ""  # purpose TBD
         self.summary = ""
 
-        self.legacy = legacy
         self.continuity_only = continuity_only
         self.versions_only = versions_only
 
@@ -1396,7 +1402,7 @@ class Station330(Station):
             self._log(self.reader.before)
 
     def check(self):
-        if (not self.legacy) and (not self.versions_only):
+        if not self.versions_only:
             self.check_diskloop_continuity()
 
         if not self.continuity_only:
@@ -1498,8 +1504,6 @@ class Station330(Station):
 
     def check_diskloop_continuity(self):
         diskloop_config = "/etc/q330/DLG1/diskloop.config"
-        if self.legacy:
-            diskloop_config = "/etc/q330/diskloop.config"
         LINE_MAX = 128
         space_pad = lambda c: ((c > 0) and [" " + space_pad(c-1)] or [""])[0]
 
@@ -1723,7 +1727,7 @@ class Station330(Station):
             fh.flush()
             fh.close()
 
-# === Station330 Class (END)/*}}}*/
+# === StationSlate Class (END)/*}}}*/
 
 # === StationBaler Class/*{{{*/
 """Evaluate health of a Baler"""

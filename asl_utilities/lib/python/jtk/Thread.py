@@ -4,8 +4,10 @@ import threading
 from Class import Class
 
 class Thread(threading.Thread, Class):
-    def __init__(self, queue_max=-1, log_queue=None):
-        threading.Thread.__init__(self)
+    def __init__(self, queue_max=-1, log_queue=None, name=None):
+        if name is None:
+            name = self.__class__.__name__
+        threading.Thread.__init__(self, name=name)
         Class.__init__(self, log_queue)
         self.daemon = True
         self.running = False

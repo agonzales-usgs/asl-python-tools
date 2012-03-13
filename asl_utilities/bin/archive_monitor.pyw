@@ -241,7 +241,7 @@ class RestartThread(Thread):
                         fh.close()
                         os.chmod(restart_file, stat.S_IMODE(os.stat(path)[stat.ST_MODE] | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH))
                     except:
-                        self._kill_proc()
+                        self._kill_proc(tpid)
             except Exception, e:
                 print "%s::_run() caught exception: %s" % (self.__class__.__name__,str(e))
                 pass
@@ -471,7 +471,8 @@ class ArchiveIcon:
         #print "delay is %d seconds" % delay
         try:
             self.menuitem_delay.set_label("Delay: %d seconds" % delay)
-        except:
+        except Exception, e:
+            #print "%s: Could not update delay> %s" % (e.__class__.__str__, str(e))
             pass
         if delay >= self.warn_delay:
             self.status_icon.set_from_pixbuf(asl.new_icon('box'))
