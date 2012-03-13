@@ -1,4 +1,6 @@
 #!/usr/bin/python -W all
+import asl
+
 import glob
 import inspect
 import optparse
@@ -17,25 +19,8 @@ import gtk
 import gobject
 gtk.gdk.threads_init()
 
-try:
-    import sqlite3 as sqlite
-except ImportError, e:
-    from pysqlite2 import dbapi2 as sqlite
-
-def LEFT(widget):
-    a = gtk.Alignment(xalign=0.0)
-    a.add(widget)
-    return a
-
-def RIGHT(widget):
-    a = gtk.Alignment(xalign=1.0)
-    a.add(widget)
-    return a
-
-def CENTER(widget):
-    a = gtk.Alignment(xalign=0.5)
-    a.add(widget)
-    return a
+from jtk.gtk.utils import LEFT,RIGHT
+from jtk.StatefulClass import StatefulClass
 
 # === DateTimeWindow Class /*{{{*/
 class DateTimeWindow:
@@ -307,10 +292,18 @@ class Counter:
 # === IMSGUI Class /*{{{*/
 class IMSGUI:
     def __init__(self):
+        home_dir = '.'
+        if os.environ.has_key('HOME'):
+            self.pref_file = os.environ['HOME']
+        elif os.environ.has_key('USERPROFILE'):
+            self.pref_file = os.environ['USERPROFILE']
+        pref_file = os.path.abspath("%s/.ims-gui-prefs.db" % home_dir)
+        self._prefs = StatefulClass(pref_file)
+
         self._minimum_width  = 640
         self._minimum_height = 640
-        self._default_width = self._minimum_width
-        self._default_height = self._minimum_height
+        self._default_width = self._prefs.recall_value('window-width', self._minimum_width)
+        self._default_height = self._prefs.recall_value('window-height', self._minimum_height)
 
         self.commands = [
             'CALIBRATE_START',
@@ -384,7 +377,10 @@ class IMSGUI:
       # Layout Control Widgets
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.window.set_title("Calibrations")
-        self.window.set_geometry_hints(min_width=640, min_height=640)
+        self.window.set_geometry_hints(min_width=self._default_width, min_height=self._default_height)
+        self.window.connect( "configure-event", self.callback_window_configured, None )
+        self.window.connect( "screen-changed", self.callback_window_configured, None )
+        self.window.connect( "window-state-event", self.callback_window_configured, None )
 
         self.vbox_main   = gtk.VBox()
         self.vbox_top    = gtk.VBox()
@@ -554,7 +550,37 @@ class IMSGUI:
         self.update_interface()
         self.callback_time_changed(None, None, None)
 
+        if self._prefs.has_key('window-gravity'):
+            g = int(self._prefs['window-gravity'])
+            self.window.set_gravity(g)
+        if self._prefs.has_key('window-position'):
+            x,y = map(int,self._prefs['window-position'].split(',',1))
+            self.window.move(x,y)
+        if self._prefs.has_key('window-size'):
+            w,h = map(int,self._prefs['window-size'].split(',',1))
+            self.window.resize(w,h)
+        if self._prefs.has_key('window-state'):
+            state = self._prefs['window-state'].upper()
+            if state == 'MAXIMIZED':
+                self.window.maximize()
+            elif state == 'FULLSCREEN':
+                self.window.fullscreen()
+
 # ===== Callbacks ==================================================
+    def callback_window_configured(self, widget, event, data=None):
+        gravity  = str(int(self.window.get_gravity()))
+        position = '%d,%d' % self.window.get_position()
+        size     = '%d,%d' % self.window.get_size()
+        state    = 'NORMAL'
+        if self.window.get_state() & gtk.gdk.WINDOW_STATE_FULLSCREEN:
+            state = 'FULLSCREEN'
+        elif self.window.get_state() & gtk.gdk.WINDOW_STATE_MAXIMIZED:
+            state = 'MAXIMIZED'
+        self._prefs['window-gravity'] = gravity
+        self._prefs['window-position'] = position
+        self._prefs['window-size'] = size
+        self._prefs['window-state'] = state
+
     def callback_key_pressed(self, widget, event, data=None):
         if event.state == gtk.gdk.MOD1_MASK:
             if event.keyval == ord('q'):
@@ -873,6 +899,7 @@ class IMSGUI:
 
     def close_application(self, widget, event, data=None):
         gtk.main_quit()
+        self._prefs.save_state()
         return False
 #/*}}}*/
 

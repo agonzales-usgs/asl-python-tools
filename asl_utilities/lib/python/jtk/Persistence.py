@@ -33,6 +33,10 @@ class Persistence(object):
         self.cur.executemany("DELETE FROM Data WHERE key=?", self.delete_iterator(foreign_iterator))
         self.db.commit()
 
+    def delete_all(self):
+        self.cur.execute("DELETE FROM Data")
+        self.db.commit()
+
     def insert(self, key, value):
         self.cur.execute("INSERT INTO Data(key, value) VALUES (?,?)", (key, value))
         self.db.commit()
@@ -59,7 +63,7 @@ class Persistence(object):
 
     def recall(self, key):
         self.cur.execute("SELECT value FROM Data WHERE key=?", (key,))
-        return self.cur.fetchall()[0]
+        return self.cur.fetchall()[0][0]
 
     def get_keys(self, limit=-1, idex=0):
         if limit > 0:

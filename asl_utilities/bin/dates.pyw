@@ -165,8 +165,8 @@ class Dates(Class):
         self.hidden = True
         if not self.docked:
             self.show()
-        elif self.master.recall_value('viewer-hidden'):
-            if self.master.recall_value('viewer-hidden').upper() == 'TRUE':
+        elif self.master.has_key('viewer-hidden'):
+            if self.master['viewer-hidden'].upper() == 'TRUE':
                 self.hide()
             else:
                 self.show()
@@ -179,16 +179,16 @@ class Dates(Class):
         self.button_today.clicked()
         self.hidden = was_hidden
 
-        if self.master.recall_value('year'):
-            self.spinbutton_year.set_value(int(self.master.recall_value('year')))
-        if self.master.recall_value('month'):
-            self.spinbutton_month.set_value(int(self.master.recall_value('month')))
-        if self.master.recall_value('day'):
-            self.spinbutton_day.set_value(int(self.master.recall_value('day')))
-        if self.master.recall_value('jyear'):
-            self.spinbutton_jyear.set_value(int(self.master.recall_value('jyear')))
-        if self.master.recall_value('jday'):
-            self.spinbutton_jday.set_value(int(self.master.recall_value('jday')))
+        if self.master.has_key('year'):
+            self.spinbutton_year.set_value(int(self.master['year']))
+        if self.master.has_key('month'):
+            self.spinbutton_month.set_value(int(self.master['month']))
+        if self.master.has_key('day'):
+            self.spinbutton_day.set_value(int(self.master['day']))
+        if self.master.has_key('jyear'):
+            self.spinbutton_jyear.set_value(int(self.master['jyear']))
+        if self.master.has_key('jday'):
+            self.spinbutton_jday.set_value(int(self.master['jday']))
 
 
 # ===== Utility Methods ===========================================
@@ -247,10 +247,16 @@ class Dates(Class):
         gravity  = str(int(self.window.get_gravity()))
         position = '%d,%d' % self.window.get_position()
         size     = '%d,%d' % self.window.get_size()
+        state    = 'NORMAL'
+        if self.window.get_state() & gtk.gdk.WINDOW_STATE_FULLSCREEN:
+            state = 'FULLSCREEN'
+        elif self.window.get_state() & gtk.gdk.WINDOW_STATE_MAXIMIZED:
+            state = 'MAXIMIZED'
         if not self.hidden:
-            self.master.store_value('viewer-gravity', gravity)
-            self.master.store_value('viewer-position', position)
-            self.master.store_value('viewer-size', size)
+            self.master['viewer-gravity'] = gravity
+            self.master['viewer-position'] = position
+            self.master['viewer-size'] = size
+            self.master['viewer-state'] = state
 
     def callback_key_pressed(self, widget, event, data=None):
         if event.state == gtk.gdk.MOD1_MASK:
@@ -271,28 +277,28 @@ class Dates(Class):
 
     def hide(self):
         self.button_hide.clicked()
-        self.master.store_value('viewer-hidden', 'True')
+        self.master['viewer-hidden'] = 'True'
         self.hidden = True
 
     def show(self):
-        if self.master.recall_value('viewer-gravity'):
-            g = int(self.master.recall_value('viewer-gravity'))
+        if self.master.has_key('viewer-gravity'):
+            g = int(self.master['viewer-gravity'])
             self.window.set_gravity(g)
-        if self.master.recall_value('viewer-position'):
-            x,y = map(int,self.master.recall_value('viewer-position').split(',',1))
+        if self.master.has_key('viewer-position'):
+            x,y = map(int,self.master['viewer-position'].split(',',1))
             self.window.move(x,y)
-        if self.master.recall_value('viewer-size'):
-            w,h = map(int,self.master.recall_value('viewer-size').split(',',1))
+        if self.master.has_key('viewer-size'):
+            w,h = map(int,self.master['viewer-size'].split(',',1))
             self.window.resize(w,h)
-        if self.master.recall_value('viewer-fullscreen'):
-            fullscreen = self.master.recall_value('viewer-fullscreen')
-            if fullscreen == 'TRUE':
+        if self.master.has_key('viewer-state'):
+            state = self.master['viewer-state'].upper()
+            if state == 'MAXIMIZED':
+                self.window.maximize()
+            elif state == 'FULLSCREEN':
                 self.window.fullscreen()
-            else:
-                self.window.unfullscreen()
 
         self.button_show.clicked()
-        self.master.store_value('viewer-hidden', 'False')
+        self.master['viewer-hidden'] = 'False'
         self.hidden = False
 
     def today(self):
@@ -362,11 +368,11 @@ class Dates(Class):
         self.set_from_time()
 
         if not self.hidden:
-            self.master.store_value('year', str(int(self.spinbutton_year.get_value())))
-            self.master.store_value('month', str(int(self.spinbutton_month.get_value())))
-            self.master.store_value('day', str(int(self.spinbutton_day.get_value())))
-            self.master.store_value('jyear', str(int(self.spinbutton_jyear.get_value())))
-            self.master.store_value('jday', str(int(self.spinbutton_jday.get_value())))
+            self.master['year']  = str(int(self.spinbutton_year.get_value()))
+            self.master['month'] = str(int(self.spinbutton_month.get_value()))
+            self.master['day']   = str(int(self.spinbutton_day.get_value()))
+            self.master['jyear'] = str(int(self.spinbutton_jyear.get_value()))
+            self.master['jday']  = str(int(self.spinbutton_jday.get_value()))
 
         try: self.lock_update_time.release()
         except: pass
