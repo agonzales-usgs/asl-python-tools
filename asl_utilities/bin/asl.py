@@ -102,6 +102,8 @@ if not os.path.isdir(path):
     sys.exit(1)
 
 python_path = os.path.abspath(path + '/lib/python')
+if not os.path.exists(python_path):
+    python_path = os.path.abspath(path + '/python')
 
 if not os.path.exists(python_path):
     print "Python library '%s' does not exist" % python_path
