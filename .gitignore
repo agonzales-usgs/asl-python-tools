@@ -1,0 +1,3 @@
+*.pyc
+asl_utilities/utils/xmax/XMAX.LOG
+asl_utilities/utils/xmax/config.xml
