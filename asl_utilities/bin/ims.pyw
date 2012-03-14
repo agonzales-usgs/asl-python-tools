@@ -3,11 +3,13 @@ import asl
 
 import glob
 import inspect
+import math
 import optparse
 import os
 import Queue
 import re
 import stat
+import string
 import struct
 import sys
 import time
@@ -20,7 +22,12 @@ import gobject
 gtk.gdk.threads_init()
 
 from jtk.gtk.utils import LEFT,RIGHT
+from jtk.gtk.Calendar import Calendar
 from jtk.StatefulClass import StatefulClass
+from jtk.Thread import Thread
+from jtk.Responses import Responses
+
+
 
 # === DateTimeWindow Class /*{{{*/
 class DateTimeWindow:
@@ -30,11 +37,15 @@ class DateTimeWindow:
         self.cancel_callback = None
         self.cancel_data = None
         self.time_high = True
+        self.pushing = False
+        self.calendar = None
+
         self.granularity = "day"
-        self.granules  = { 'day'    : 4 ,
+        self.granules = {  'day'    : 4 ,
                            'hour'   : 3 ,
                            'minute' : 2 ,
                            'second' : 1 } 
+
         times = time.gmtime()
         self.timestamp = { 'year'   : times[0] ,
                            'month'  : times[1] ,
@@ -42,32 +53,30 @@ class DateTimeWindow:
                            'hour'   : times[3] ,
                            'minute' : times[4] ,
                            'second' : times[5] }
-        self.pushing = False
         self.running = False
 
     def create_window(self):
         if self.running:
             return
         self.running = True
-        self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
+        self.window         = gtk.Window(gtk.WINDOW_TOPLEVEL)
         self.vbox_date_time = gtk.VBox()
-        self.hbox_time = gtk.HBox()
-        self.vbox_hour = gtk.VBox()
-        self.vbox_minute = gtk.VBox()
-        self.vbox_second = gtk.VBox()
-        self.hbox_control = gtk.HBox()
+        self.hbox_time      = gtk.HBox()
+        self.hbox_control   = gtk.HBox()
+        self.vbox_hour      = gtk.VBox()
+        self.vbox_minute    = gtk.VBox()
+        self.vbox_second    = gtk.VBox()
 
-        self.label_hour   = gtk.Label("Hour")
-        self.label_minute = gtk.Label("Minute")
-        self.label_second = gtk.Label("Second")
-        self.spinbutton_hour   = gtk.SpinButton()
-        self.spinbutton_minute = gtk.SpinButton()
-        self.spinbutton_second = gtk.SpinButton()
-        self.button_today  = gtk.Button(label="Today",  stock=None, use_underline=True)
-        self.button_ok     = gtk.Button(label="OK",     stock=None, use_underline=True)
-        self.button_cancel = gtk.Button(label="Cancel", stock=None, use_underline=True)
-
-        self.calendar = gtk.Calendar()
+        self.label_hour         = gtk.Label("Hour")
+        self.label_minute       = gtk.Label("Minute")
+        self.label_second       = gtk.Label("Second")
+        self.spinbutton_hour    = gtk.SpinButton()
+        self.spinbutton_minute  = gtk.SpinButton()
+        self.spinbutton_second  = gtk.SpinButton()
+        self.button_today       = gtk.Button(label="Today",  stock=None, use_underline=True)
+        self.button_ok          = gtk.Button(label="OK",     stock=None, use_underline=True)
+        self.button_cancel      = gtk.Button(label="Cancel", stock=None, use_underline=True)
+        self.calendar           = gtk.Calendar()
 
         self.window.add( self.vbox_date_time )
         self.vbox_date_time.add( self.calendar )
@@ -98,6 +107,9 @@ class DateTimeWindow:
         # Setup our signals
         self.window.connect( "destroy_event", self.callback_complete, None )
         self.window.connect( "delete_event", self.callback_complete, None )
+        self.button_today.connect(  "clicked", self.callback_today,    None )
+        self.button_ok.connect(     "clicked", self.callback_complete, None )
+        self.button_cancel.connect( "clicked", self.callback_cancel,   None )
 
         self.calendar.connect( "day-selected", self.callback_update_time, None )
         self.calendar.connect( "day-selected-double-click", self.callback_update_time, None )
@@ -106,12 +118,10 @@ class DateTimeWindow:
         self.calendar.connect( "prev-month", self.callback_update_time, None )
         self.calendar.connect( "next-year", self.callback_update_time, None )
         self.calendar.connect( "prev-year", self.callback_update_time, None )
+
         self.spinbutton_hour.connect( "value-changed", self.callback_update_time, None )
         self.spinbutton_minute.connect( "value-changed", self.callback_update_time, None )
         self.spinbutton_second.connect( "value-changed", self.callback_update_time, None )
-        self.button_today.connect(  "clicked", self.callback_today,    None )
-        self.button_ok.connect(     "clicked", self.callback_complete, None )
-        self.button_cancel.connect( "clicked", self.callback_cancel,   None )
 
         # Show our contents
         self.window.show_all()
@@ -140,7 +150,7 @@ class DateTimeWindow:
     def get_default_high(self):
         return self.time_high
         
-    def delete_window(self):
+    def delete_window(self, data=None):
         if not self.running:
             return
         self.window.hide_all()
@@ -547,7 +557,7 @@ class IMSGUI:
 
 # ===== Hidden Objects =============================================
         self.clipboard = gtk.Clipboard()
-        self.time_window = DateTimeWindow()
+        self.time_window = Calendar()
         self.time_window.set_granularity("second")
         self.time_window.set_callback_complete(self.callback_time_window_complete)
         self.time_window.set_callback_cancel(self.callback_time_window_cancel)

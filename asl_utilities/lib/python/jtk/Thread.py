@@ -14,14 +14,16 @@ class Thread(threading.Thread, Class):
         self.queue = Queue.Queue(queue_max)
         self.queue_halt = Queue.Queue()
 
-    def halt_now(self):
+    def halt_now(self, wait=True):
         self.running = False # Forces thread to halt on the next iteration
         self.queue.put(('HALT', None)) # Forces the next iteration if there is no waiting data
-        self.queue_halt.get()
+        if wait:
+            self.queue_halt.get()
 
-    def halt(self):
+    def halt(self, wait=True):
         self.queue.put(('HALT', None)) # Asks the process to halt, but only once this request is reached
-        self.queue_halt.get()
+        if wait:
+            self.queue_halt.get()
 
     def run(self):
         self._pre()
