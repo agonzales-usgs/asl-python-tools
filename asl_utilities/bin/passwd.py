@@ -59,6 +59,7 @@ class Main:
 
             try: id = host.attributes["id"].firstChild.data
             except Exception, e: self.error("Malformed XML in Configuration File")
+            print "id:", id
 
             addresses = host.getElementsByTagName("address")
             if not addresses or len(addresses) != 1:
@@ -72,27 +73,44 @@ class Main:
             if not users or len(users) != 1:
                 self.error("Malformed XML in Configuration File")
 
-            try: address = socket.gethostbyname(addresses[0].firstChild.data)
+            modes = host.getElementsByTagName("mode")
+            if modes:
+                if len(modes) != 1:
+                    self.error("Malformed XML in Configuration File")
+
+            hostname = addresses[0].firstChild.data.strip()
+            try: address = socket.gethostbyname(hostname)
             except socket.gaierror: self.error("Invalid address for host '%s'" % id)
-            print "address:", address
+            print "address: %s (%s)" % (address, hostname)
 
             if not ports:
                 port = 22
             else:
-                try: port = int(ports[0].firstChild.data)
+                try: port = int(ports[0].firstChild.data.strip())
                 except ValueError: self.error("Invalid port for host '%s'" % id)
             print "port:", port
 
-            user = users[0].firstChild.data
+            user = users[0].firstChild.data.strip()
             print "user:", user
             if len(user) < 1:
                 self.error("Invalid value for user.")
+
+            mode = "default"
+            if len(modes) > 0:
+                mode = modes[0].firstChild.data.strip().lower()
+                print "mode:", mode
+                if mode.lower() != "explicit":
+                    mode = "default"
+
 
             if self.hosts.has_key(id):
                 self.error("Found duplicate ID in config file.")
             self.hosts[id] = {'address' : address,
                               'port'    : port,
-                              'user'    : user}
+                              'user'    : user,
+                              'mode'    : mode}
+
+            print
 
     def get_passwords(self):
         current = getpass.getpass("Current Passord: ")
@@ -119,7 +137,10 @@ class Main:
             print "Failed to ssh to station '%s'" % host_id
             return
 
-        reader.sendline('passwd %s' % host['user'])
+        if host['mode'] == "explicit":
+            reader.sendline('passwd %(user)s' % host)
+        else:
+            reader.sendline('passwd')
 
         for password in self.passwords:
             try:
