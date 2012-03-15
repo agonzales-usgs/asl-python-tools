@@ -23,281 +23,119 @@ gtk.gdk.threads_init()
 
 from jtk.gtk.utils import LEFT,RIGHT
 from jtk.gtk.Calendar import Calendar
+from jtk.gtk.Dialog import Dialog
 from jtk.StatefulClass import StatefulClass
-from jtk.Thread import Thread
+from jtk.Counter import Counter
 from jtk.Responses import Responses
+from jtk.Responses import ResponsesThread
+from jtk.Calib import Calib
+from jtk.Thread import Thread
 
 
+# === Progress Tools /*{{{*/
+class ProgressThread(Thread):
+    def __init__(self, dialog, pulse_interval=0.25):
+        Thread.__init__(self, 1024, timeout=pulse_interval, timeout_message='PULSE')
+        self.dialog = dialog
 
-# === DateTimeWindow Class /*{{{*/
-class DateTimeWindow:
-    def __init__(self):
-        self.completion_callback = None
-        self.completion_data = None
-        self.cancel_callback = None
-        self.cancel_data = None
-        self.time_high = True
-        self.pushing = False
-        self.calendar = None
+    def _run(self, status, data):
+        print "in ProgressThread._run()"
+        print "  status:", status
+        print "    data:", data
+        count,total,done = data
+        self.dialog.update_progress(status, count, total)
 
-        self.granularity = "day"
-        self.granules = {  'day'    : 4 ,
-                           'hour'   : 3 ,
-                           'minute' : 2 ,
-                           'second' : 1 } 
+    def _post(self):
+        self.dialog.work_done()
 
-        times = time.gmtime()
-        self.timestamp = { 'year'   : times[0] ,
-                           'month'  : times[1] ,
-                           'day'    : times[2] ,
-                           'hour'   : times[3] ,
-                           'minute' : times[4] ,
-                           'second' : times[5] }
-        self.running = False
+class ProgressDialog(Dialog):
+    def __init__(self, parent, callback):
+        Dialog.__init__(self, "Acquiring Reponse Data", modal=True, exit_callback=self.callback_exit)
+        self.queue = Queue.Queue(1024)
+        self.mode = "PULSE"
+        self.status_counter = Counter()
+        self._callback = callback
 
-    def create_window(self):
-        if self.running:
-            return
-        self.running = True
-        self.window         = gtk.Window(gtk.WINDOW_TOPLEVEL)
-        self.vbox_date_time = gtk.VBox()
-        self.hbox_time      = gtk.HBox()
-        self.hbox_control   = gtk.HBox()
-        self.vbox_hour      = gtk.VBox()
-        self.vbox_minute    = gtk.VBox()
-        self.vbox_second    = gtk.VBox()
+        self.progress_bar = gtk.ProgressBar()
 
-        self.label_hour         = gtk.Label("Hour")
-        self.label_minute       = gtk.Label("Minute")
-        self.label_second       = gtk.Label("Second")
-        self.spinbutton_hour    = gtk.SpinButton()
-        self.spinbutton_minute  = gtk.SpinButton()
-        self.spinbutton_second  = gtk.SpinButton()
-        self.button_today       = gtk.Button(label="Today",  stock=None, use_underline=True)
-        self.button_ok          = gtk.Button(label="OK",     stock=None, use_underline=True)
-        self.button_cancel      = gtk.Button(label="Cancel", stock=None, use_underline=True)
-        self.calendar           = gtk.Calendar()
-
-        self.window.add( self.vbox_date_time )
-        self.vbox_date_time.add( self.calendar )
-        self.vbox_date_time.add( self.hbox_time )
-        self.vbox_date_time.add( self.hbox_control )
-        self.hbox_time.add( self.vbox_hour )
-        self.hbox_time.add( self.vbox_minute )
-        self.hbox_time.add( self.vbox_second )
-
-        self.vbox_hour.add( self.label_hour )
-        self.vbox_hour.add( self.spinbutton_hour )
-        self.vbox_minute.add( self.label_minute )
-        self.vbox_minute.add( self.spinbutton_minute )
-        self.vbox_second.add( self.label_second )
-        self.vbox_second.add( self.spinbutton_second )
-        self.hbox_control.pack_start( self.button_today,  True, True, 0 )
-        self.hbox_control.pack_start( self.button_ok,     True, True, 0 )
-        self.hbox_control.pack_end(   self.button_cancel, True, True, 0 )
-
-        self.spinbutton_hour.set_range(0,23)
-        self.spinbutton_minute.set_range(0,59)
-        self.spinbutton_second.set_range(0,59)
-
-        self.spinbutton_hour.set_increments(1,5)
-        self.spinbutton_minute.set_increments(1,5)
-        self.spinbutton_second.set_increments(1,5)
-
-        # Setup our signals
-        self.window.connect( "destroy_event", self.callback_complete, None )
-        self.window.connect( "delete_event", self.callback_complete, None )
-        self.button_today.connect(  "clicked", self.callback_today,    None )
-        self.button_ok.connect(     "clicked", self.callback_complete, None )
-        self.button_cancel.connect( "clicked", self.callback_cancel,   None )
-
-        self.calendar.connect( "day-selected", self.callback_update_time, None )
-        self.calendar.connect( "day-selected-double-click", self.callback_update_time, None )
-        self.calendar.connect( "month-changed", self.callback_update_time, None )
-        self.calendar.connect( "next-month", self.callback_update_time, None )
-        self.calendar.connect( "prev-month", self.callback_update_time, None )
-        self.calendar.connect( "next-year", self.callback_update_time, None )
-        self.calendar.connect( "prev-year", self.callback_update_time, None )
-
-        self.spinbutton_hour.connect( "value-changed", self.callback_update_time, None )
-        self.spinbutton_minute.connect( "value-changed", self.callback_update_time, None )
-        self.spinbutton_second.connect( "value-changed", self.callback_update_time, None )
-
-        # Show our contents
-        self.window.show_all()
-        self.push_time()
-
-    def set_granularity(self, granule):
-        if self.granules.has_key(granule):
-            self.granularity = granule
-
-    def get_granularity(self):
-        return self.granularity
-
-    def get_granule(self, granule):
-        if self.granules.has_key(granule):
-            return self.granules[granule]
-        return 0
-
-    def current_granule(self):
-        if self.granules.has_key(self.granularity):
-            return self.granules[self.granularity]
-        return 0
-
-    def set_default_high(self, high=True):
-        self.time_high = high
-
-    def get_default_high(self):
-        return self.time_high
+        self.hbox_buttons.pack_start(self.progress_bar, True, True, 2)
+        self.add_button_right("Cancel", self.callback_cancel)
         
-    def delete_window(self, data=None):
-        if not self.running:
-            return
-        self.window.hide_all()
-        del self.window
-        self.window = None
-        self.running = False
+        self.add_button_hidden("update", self.callback_update_progress, hide=False)
+        self.add_button_hidden("done", self.callback_done)
 
-    def callback_update_time(self, widget, event, data=None):
-        if not self.calendar or self.pushing:
-            return
-        (year, month, day) = self.calendar.get_date()
-        self.timestamp['year']   = year
-        self.timestamp['month']  = month + 1
-        self.timestamp['day']    = day
-        if self.current_granule() <= self.get_granule('hour'):
-            self.timestamp['hour'] = int(self.spinbutton_hour.get_value())
-        elif self.time_high:
-            self.timestamp['hour'] = 23
-        else:
-            self.timestamp['hour'] = 0
+        self.status_bar = gtk.Statusbar()
+        self.vbox.pack_start(self.status_bar, False, True, 2)
+        self.status_bar.show()
 
-        if self.current_granule() <= self.get_granule('minute'):
-            self.timestamp['minute'] = int(self.spinbutton_minute.get_value())
-        elif self.time_high:
-            self.timestamp['minute'] = 59
-        else:
-            self.timestamp['minute'] = 0
+        self.result = "UNKNOWN"
 
-        if self.current_granule() <= self.get_granule('second'):
-            self.timestamp['second'] = int(self.spinbutton_second.get_value())
-        elif self.time_high:
-            self.timestamp['second'] = 59
-        else:
-            self.timestamp['second'] = 0
+    def work_done(self):
+        gobject.idle_add(gobject.GObject.emit, self.get_hidden_button('done'), 'clicked')
 
-    def callback_today(self, widget=None, event=None, data=None):
-        times = time.gmtime()
-        self.timestamp = { 'year'   : times[0] ,
-                           'month'  : times[1] ,
-                           'day'    : times[2] ,
-                           'hour'   : times[3] ,
-                           'minute' : times[4] ,
-                           'second' : times[5] }
-        self.push_time()
+    def update_progress(self, message, count, total):
+        print "putting data into queue"
+        self.queue.put((status, count, total))
+        print "setting up callback"
+        gobject.idle_add(gobject.GObject.emit, self.get_hidden_button('update'), 'clicked')
+        print "done"
 
-    def callback_complete(self, widget=None, event=None, data=None):
-        if self.completion_data is None:
-            self.completion_callback()
-        else:
-            self.completion_callback( self.completion_data )
-        self.delete_window()
+    def callback(self):
+        self._callback(self)
 
-    def set_callback_complete(self, callback, data=None):
-        self.completion_callback = callback
-        self.completion_data = data
+    def callback_exit(self, widget, event, data=None):
+        self.result = "EXITED"
+        self.callback()
 
-    def callback_cancel(self, widget=None, event=None, data=None):
-        if self.cancel_data is None:
-            self.cancel_callback()
-        else:
-            self.cancel_callback( self.completion_data )
-        self.delete_window()
+    def callback_update_progress(self, widget, event, data=None):
+        self.update_progress_bar()
 
-    def set_callback_cancel(self, callback, data=None):
-        self.cancel_callback = callback
-        self.cancel_data = data
+    def callback_cancel(self, widget, event, data=None):
+        print "Cancel clicked!"
+        self.result = "CANCELLED"
+        self.callback()
 
-    def push_time(self):
-        self.pushing = True
-        self.calendar.select_month(self.timestamp['month'] - 1, self.timestamp['year'])
-        self.calendar.select_day(self.timestamp['day'])
-        if self.current_granule() <= self.get_granule('hour'):
-            self.spinbutton_hour.set_value(self.timestamp['hour'])
-        if self.current_granule() <= self.get_granule('minute'):
-            self.spinbutton_minute.set_value(self.timestamp['minute'])
-        if self.current_granule() <= self.get_granule('second'):
-            self.spinbutton_second.set_value(self.timestamp['second'])
-        self.pushing = False
+    def callback_done(self, widget, event, data=None):
+        self.result = "COMPLETED"
+        self.callback()
 
-    def prompt(self):
-        self.create_window()
+    def update_progress_bar(self):
+        while not self.queue.empty():
+            status,count,total = self.queue.get_nowait()
+            if status == "DONE":
+                self.hide_calibs_progress()
+                self._calibs_thread_active = False
+                break
+            elif status == "PULSE":
+                if self.mode == "PULSE":
+                    self.progress_bar.pulse()
+            else:
+                self.mode = "PULSE"
+                fraction = 0.0
+                percent = 0.0
 
-    def get_date(self):
-        date_str = "%(year)04d/%(month)02d/%(day)02d %(hour)02d:%(minute)02d:%(second)02d UTC" % self.timestamp
-        date = time.strptime(date_str,"%Y/%m/%d %H:%M:%S %Z")
-        return date
+                progress = ""
+                if count > -1:
+                    if (total > 0) and (count <= total):
+                        fraction = float(count) / float(total)
+                        percent = fraction * 100.0
+                        progress = "%d/%d (%0.1f%%)" % (count, total, percent)
+                    else:
+                        progress = "%d" % count
+                else:
+                    progress = ""
 
-    def set_date(self, date):
-        self.timestamp['year']   = date[0]
-        self.timestamp['month']  = date[1]
-        self.timestamp['day']    = date[2]
-        if self.current_granule() <= self.get_granule('hour'):
-            self.timestamp['hour']   = date[3]
-        elif self.time_high:
-            self.timestamp['hour'] = 23
-        else:
-            self.timestamp['hour'] = 0
-
-        if self.current_granule() <= self.get_granule('minute'):
-            self.timestamp['minute'] = date[4]
-        elif self.time_high:
-            self.timestamp['minute'] = 59
-        else:
-            self.timestamp['minute'] = 0
-
-        if self.current_granule() <= self.get_granule('second'):
-            self.timestamp['second'] = date[5]
-        elif self.time_high:
-            self.timestamp['second'] = 59
-        else:
-            self.timestamp['second'] = 0
-# /*}}}*/
-
-# === Counter Class /*{{{*/
-class Counter:
-    def __init__(self, value=0, stride=1):
-        self.stride = stride
-        self.original = value
-        self.reset()
-
-    def reset(self):
-        self.value = self.original
-
-    def set_value(self, value):
-        self.value = value
-
-    def set_stride(self, stride):
-        self.stride = stride
-
-    def inc(self):
-        self.value += 1
-        return self.value
-
-    def dec(self):
-        self.value -= 1
-        return self.value
-
-    def inc_p(self):
-        temp = self.value
-        self.value += 1
-        return temp
-
-    def dec_p(self):
-        temp = self.value
-        self.value -= 1
-        return temp
-# /*}}}*/
+                self.status_bar.pop(self.status_counter.value())
+                self.status_bar.push(self.status_counter.inc(), status)
+                self.progress_calib.set_text(progress)
+                if show_percent:
+                    self.progress_calib.set_fraction(fraction)
+                    self.mode = "FRACTION"
+                else:
+                    self.progress_calib.set_pulse_step(0.5)
+                    self.mode = "PULSE"
+                self.show_calibs_progress()
+#/*}}}*/
 
 # === IMSGUI Class /*{{{*/
 class IMSGUI:
@@ -315,6 +153,11 @@ class IMSGUI:
         self._default_width = self._prefs.recall_value('window-width', self._minimum_width)
         self._default_height = self._prefs.recall_value('window-height', self._minimum_height)
 
+        self._calibs_thread_active = False
+        self._calibs_up_to_date = False
+
+        self._responses = {}
+
         self.commands = [
             'CALIBRATE_START',
             'CALIBRATE_CONFIRM',
@@ -325,11 +168,11 @@ class IMSGUI:
         self.axes     = ['Z', '1', '2', 'N', 'E']
 
         self.stations = [
-            'AFI' , 'ANMO', 'CTAO', 'DAV' , 'FURI', 'GNI' ,
-            'GUMO', 'HNR' , 'KOWA', 'KMBO', 'LVC' , 'LSZ' ,
-            'MSKU', 'NWAO', 'PMG' , 'PMSA', 'PTGA', 'QSPA',
-            'RAO' , 'RAR' , 'RCBR', 'SDV' , 'SFJD', 'SJG' ,
-            'TEIG', 'TSUM',
+            'IU_AFI' , 'IU_ANMO', 'IU_CTAO', 'IU_DAV' , 'IU_FURI', 'IU_GNI' ,
+            'IU_GUMO', 'IU_HNR' , 'IU_KOWA', 'IU_KMBO', 'IU_LVC' , 'IU_LSZ' ,
+            'IU_MSKU', 'IU_NWAO', 'IU_PMG' , 'IU_PMSA', 'IU_PTGA', 'IU_QSPA',
+            'IU_RAO' , 'IU_RAR' , 'IU_RCBR', 'IU_SDV' , 'IU_SFJD', 'IU_SJG' ,
+            'IU_TEIG', 'IU_TSUM', 'US_ELK',  'US_NEW'
         ]
 
         key_counter = Counter()
@@ -401,6 +244,9 @@ class IMSGUI:
         self.hbox_display = gtk.HBox()
         self.hbox_control = gtk.HBox()
 
+        self.hbox_add_channels = gtk.HBox()
+        self.hbox_calper = gtk.HBox()
+
         self.boxes = {}
         self.boxes['CHANNELS'] = [self.vbox_channels]
 
@@ -430,12 +276,24 @@ class IMSGUI:
         self.button_add_channel.add(self.hbox_add_channel)
         self.hbox_add_channel.pack_start(self.image_add_channel, padding=1)
         self.hbox_add_channel.pack_start(self.label_add_channel, padding=1)
+        self.spacer_channels = gtk.Label("")
 
         self.checkbutton_sensor = gtk.CheckButton(label="Include Sensor")
 
+        self.label_calper = gtk.Label("CALPER: ")
+        self.entry_calper = gtk.Entry()
+        self.button_generate_calibs = gtk.Button(stock=None, use_underline=True)
+        self.hbox_generate_calibs   = gtk.HBox()
+        self.image_generate_calibs  = gtk.Image()
+        self.image_generate_calibs.set_from_stock(gtk.STOCK_CONVERT, gtk.ICON_SIZE_MENU)
+        self.label_generate_calibs  = gtk.Label('Generate Calibs')
+        self.button_generate_calibs.add(self.hbox_generate_calibs)
+        self.hbox_generate_calibs.pack_start(self.image_generate_calibs, padding=1)
+        self.hbox_generate_calibs.pack_start(self.label_generate_calibs, padding=1)
+
         self.label_duration = gtk.Label("Duration:")
         self.sample_duration = gtk.Entry()
-        self.adjustment_duration = gtk.Adjustment(value=85680.0, lower=0, upper=2**32, step_incr=60, page_incr=3600)
+        self.adjustment_duration = gtk.Adjustment(value=86400.0, lower=0, upper=2**32, step_incr=60, page_incr=3600)
         self.spinbutton_duration = gtk.SpinButton(self.adjustment_duration)
         self.spacer_duration = gtk.Label("")
 
@@ -495,40 +353,47 @@ class IMSGUI:
 
         self.boxes['EMAIL'] = [self.label_email, self.entry_email]
         self.table_parts.attach(LEFT(self.label_email),         0, 1, 1, 2, gtk.FILL, 0, 1, 1)
-        self.table_parts.attach(self.entry_email,               1, 4, 1, 2, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_parts.attach(self.entry_email,               1, 5, 1, 2, gtk.FILL | gtk.EXPAND, 0, 1, 1)
 
         self.boxes['START_TIME'] = [self.label_start_time, self.button_start_time, self.entry_start_time]
         self.table_parts.attach(LEFT(self.label_start_time),    0, 1, 2, 3, gtk.FILL, 0, 1, 1)
-        self.table_parts.attach(self.entry_start_time,          1, 4, 2, 3, gtk.FILL | gtk.EXPAND, 0, 1, 1)
-        self.table_parts.attach(self.button_start_time,         4, 5, 2, 3, 0, 0, 1, 1)
+        self.table_parts.attach(self.entry_start_time,          1, 5, 2, 3, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_parts.attach(self.button_start_time,         5, 6, 2, 3, 0, 0, 1, 1)
 
         self.boxes['STA_LIST'] = [self.label_stations, self.combobox_stations]
         self.table_parts.attach(LEFT(self.label_stations),      0, 1, 3, 4, gtk.FILL, 0, 1, 1)
-        self.table_parts.attach(LEFT(self.combobox_stations),   1, 4, 3, 4, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(LEFT(self.combobox_stations),   1, 5, 3, 4, gtk.FILL, 0, 1, 1)
 
         self.boxes['SENSOR'] = [self.checkbutton_sensor]
-        self.table_parts.attach(LEFT(self.checkbutton_sensor),  0, 4, 4, 5, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(LEFT(self.checkbutton_sensor),  0, 5, 4, 5, gtk.FILL, 0, 1, 1)
 
         self.boxes['TYPE'] = []
         #self.boxes['TYPE'] = [self.label_cal_type, self.combobox_cal_type]
         #self.table_parts.attach(LEFT(self.label_cal_type),      0, 1, 5, 6, gtk.FILL, 0, 1, 1)
         #self.table_parts.attach(LEFT(self.combobox_cal_type),   1, 4, 5, 6, gtk.FILL, 0, 1, 1)
 
-        self.boxes['CALIB_PARAM'] = [self.label_duration, self.spinbutton_duration, self.sample_duration]
+        self.boxes['CALIB_PARAM'] = [self.label_duration, self.spinbutton_duration, self.sample_duration, self.spacer_duration]
         self.table_parts.attach(LEFT(self.label_duration),      0, 1, 6, 7, gtk.FILL, 0, 1, 1)
         self.table_parts.attach(LEFT(self.sample_duration),     1, 2, 6, 7, gtk.FILL, 0, 1, 1)
         self.table_parts.attach(LEFT(self.spinbutton_duration), 2, 3, 6, 7, gtk.FILL, 0, 1, 1)
-        self.table_parts.attach(self.spacer_duration,           3, 4, 6, 7, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+        self.table_parts.attach(self.spacer_duration,           3, 5, 6, 7, gtk.FILL | gtk.EXPAND, 0, 1, 1)
+
+        self.boxes['CALPER'] = [self.label_calper, self.hbox_calper]
+        self.hbox_calper.pack_start(self.entry_calper, False, False, 0)
+        self.hbox_calper.pack_start(self.button_generate_calibs, False, False, 0)
+        self.table_parts.attach(LEFT(self.label_calper), 0, 1, 7, 8, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(LEFT(self.hbox_calper),  1, 4, 7, 8, gtk.FILL, 0, 1, 1)
 
         self.boxes['CALIB'] = []
-        self.boxes['CALPER'] = []
 
         self.boxes['IN_SPEC'] = [self.checkbutton_spec]
-        self.table_parts.attach(LEFT(self.checkbutton_spec),    0, 4, 7, 8, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(LEFT(self.checkbutton_spec),    0, 4, 9, 10, gtk.FILL, 0, 1, 1)
 
-        self.boxes['CHAN_LIST'] = [self.label_channels, self.button_add_channel]
-        self.table_parts.attach(LEFT(self.label_channels),      0, 1, 8, 9, gtk.FILL, 0, 1, 1)
-        self.table_parts.attach(RIGHT(self.button_add_channel),3, 5, 8, 9, gtk.FILL, 0, 1, 1)
+        self.boxes['CHAN_LIST'] = [self.label_channels, self.hbox_add_channels]
+        self.hbox_add_channels.pack_start(self.button_add_channel, False, False, 0)
+        self.hbox_add_channels.pack_start(self.spacer_channels, True, True, 0)
+        self.table_parts.attach(LEFT(self.label_channels), 0, 1, 10, 11, gtk.FILL, 0, 1, 1)
+        self.table_parts.attach(self.hbox_add_channels,    1, 5, 10, 11, gtk.FILL | gtk.EXPAND, 0, 1, 1)
 
         self.hbox_display.pack_start(self.scrolledwindow_display, True, True, 0)
 
@@ -549,11 +414,13 @@ class IMSGUI:
         self.checkbutton_spec.set_active(True)
         self.textbuffer_display.set_text('')
         self.textview_display.set_editable(False)
+        self.entry_calper.set_text('1')
         self.sample_duration.set_editable(False)
         self.button_copy.set_sensitive(False)
         self.button_send_email.set_sensitive(False)
 
         self.textview_display.set_size_request(-1, 300)
+        self.display_duration()
 
 # ===== Hidden Objects =============================================
         self.clipboard = gtk.Clipboard()
@@ -573,10 +440,13 @@ class IMSGUI:
         self.entry_start_time.connect(   "changed", self.callback_time_changed, None)
         self.button_start_time.connect(  "clicked", self.callback_start_time,   None)
         self.combobox_stations.connect(  "changed", self.callback_generate,     None)
-        self.button_add_channel.connect("clicked", self.callback_add_channel,  None)
+        self.entry_calper.connect(       "changed", self.callback_calper_changed, None)
+        self.verify_entry_float(self.entry_calper)
+        self.button_add_channel.connect( "clicked", self.callback_add_channel,  None)
         self.checkbutton_sensor.connect( "toggled", self.callback_generate,     None)
         self.checkbutton_spec.connect(   "toggled", self.callback_generate,     None)
-        self.spinbutton_duration.connect("value-changed", self.callback_generate, None)
+        self.spinbutton_duration.connect("value-changed", self.callback_duration_changed, None)
+        self.button_generate_calibs.connect("clicked", self.callback_generate_calibs, None)
 
         self.button_copy.connect("clicked", self.callback_copy, None)
         self.button_send_email.connect("clicked", self.callback_email, None)
@@ -633,6 +503,10 @@ class IMSGUI:
                     self.text_to_clipboard()
             self.update_interface()
 
+    def callback_duration_changed(self, widget, event, data=None):
+        self.display_duration()
+        self.generate()
+
     def callback_add_channel(self, widget, event, data=None):
         self._add_channel()
         self.generate()
@@ -660,6 +534,64 @@ class IMSGUI:
 
     def callback_email(self, widget, event, data=None):
         self.mailto()
+
+    def callback_calper_changed(self, widget, event, data=None):
+        self.verify_entry_float(widget)
+        command_key = self.combobox_command.get_active_text()
+        for key,channel in self.channel_widgets.items():
+            if command_key != 'CALIBRATION_RESULT':
+                channel['entry-calib'].set_text("")
+        self.generate()
+
+    def callback_calib_changed(self, widget, event, data=None):
+        self.verify_entry_float(widget)
+
+    def callback_generate_calibs(self, widget, event, data=None):
+        if not self.entry_calper._valid:
+            return
+        self.button_add_channel.set_sensitive(0)
+
+        resp_list = []
+        network,station = self.combobox_stations.get_active_text().split('_', 1)
+        for key,channel in self.channel_widgets.items():
+            location = "%02d" % int(channel['spinbutton'].get_value())
+            channel = channel['combobox-class'].get_active_text() + \
+                      channel['combobox-axes'].get_active_text()
+            key = "%s-%s-%s-%s" % (network,station,location,channel)
+            if not self._responses.has_key(key):
+                self._responses[key] = Responses(network, station, location, channel)
+                resp_list.append(self._responses[key])
+        
+        dialog = ProgressDialog(self.window, self.callback_responses_complete)
+        self.progress_thread = ProgressThread(dialog)
+        self.responses_thread = ResponsesThread(self.progress_thread.queue, resp_list)
+
+        self.progress_thread.start()
+        self.responses_thread.start()
+        _,h = dialog.get_size()
+        dialog.resize(450,h)
+        response = dialog.run()
+
+    def callback_responses_complete(self, dialog):
+        result = dialog.result
+        if result in ("CANCELLED", "EXITED"):
+            self.responses_thread.halt_now()
+            self.progress_thread.halt_now()
+        if result == "COMPLETED":
+            calper = float(self.entry_calper.get_text())
+            correct = False
+            for key,channel in self.channel_widgets.items():
+                location = channel['spinbutton'].get_value()
+                channel = channel['combobox-class'].get_active_text() + \
+                          channel['combobox-axes'].get_active_text()
+                key = "%s-%s-%s-%s" % (network,station,location,channel)
+                if self._responses.has_key(key):
+                    calib = Calib(self._response[key])
+                    calib.calculate_calib(calper, correct)
+                    channel['entry-calib'].set_text(str(calib.calib))
+
+        self.button_add_channel.set_sensitive(1)
+        
 
     def callback_generate(self, widget, event, data=None):
         self.generate()
@@ -712,8 +644,14 @@ class IMSGUI:
     def callback_calarg_focus_in(self, widget, event, data=None):
         self.hint_text_hide(widget)
 
-
 # ===== Methods ====================================================
+    def display_duration(self):
+        duration = float(self.spinbutton_duration.get_value())
+        hours = duration / 3600
+        minutes = (duration % 3600) / 60
+        seconds = duration % 60
+        self.sample_duration.set_text("%02d:%02d:%02d" % (hours, minutes, seconds))
+
     def hint_text_show(self, widget):
         if not len(widget.get_text()):
             widget.set_text(widget._hint_text)
@@ -731,9 +669,27 @@ class IMSGUI:
         keys_only = map(lambda p: p[1], ordered)
         return keys_only
 
+    def verify_entry_float(self, widget):
+        try:
+            float(widget.get_text())
+            widget.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(15000, 55000, 15000)) #Green
+            widget._valid = True
+        except:
+            widget.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(55000, 15000, 15000)) #Red
+            widget._valid = False
+
     def generate(self):
+        self.textbuffer_display.set_text("")
+
         message_type = self.combobox_command.get_active_text()
         box = self.box_keys[message_type]
+
+        if message_type == 'CALIBRATE_RESULT':
+            if not self.entry_calper._valid:
+                return
+            for key,channel in self.channel_widgets.items():
+                if not channel['entry-calib']._valid:
+                    return
 
       # === Prepare channel list
         channel_keys = self.channel_widgets.keys()
@@ -748,11 +704,6 @@ class IMSGUI:
                 axis_text = channel['combobox-axes'].get_active_text()
                 channel_string = "%s%s%s" % (location_text, class_text, axis_text)
                 calib_string = channel['entry-calib'].get_text()
-                if calib_string == channel['entry-calib']._hint_text:
-                    calib_string = ""
-                calper_string = channel['entry-calper'].get_text()
-                if calper_string == channel['entry-calper']._hint_text:
-                    calper_string = ""
                 refid_string = channel['entry-refid'].get_text()
                 if refid_string == channel['entry-refid']._hint_text:
                     refid_string = ""
@@ -760,7 +711,7 @@ class IMSGUI:
               # === Construct IMS Message
                 message += "BEGIN IMS2.0\n"
                 message += "MSG_TYPE %s\n" % box['message-type']
-                station = ''.join(self.combobox_stations.get_active_text().split('_'))
+                station = self.combobox_stations.get_active_text().split('_')[1]
                 message += "MSG_ID %s\n" % (station+ "_" +message_type+ "_" +channel_string+ "_" +time.strftime("%Y/%m/%d_%H:%M:%S", time.gmtime()),)
                 if box.has_key("REF_ID"):
                     message += "REF_ID %s\n" % refid_string
@@ -772,7 +723,7 @@ class IMSGUI:
                 if box.has_key("START_TIME") and (message_type == 'CALIBRATE_START'):
                     message += "START_TIME %s\n" % self.entry_start_time.get_text()
                 if box.has_key("STA_LIST"):
-                    message += "STA_LIST %s\n" % self.combobox_stations.get_active_text()
+                    message += "STA_LIST %s\n" % station
                 if box.has_key("CHAN_LIST"):
                     message += "CHAN_LIST %s\n" % channel_string
                 if box.has_key("START_TIME") and (message_type == 'CALIBRATE_CONFIRM'):
@@ -786,10 +737,6 @@ class IMSGUI:
                     message += "TYPE RANDOM\n"
                 if box.has_key("CALIB_PARAM"):
                     duration = float(self.spinbutton_duration.get_value())
-                    hours = duration / 3600
-                    minutes = (duration % 3600) / 60
-                    seconds = duration % 60
-                    self.sample_duration.set_text("%02d:%02d:%02d" % (hours, minutes, seconds))
                     message += "CALIB_PARAM %.1f\n" % duration
                 message += "%s\n" % message_type
                 if box.has_key("IN_SPEC"):
@@ -799,8 +746,8 @@ class IMSGUI:
                         message += "IN_SPEC NO\n"
                 if box.has_key("CALIB") and len(calib_string):
                     message += "CALIB %s\n" % calib_string
-                if box.has_key("CALPER") and len(calper_string):
-                    message += "CALPER %s\n" % calper_string
+                if box.has_key("CALPER") and (len(self.entry_calper.get_text()) > 0):
+                    message += "CALPER %s\n" % self.entry_calper.get_text()
                 #if box.has_key("RESPONSE"):
                 #    message += "RESPONSE\n"
                 message += "STOP\n"
@@ -812,6 +759,7 @@ class IMSGUI:
 
     def _add_channel(self):
         channel_key = self.channel_counter.inc()
+        print "New channel key:", channel_key
         channel = {}
         channel['hbox'] = gtk.HBox()
         channel['checkbutton-channel'] = gtk.CheckButton()
@@ -824,7 +772,6 @@ class IMSGUI:
         for axis in self.axes:
             channel['combobox-axes'].append_text(axis)
         channel['entry-calib'] = gtk.Entry()
-        channel['entry-calper'] = gtk.Entry()
         channel['entry-refid'] = gtk.Entry()
 
         button_remove = gtk.Button(stock=None, use_underline=True)
@@ -835,7 +782,7 @@ class IMSGUI:
         button_remove.add(hbox_remove)
         hbox_remove.pack_start(image_remove, padding=1)
         hbox_remove.pack_start(label_remove, padding=1)
-        channel['button'] = button_remove
+        channel['button-remove'] = button_remove
 
         self.vbox_channels.pack_start(channel['hbox'], False, True,  0)
         channel['hbox'].pack_start(channel['checkbutton-channel'], False, False, 0)
@@ -843,33 +790,23 @@ class IMSGUI:
         channel['hbox'].pack_start(channel['combobox-class'], False, False, 0)
         channel['hbox'].pack_start(channel['combobox-axes'], False, False, 0)
         channel['hbox'].pack_start(channel['entry-calib'], False, False, 0)
-        channel['hbox'].pack_start(channel['entry-calper'], False, False, 0)
         channel['hbox'].pack_start(channel['entry-refid'], True, True, 0)
-        channel['hbox'].pack_start(channel['button'], False, False, 0)
+        channel['hbox'].pack_start(channel['button-remove'], False, False, 0)
 
         channel['checkbutton-channel'].set_active(False)
         channel['spinbutton'].set_sensitive(channel['checkbutton-channel'].get_active())
         channel['combobox-class'].set_active(1)
         channel['combobox-axes'].set_active(0)
+
         calib_identifier = str(channel_key)+":entry-calib"
         channel['entry-calib'].set_width_chars(8)
-        channel['entry-calib']._hint_text = "CALIB"
-        channel['entry-calib'].connect("changed", self.callback_calarg_changed, None, calib_identifier)
-        channel['entry-calib'].connect("focus-in-event", self.callback_calarg_focus_in, None)
-        channel['entry-calib'].connect("focus-out-event", self.callback_calarg_focus_out, None)
-        self.hint_text_show(channel['entry-calib'])
-
-        calper_identifier = str(channel_key)+":entry-calper"
-        channel['entry-calper'].set_width_chars(8)
-        channel['entry-calper']._hint_text = "CALPER"
-        channel['entry-calper'].connect("changed", self.callback_calarg_changed, None, calper_identifier)
-        channel['entry-calper'].connect("focus-in-event", self.callback_calarg_focus_in, None)
-        channel['entry-calper'].connect("focus-out-event", self.callback_calarg_focus_out, None)
-        self.hint_text_show(channel['entry-calper'])
+        channel['entry-calib'].set_editable(False)
+        channel['entry-calib'].connect("changed", self.callback_calib_changed, None, calib_identifier)
+        self.verify_entry_float(channel['entry-calib'])
 
         refid_identifier = str(channel_key)+":entry-refid"
         channel['entry-refid']._hint_text = "REF_ID"
-        channel['entry-refid'].connect("changed", self.callback_calarg_changed, None, refid_identifier)
+        channel['entry-refid'].connect("changed", self.callback_generate, None, refid_identifier)
         channel['entry-refid'].connect("focus-in-event", self.callback_calarg_focus_in, None)
         channel['entry-refid'].connect("focus-out-event", self.callback_calarg_focus_out, None)
         self.hint_text_show(channel['entry-refid'])
@@ -878,7 +815,7 @@ class IMSGUI:
         channel['spinbutton'].connect('value-changed', self.callback_location, None)
         channel['combobox-class'].connect('changed', self.callback_generate, None)
         channel['combobox-axes'].connect('changed', self.callback_generate, None)
-        channel['button'].connect('clicked', self.callback_delete_channel, None, channel_key)
+        channel['button-remove'].connect('clicked', self.callback_delete_channel, None, channel_key)
         channel['hbox'].show_all()
         channel['spinbutton'].set_text('00')
 
@@ -904,6 +841,12 @@ class IMSGUI:
             if self.box_keys[command_key].has_key(key):
                 for widget in self.boxes[key]:
                     widget.show_all()
+
+        for key,channel in self.channel_widgets.items():
+            if command_key == 'CALIBRATE_RESULT':
+                channel['entry-calib'].show()
+            else:
+                channel['entry-calib'].hide()
 
         self.update_buttons()
         #w,h = self.window.size_request()
@@ -933,7 +876,7 @@ class IMSGUI:
         import string
         message_type = self.combobox_command.get_active_text()
         ims_cmd = self.box_keys[message_type]['message-type']
-        station = ''.join(self.combobox_stations.get_active_text().split('_'))
+        station = self.combobox_stations.get_active_text().split('_')[1]
         recipients = ['calibration@ctbto.org']
         field_map = {
             'replyto' : 'gsnmaint@usgs.gov',

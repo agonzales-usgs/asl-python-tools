@@ -4,13 +4,15 @@ import threading
 from Class import Class
 
 class Thread(threading.Thread, Class):
-    def __init__(self, queue_max=-1, log_queue=None, name=None):
+    def __init__(self, queue_max=-1, log_queue=None, name=None, timeout=None, timeout_message="", timeout_data=None):
         if name is None:
             name = self.__class__.__name__
         threading.Thread.__init__(self, name=name)
         Class.__init__(self, log_queue)
         self.daemon = True
         self.running = False
+        self.timeout = timeout
+        self.timeout_data = timeout_data
         self.queue = Queue.Queue(queue_max)
         self.queue_halt = Queue.Queue()
 
@@ -31,7 +33,11 @@ class Thread(threading.Thread, Class):
         self._log('Thread Started', 'dbg')
         try:
             while self.running:
-                message, data = self.queue.get()
+                try:
+                    message,data = self.queue.get(block=True, timeout=self.timeout)
+                except Queue.EMPTY, e:
+                    message = self.timeout_message
+                    data = self.timeout_data
                 if message == 'HALT':
                     self.running = False
                 elif message == 'DONE':

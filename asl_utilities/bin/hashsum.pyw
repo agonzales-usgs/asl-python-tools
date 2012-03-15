@@ -178,7 +178,6 @@ class HashGui:
             self.entry_digest.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(65535, 65535, 65535))
             self.entry_digest2.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(65000, 15000, 15000))
 
-
 def main():
     app = HashGui()
     gtk.main()

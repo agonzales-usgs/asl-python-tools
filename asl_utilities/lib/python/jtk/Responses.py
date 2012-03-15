@@ -6,6 +6,9 @@ from jtk.Thread import Thread
 
 MAX_QUEUED_VALUES = 8192
 
+class GetRespException(Exception):
+    pass
+
 class CancelException(Exception):
     pass
 
@@ -16,9 +19,14 @@ class ResponsesThread(Thread):
         self.resp_list = resp_list
 
     def run(self):
-        for responses in self.resp_list:
-            responses.set_status_queue(self.status_queue)
-            responses.run()
+        try:
+            index = 0
+            for responses in self.resp_list:
+                index += 1
+                responses.set_status_queue(self.status_queue)
+                responses.run()
+        except GetRespException, e:
+            self.status_queue.put(("ERROR: %s" % str(e) (-1, -1, False)))
         self.status_queue.put(("DONE", (-1, -1, True)))
 
 class Responses(Thread): 
@@ -78,7 +86,7 @@ class Responses(Thread):
         try:
             resp_handle = urllib2.urlopen(self.resp_url)
         except urllib2.URLError, e:
-            raise GetRespException("Could not open response file URL")
+            raise GetRespException("Could not open response file URL: %s" % self.resp_url)
 
         self.check_halted()
         self.update_status("downloading %s" % self.resp_url)

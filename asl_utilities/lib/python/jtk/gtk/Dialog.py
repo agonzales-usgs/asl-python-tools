@@ -6,9 +6,11 @@ import gobject
 from GtkClass import GtkClass
 
 class Dialog(gtk.Window, GtkClass):
-    def __init__(self, title='Dialog', message=''):
+    def __init__(self, title='Dialog', message='', modal=False, exit_callback=None, exit_data=None):
         gtk.Window.__init__(self)
         GtkClass.__init__(self)
+
+        self.set_modal(modal)
 
         self.set_title(title)
         self.vbox_main = gtk.VBox()
@@ -24,6 +26,17 @@ class Dialog(gtk.Window, GtkClass):
         self.set_message(message)
 
         self._focus_widget = None
+        self._hidden_buttons = {}
+
+        exit_data = (exit_callback,exit_data,self,True)
+        self.connect("destroy-event", self.master_callback, exit_data)
+        self.connect("delete-event",  self.master_callback, exit_data)
+
+    def get_hidden_button(self, key):
+        button = None
+        if self._hidden_buttons.has_key(key):
+            self._hidden_buttons[key]
+        return button
 
     def set_message(self, message):
         if message == '':
@@ -33,19 +46,25 @@ class Dialog(gtk.Window, GtkClass):
             self.show_message = True
             self.label.set_label(message)
 
+    def add_button_hidden(self, key, callback=None, data=None, hide=True, focus=False):
+        self._add_button(key, callback, data, hide, focus, None, key)
+
     def add_button_left(self, label, callback=None, data=None, hide=True, focus=False):
         self._add_button(label, callback, data, hide, focus, True)
 
     def add_button_right(self, label, callback=None, data=None, hide=True, focus=False):
         self._add_button(label, callback, data, hide, focus, False)
 
-    def _add_button(self, label, callback, data, hide, focus, left):
+    def _add_button(self, label, callback, data, hide, focus, left, key=None):
         button = gtk.Button(label)
         self._connect(button, 'clicked', self.master_callback, None, (callback,data,self,hide))
-        if left:
-            self.hbox_buttons.pack_start(button, False, False, 2)
-        else:
-            self.hbox_buttons.pack_end(button, False, False, 2)
+        if key:
+            self._hidden_buttons[key] = button
+        if left is not None:
+            if left == True:
+                self.hbox_buttons.pack_start(button, False, False, 2)
+            else:
+                self.hbox_buttons.pack_end(button, False, False, 2)
         if focus:
             self._focus_widget = button
 

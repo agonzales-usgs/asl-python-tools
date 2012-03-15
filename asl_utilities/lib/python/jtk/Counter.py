@@ -15,6 +15,11 @@ class Counter(object):
     def set_value(self, value):
         self._count = value
 
+    def get_value(self):
+        return self._count
+    def value(self):
+        return self._count
+
     def set_step(self, step):
         self._step = step
     def set_stride(self, stride):
