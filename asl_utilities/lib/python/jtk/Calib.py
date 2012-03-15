@@ -1,14 +1,16 @@
 import math
+import pprint
 
 class Calib:
-    def __init__(self, responses, correct_calib=False):
+    def __init__(self, responses):
         self.responses = responses
         self.resp_map = responses.resp_map
-        self.results = None
-        self.correct_calib = correct_calib
+        self.calper = None
+        self.calib = None
 
   # returns tuple of (CALPER,CALIB)
-    def calculate_calib(self, calper):
+    def calculate_calib(self, calper, correct_calib=False):
+        self.calper = calper
 
       # evaluate at this frequency
         frequency = 1.0/calper
@@ -41,7 +43,7 @@ class Calib:
         poles = zip(*poles_parts)
 
         amplitude = 1.0
-        if self.correct_calib:
+        if correct_calib:
             c_numerator = complex(a0, 0.0) # represents a complex number
             for zero in zeros:
                 # Zr (real from this zero in RESP)
@@ -67,4 +69,7 @@ class Calib:
         sensor_gain = period_gain / (2*math.pi*frequency) # volts/meter
         
         calib_meters = 1.0 / (sensor_gain * digitizer_gain)
-        self.results = (calper,calib_meters * (10 ** 9)) # nanometers/counts
+        self.calib = calib_meters * (10 ** 9) # nanometers/counts
+
+        return (self.calper, self.calib)
+

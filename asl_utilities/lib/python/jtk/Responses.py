@@ -1,3 +1,4 @@
+import string
 import threading
 import urllib2
 
@@ -9,15 +10,19 @@ class CancelException(Exception):
     pass
 
 class ResponsesThread(Thread):
-    def __init__(self, status_queue, responses_list):
+    def __init__(self, status_queue, resp_list):
         Thread.__init__(self, MAX_QUEUED_VALUES)
+        self.status_queue = status_queue
+        self.resp_list = resp_list
 
     def run(self):
-        for responses in responses_list:
-
+        for responses in self.resp_list:
+            responses.set_status_queue(self.status_queue)
+            responses.run()
+        self.status_queue.put(("DONE", (-1, -1, True)))
 
 class Responses(Thread): 
-    def __init__(self, network, station, location, channel, calper, status_queue=None):
+    def __init__(self, network, station, location, channel, status_queue=None):
         Thread.__init__(self, MAX_QUEUED_VALUES)
         self.network = network
         self.station = station
@@ -32,7 +37,13 @@ class Responses(Thread):
         self.resp_map  = {}
         self.resp_map_ready = False
 
-        self.status_queue = status_queue
+        self.set_status_queue(status_queue)
+
+    def get_channel_key(self):
+        return "%s-%s-%s-%s" % (self.network, self.station, self.location, self.channel)
+
+    def set_status_queue(self, queue):
+        self.status_queue = queue
 
     def check_halted(self):
         if not self.running:
@@ -40,7 +51,7 @@ class Responses(Thread):
 
     def update_status(self, state, count=-1, total=-1, done=False): 
         if self.status_queue is not None:
-            self.status_queue.put((state, count, total, done))
+            self.status_queue.put((state, (count, total, done)))
 
   # prevent actual thread from running
   # (we want all the functionality)
@@ -52,12 +63,10 @@ class Responses(Thread):
         try:
             self.get_resp()
             self.parse_resp()
-            self.eval_resp()
         except CancelException, e:
             print "Cancelled"
             pass
         self.queue_halt.put("DONE")
-        self.update_status(self, "DONE", done=True)
 
     def get_resp(self):
         self.check_halted()
