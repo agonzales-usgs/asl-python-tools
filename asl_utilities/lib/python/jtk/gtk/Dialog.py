@@ -14,6 +14,7 @@ class Dialog(gtk.Window, GtkClass):
 
         self.set_title(title)
         self.vbox_main = gtk.VBox()
+        self.vbox_top = gtk.VBox()
         self.vbox = gtk.VBox()
         self.label = gtk.Label()
         self.hbox_buttons = gtk.HBox()

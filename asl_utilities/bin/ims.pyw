@@ -51,7 +51,7 @@ class ProgressThread(Thread):
 
 class ProgressDialog(Dialog):
     def __init__(self, parent, callback, callback_data=None):
-        Dialog.__init__(self, "Acquiring Reponse Data", modal=False, exit_callback=self.callback_exit, exit_data=callback_data)
+        Dialog.__init__(self, "Acquiring Reponse Data", modal=True, exit_callback=self.callback_exit, exit_data=callback_data)
         self.queue = Queue.Queue(1024)
         self.mode = "PULSE"
         self.status_counter = Counter()
@@ -66,7 +66,7 @@ class ProgressDialog(Dialog):
         self.add_button_hidden("done", self.callback_done)
 
         self.status_bar = gtk.Statusbar()
-        self.vbox.pack_start(self.status_bar, False, True, 2)
+        self.vbox_main.pack_end(self.status_bar, False, True, 2)
 
         self.result = "UNKNOWN"
 
@@ -156,6 +156,7 @@ class IMSGUI:
         self._calibs_up_to_date = False
 
         self._responses = {}
+        self._correct = False
 
         self.commands = [
             'CALIBRATE_START',
@@ -285,10 +286,18 @@ class IMSGUI:
         self.hbox_generate_calibs   = gtk.HBox()
         self.image_generate_calibs  = gtk.Image()
         self.image_generate_calibs.set_from_stock(gtk.STOCK_CONVERT, gtk.ICON_SIZE_MENU)
-        self.label_generate_calibs  = gtk.Label('Generate Calibs')
+        self.label_generate_calibs  = gtk.Label('Derived Calibs')
         self.button_generate_calibs.add(self.hbox_generate_calibs)
         self.hbox_generate_calibs.pack_start(self.image_generate_calibs, padding=1)
         self.hbox_generate_calibs.pack_start(self.label_generate_calibs, padding=1)
+        self.button_corrected_calibs = gtk.Button(stock=None, use_underline=True)
+        self.hbox_corrected_calibs   = gtk.HBox()
+        self.image_corrected_calibs  = gtk.Image()
+        self.image_corrected_calibs.set_from_stock(gtk.STOCK_CONVERT, gtk.ICON_SIZE_MENU)
+        self.label_corrected_calibs  = gtk.Label('Corrected Calibs')
+        self.button_corrected_calibs.add(self.hbox_corrected_calibs)
+        self.hbox_corrected_calibs.pack_start(self.image_corrected_calibs, padding=1)
+        self.hbox_corrected_calibs.pack_start(self.label_corrected_calibs, padding=1)
 
         self.label_duration = gtk.Label("Duration:")
         self.sample_duration = gtk.Entry()
@@ -341,7 +350,7 @@ class IMSGUI:
 
         self.vbox_top.pack_start(self.table_parts, False, True, 0)
         self.vbox_top.pack_start(self.vbox_channels, False, True, 0)
-        self.vbox_bottom.pack_start(self.hbox_display, True,  True, 0)
+        self.vbox_bottom.pack_start(self.hbox_display, True,  True, 2)
         self.vbox_bottom.pack_start(self.hbox_control, False, True, 0)
 
         self.table_parts.attach(LEFT(self.label_command),       0, 1, 0, 1, gtk.FILL, 0, 1, 1)
@@ -379,7 +388,8 @@ class IMSGUI:
 
         self.boxes['CALPER'] = [self.label_calper, self.hbox_calper]
         self.hbox_calper.pack_start(self.entry_calper, False, False, 0)
-        self.hbox_calper.pack_start(self.button_generate_calibs, False, False, 0)
+        self.hbox_calper.pack_start(self.button_generate_calibs, False, False, 2)
+        self.hbox_calper.pack_start(self.button_corrected_calibs, False, False, 2)
         self.table_parts.attach(LEFT(self.label_calper), 0, 1, 7, 8, gtk.FILL, 0, 1, 1)
         self.table_parts.attach(LEFT(self.hbox_calper),  1, 4, 7, 8, gtk.FILL, 0, 1, 1)
 
@@ -446,6 +456,7 @@ class IMSGUI:
         self.checkbutton_spec.connect(   "toggled", self.callback_generate,     None)
         self.spinbutton_duration.connect("value-changed", self.callback_duration_changed, None)
         self.button_generate_calibs.connect("clicked", self.callback_generate_calibs, None)
+        self.button_corrected_calibs.connect("clicked", self.callback_corrected_calibs, None)
 
         self.button_copy.connect("clicked", self.callback_copy, None)
         self.button_send_email.connect("clicked", self.callback_email, None)
@@ -519,9 +530,18 @@ class IMSGUI:
     def callback_quit(self, widget, event, data=None):
         self.close_application(widget, event, data)
 
-    def callback_location(self, widget, event, data=None):
+    def callback_location_changed(self, widget, event, data=None):
+        self.flush_calib(data)
         if widget.get_value() < 10:
             widget.set_text("%02d" % widget.get_value())
+        self.callback_generate(widget, event, data)
+
+    def callback_class_changed(self, widget, event, data=None):
+        self.flush_calib(data)
+        self.callback_generate(widget, event, data)
+
+    def callback_axes_changed(self, widget, event, data=None):
+        self.flush_calib(data)
         self.callback_generate(widget, event, data)
 
     def callback_command(self, widget, event, data=None):
@@ -536,27 +556,33 @@ class IMSGUI:
 
     def callback_calper_changed(self, widget, event, data=None):
         self.verify_entry_float(widget)
-        command_key = self.combobox_command.get_active_text()
-        for key,channel in self.channel_widgets.items():
-            if command_key != 'CALIBRATION_RESULT':
-                channel['entry-calib'].set_text("")
+        self.button_generate_calibs.set_sensitive(widget._valid)
+        self.button_corrected_calibs.set_sensitive(widget._valid)
+        self.flush_calibs()
         self.generate()
 
     def callback_calib_changed(self, widget, event, data=None):
         self.verify_entry_float(widget)
 
     def callback_generate_calibs(self, widget, event, data=None):
+        self.generate_calibs(False)
+
+    def callback_corrected_calibs(self, widget, event, data=None):
+        self.generate_calibs(True)
+
+    def generate_calibs(self, correct):
         if not self.entry_calper._valid:
             return
         self.button_add_channel.set_sensitive(0)
+        self._correct = correct
 
         resp_list = []
         station_map = {}
         network,station = self.combobox_stations.get_active_text().split('_', 1)
-        for key,channel in self.channel_widgets.items():
-            location = "%02d" % int(channel['spinbutton'].get_value())
-            channel = channel['combobox-class'].get_active_text() + \
-                      channel['combobox-axes'].get_active_text()
+        for key,chan in self.channel_widgets.items():
+            location = "%02d" % int(chan['spinbutton'].get_value())
+            channel = chan['combobox-class'].get_active_text() + \
+                      chan['combobox-axes'].get_active_text()
             key = "%s-%s-%s-%s" % (network,station,location,channel)
             if not self._responses.has_key(key):
                 self._responses[key] = Responses(network, station, location, channel)
@@ -570,36 +596,39 @@ class IMSGUI:
 
         response = dialog.run()
         _,h = dialog.get_size()
-        dialog.resize(450,h)
+        dialog.resize(600,h)
 
         self.progress_thread.start()
         self.responses_thread.start()
 
-    def callback_responses_complete(self, dialog):
+        self.button_add_channel.set_sensitive(1)
+
+    def callback_responses_complete(self, dialog, data=None):
+        self.button_add_channel.set_sensitive(0)
+
         result = dialog.result
         if result in ("CANCELLED", "EXITED"):
             self.responses_thread.halt_now(join=True)
             self.progress_thread.halt_now(join=True)
         if result == "COMPLETED":
             calper = float(self.entry_calper.get_text())
-            correct = False
             network,station = self.combobox_stations.get_active_text().split('_', 1)
-            for key,channel in self.channel_widgets.items():
-                location = channel['spinbutton'].get_value()
-                channel = channel['combobox-class'].get_active_text() + \
-                          channel['combobox-axes'].get_active_text()
+            for key,chan in self.channel_widgets.items():
+                location = "%02d" % int(chan['spinbutton'].get_value())
+                channel = chan['combobox-class'].get_active_text() + \
+                          chan['combobox-axes'].get_active_text()
                 key = "%s-%s-%s-%s" % (network,station,location,channel)
                 if self._responses.has_key(key):
-                    calib = Calib(self._response[key])
-                    calib.calculate_calib(calper, correct)
-                    channel['entry-calib'].set_text(str(calib.calib))
+                    calib = Calib(self._responses[key])
+                    calib.calculate_calib(calper, self._correct)
+                    chan['entry-calib'].set_text(str(calib.calib))
 
+        self.generate()
         self.button_add_channel.set_sensitive(1)
 
 
     def callback_generate(self, widget, event, data=None):
         self.generate()
-        #self.update_interface()
 
     def callback_time_changed(self, widget, event, data=None):
         time_string = self.entry_start_time.get_text() + " UTC"
@@ -777,7 +806,7 @@ class IMSGUI:
         hbox_remove.pack_start(label_remove, padding=1)
         channel['button-remove'] = button_remove
 
-        self.vbox_channels.pack_start(channel['hbox'], False, True,  0)
+        self.vbox_channels.pack_start(channel['hbox'], False, True, 1)
         channel['hbox'].pack_start(channel['checkbutton-channel'], False, False, 0)
         channel['hbox'].pack_start(channel['spinbutton'], False, False, 0)
         channel['hbox'].pack_start(channel['combobox-class'], False, False, 0)
@@ -791,7 +820,7 @@ class IMSGUI:
         channel['combobox-axes'].set_active(0)
 
         calib_identifier = str(channel_key)+":entry-calib"
-        channel['entry-calib'].set_width_chars(8)
+        channel['entry-calib'].set_width_chars(15)
         channel['entry-calib'].set_editable(False)
         channel['entry-calib'].connect("changed", self.callback_calib_changed, None, calib_identifier)
         self.verify_entry_float(channel['entry-calib'])
@@ -804,10 +833,10 @@ class IMSGUI:
         self.hint_text_show(channel['entry-refid'])
 
         channel['checkbutton-channel'].connect('toggled', self.callback_channel_toggle, None, channel_key)
-        channel['spinbutton'].connect('value-changed', self.callback_location, None)
-        channel['spinbutton'].connect("focus-out-event", self.callback_location, None)
-        channel['combobox-class'].connect('changed', self.callback_generate, None)
-        channel['combobox-axes'].connect('changed', self.callback_generate, None)
+        channel['spinbutton'].connect('value-changed', self.callback_location_changed, None, channel_key)
+        channel['spinbutton'].connect("focus-out-event", self.callback_location_changed, None, channel_key)
+        channel['combobox-class'].connect('changed', self.callback_class_changed, None, channel_key)
+        channel['combobox-axes'].connect('changed', self.callback_axes_changed, None, channel_key)
         channel['button-remove'].connect('clicked', self.callback_delete_channel, None, channel_key)
         channel['hbox'].show_all()
         channel['spinbutton'].set_text('00')
@@ -823,6 +852,14 @@ class IMSGUI:
             del self.channel_widgets[key][k]
         del self.channel_widgets[key]
         self.update_interface()
+
+    def flush_calib(self, channel_key):
+        if self.combobox_command.get_active_text() != "CALIBRATION_RESULT":
+            self.channel_widgets[channel_key]['entry-calib'].set_text("")
+
+    def flush_calibs(self):
+        for key in self.channel_widgets.keys():
+            self.flush_calib(key)
 
     def update_interface(self):
         for key in self.box_keys['ALL']:
