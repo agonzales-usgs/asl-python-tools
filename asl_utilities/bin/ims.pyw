@@ -495,10 +495,13 @@ class IMSGUI:
         position = '%d,%d' % self.window.get_position()
         size     = '%d,%d' % self.window.get_size()
         state    = 'NORMAL'
-        if self.window.get_state() & gtk.gdk.WINDOW_STATE_FULLSCREEN:
-            state = 'FULLSCREEN'
-        elif self.window.get_state() & gtk.gdk.WINDOW_STATE_MAXIMIZED:
-            state = 'MAXIMIZED'
+        try:
+            if self.window.get_state() & gtk.gdk.WINDOW_STATE_FULLSCREEN:
+                state = 'FULLSCREEN'
+            elif self.window.get_state() & gtk.gdk.WINDOW_STATE_MAXIMIZED:
+                state = 'MAXIMIZED'
+        except:
+            pass
         self._prefs['window-gravity'] = gravity
         self._prefs['window-position'] = position
         self._prefs['window-size'] = size
