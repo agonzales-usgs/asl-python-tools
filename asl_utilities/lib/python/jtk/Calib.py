@@ -1,5 +1,4 @@
 import math
-import pprint
 
 class Calib:
     def __init__(self, responses):
