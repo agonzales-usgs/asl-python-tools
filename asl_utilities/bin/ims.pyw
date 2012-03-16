@@ -39,18 +39,19 @@ class ProgressThread(Thread):
         self.dialog = dialog
 
     def _run(self, status, data):
-        print "in ProgressThread._run()"
-        print "  status:", status
-        print "    data:", data
-        count,total,done = data
+        count = -1
+        total = -1
+        done = False
+        if data is not None:
+            count,total,done = data
         self.dialog.update_progress(status, count, total)
 
     def _post(self):
         self.dialog.work_done()
 
 class ProgressDialog(Dialog):
-    def __init__(self, parent, callback):
-        Dialog.__init__(self, "Acquiring Reponse Data", modal=True, exit_callback=self.callback_exit)
+    def __init__(self, parent, callback, callback_data=None):
+        Dialog.__init__(self, "Acquiring Reponse Data", modal=False, exit_callback=self.callback_exit, exit_data=callback_data)
         self.queue = Queue.Queue(1024)
         self.mode = "PULSE"
         self.status_counter = Counter()
@@ -66,19 +67,15 @@ class ProgressDialog(Dialog):
 
         self.status_bar = gtk.Statusbar()
         self.vbox.pack_start(self.status_bar, False, True, 2)
-        self.status_bar.show()
 
         self.result = "UNKNOWN"
 
     def work_done(self):
-        gobject.idle_add(gobject.GObject.emit, self.get_hidden_button('done'), 'clicked')
+        gobject.idle_add(gobject.GObject.emit, self._hidden_buttons['done'], 'clicked')
 
     def update_progress(self, message, count, total):
-        print "putting data into queue"
-        self.queue.put((status, count, total))
-        print "setting up callback"
-        gobject.idle_add(gobject.GObject.emit, self.get_hidden_button('update'), 'clicked')
-        print "done"
+        self.queue.put_nowait((message, count, total))
+        gobject.idle_add(gobject.GObject.emit, self._hidden_buttons['update'], 'clicked')
 
     def callback(self):
         self._callback(self)
@@ -91,7 +88,8 @@ class ProgressDialog(Dialog):
         self.update_progress_bar()
 
     def callback_cancel(self, widget, event, data=None):
-        print "Cancel clicked!"
+        if self.result == "CANCELLED":
+            return
         self.result = "CANCELLED"
         self.callback()
 
@@ -113,6 +111,7 @@ class ProgressDialog(Dialog):
                 self.mode = "PULSE"
                 fraction = 0.0
                 percent = 0.0
+                show_percent = False
 
                 progress = ""
                 if count > -1:
@@ -120,6 +119,7 @@ class ProgressDialog(Dialog):
                         fraction = float(count) / float(total)
                         percent = fraction * 100.0
                         progress = "%d/%d (%0.1f%%)" % (count, total, percent)
+                        show_percent = True
                     else:
                         progress = "%d" % count
                 else:
@@ -127,14 +127,13 @@ class ProgressDialog(Dialog):
 
                 self.status_bar.pop(self.status_counter.value())
                 self.status_bar.push(self.status_counter.inc(), status)
-                self.progress_calib.set_text(progress)
+                self.progress_bar.set_text(progress)
                 if show_percent:
-                    self.progress_calib.set_fraction(fraction)
+                    self.progress_bar.set_fraction(fraction)
                     self.mode = "FRACTION"
                 else:
-                    self.progress_calib.set_pulse_step(0.5)
+                    self.progress_bar.set_pulse_step(0.5)
                     self.mode = "PULSE"
-                self.show_calibs_progress()
 #/*}}}*/
 
 # === IMSGUI Class /*{{{*/
@@ -404,7 +403,7 @@ class IMSGUI:
 # ===== Widget Configurations ======================================
         for t in self.commands:
             self.combobox_command.append_text(t)
-        self.combobox_command.set_active(1)
+        self.combobox_command.set_active(2)
         self.entry_email.set_text('gsnmaint@usgs.gov')
         self.entry_start_time.set_text(time.strftime("%Y/%m/%d 15:00:00", time.gmtime()))
         for t in self.stations:
@@ -510,12 +509,12 @@ class IMSGUI:
     def callback_add_channel(self, widget, event, data=None):
         self._add_channel()
         self.generate()
-        self.update_interface
+        #self.update_interface()
 
     def callback_delete_channel(self, widget, event, data=None):
         self._del_channel(data)
         self.generate()
-        self.update_interface
+        #self.update_interface()
                 
     def callback_quit(self, widget, event, data=None):
         self.close_application(widget, event, data)
@@ -552,6 +551,7 @@ class IMSGUI:
         self.button_add_channel.set_sensitive(0)
 
         resp_list = []
+        station_map = {}
         network,station = self.combobox_stations.get_active_text().split('_', 1)
         for key,channel in self.channel_widgets.items():
             location = "%02d" % int(channel['spinbutton'].get_value())
@@ -560,26 +560,30 @@ class IMSGUI:
             key = "%s-%s-%s-%s" % (network,station,location,channel)
             if not self._responses.has_key(key):
                 self._responses[key] = Responses(network, station, location, channel)
+            if not station_map.has_key(key):
                 resp_list.append(self._responses[key])
+                station_map[key] = None
         
-        dialog = ProgressDialog(self.window, self.callback_responses_complete)
+        dialog = ProgressDialog(self.window, self.callback_responses_complete, station_map.keys())
         self.progress_thread = ProgressThread(dialog)
         self.responses_thread = ResponsesThread(self.progress_thread.queue, resp_list)
 
-        self.progress_thread.start()
-        self.responses_thread.start()
+        response = dialog.run()
         _,h = dialog.get_size()
         dialog.resize(450,h)
-        response = dialog.run()
+
+        self.progress_thread.start()
+        self.responses_thread.start()
 
     def callback_responses_complete(self, dialog):
         result = dialog.result
         if result in ("CANCELLED", "EXITED"):
-            self.responses_thread.halt_now()
-            self.progress_thread.halt_now()
+            self.responses_thread.halt_now(join=True)
+            self.progress_thread.halt_now(join=True)
         if result == "COMPLETED":
             calper = float(self.entry_calper.get_text())
             correct = False
+            network,station = self.combobox_stations.get_active_text().split('_', 1)
             for key,channel in self.channel_widgets.items():
                 location = channel['spinbutton'].get_value()
                 channel = channel['combobox-class'].get_active_text() + \
@@ -591,11 +595,11 @@ class IMSGUI:
                     channel['entry-calib'].set_text(str(calib.calib))
 
         self.button_add_channel.set_sensitive(1)
-        
+
 
     def callback_generate(self, widget, event, data=None):
         self.generate()
-        self.update_interface
+        #self.update_interface()
 
     def callback_time_changed(self, widget, event, data=None):
         time_string = self.entry_start_time.get_text() + " UTC"
@@ -615,7 +619,6 @@ class IMSGUI:
     def callback_channel_toggle(self, widget, event, data=None):
         if data:
             channel = self.channel_widgets[data]
-            channel['spinbutton'].set_sensitive(channel['checkbutton-channel'].get_active())
         self.generate()
         self.update_interface()
 
@@ -628,15 +631,6 @@ class IMSGUI:
         self.time_window.set_date(date)
         self.generate()
         self.update_interface()
-
-    def callback_calarg_changed(self, widget, event, data=None):
-        #text = widget.get_text()
-        #if data is not None:
-        #    chan_key,entry = data.split(':', 1)
-        #    channel = self.channel_widgets[int(chan_key)]
-        #    if text == widget._hint_text:
-        #        text = ''
-        self.generate()
 
     def callback_calarg_focus_out(self, widget, event, data=None):
         self.hint_text_show(widget)
@@ -759,7 +753,6 @@ class IMSGUI:
 
     def _add_channel(self):
         channel_key = self.channel_counter.inc()
-        print "New channel key:", channel_key
         channel = {}
         channel['hbox'] = gtk.HBox()
         channel['checkbutton-channel'] = gtk.CheckButton()
@@ -794,7 +787,6 @@ class IMSGUI:
         channel['hbox'].pack_start(channel['button-remove'], False, False, 0)
 
         channel['checkbutton-channel'].set_active(False)
-        channel['spinbutton'].set_sensitive(channel['checkbutton-channel'].get_active())
         channel['combobox-class'].set_active(1)
         channel['combobox-axes'].set_active(0)
 
@@ -813,6 +805,7 @@ class IMSGUI:
 
         channel['checkbutton-channel'].connect('toggled', self.callback_channel_toggle, None, channel_key)
         channel['spinbutton'].connect('value-changed', self.callback_location, None)
+        channel['spinbutton'].connect("focus-out-event", self.callback_location, None)
         channel['combobox-class'].connect('changed', self.callback_generate, None)
         channel['combobox-axes'].connect('changed', self.callback_generate, None)
         channel['button-remove'].connect('clicked', self.callback_delete_channel, None, channel_key)

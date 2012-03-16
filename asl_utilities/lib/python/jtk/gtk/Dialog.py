@@ -28,9 +28,9 @@ class Dialog(gtk.Window, GtkClass):
         self._focus_widget = None
         self._hidden_buttons = {}
 
-        exit_data = (exit_callback,exit_data,self,True)
-        self.connect("destroy-event", self.master_callback, exit_data)
-        self.connect("delete-event",  self.master_callback, exit_data)
+        master_callback_data = (exit_callback,exit_data,self,True)
+        self.connect("destroy-event", self.master_callback, master_callback_data)
+        self.connect("delete-event",  self.master_callback, master_callback_data)
 
     def get_hidden_button(self, key):
         button = None

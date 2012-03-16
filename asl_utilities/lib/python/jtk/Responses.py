@@ -26,7 +26,7 @@ class ResponsesThread(Thread):
                 responses.set_status_queue(self.status_queue)
                 responses.run()
         except GetRespException, e:
-            self.status_queue.put(("ERROR: %s" % str(e) (-1, -1, False)))
+            self.status_queue.put(("ERROR: %s" % str(e), (-1, -1, False)))
         self.status_queue.put(("DONE", (-1, -1, True)))
 
 class Responses(Thread): 
@@ -74,7 +74,6 @@ class Responses(Thread):
         except CancelException, e:
             print "Cancelled"
             pass
-        self.queue_halt.put("DONE")
 
     def get_resp(self):
         self.check_halted()
@@ -82,18 +81,23 @@ class Responses(Thread):
         if self.resp_data_ready:
             return
 
+        print "Full path to RESP file:", self.resp_url
+        print "Connecting...",
         self.update_status("connecting to %s" % self.resp_server)
         try:
             resp_handle = urllib2.urlopen(self.resp_url)
         except urllib2.URLError, e:
             raise GetRespException("Could not open response file URL: %s" % self.resp_url)
+        print "Connected."
 
+        print "Downloading..."
         self.check_halted()
         self.update_status("downloading %s" % self.resp_url)
         try:
             self.resp_data = resp_handle.readlines()
         except urllib2.URLError, e:
             raise GetRespException("Error downloading response file")
+        print "Complete."
 
         self.resp_data_ready = True
         self.check_halted()

@@ -12,20 +12,23 @@ class Thread(threading.Thread, Class):
         self.daemon = True
         self.running = False
         self.timeout = timeout
+        self.timeout_message = timeout_message
         self.timeout_data = timeout_data
         self.queue = Queue.Queue(queue_max)
-        self.queue_halt = Queue.Queue()
 
-    def halt_now(self, wait=True):
-        self.running = False # Forces thread to halt on the next iteration
-        self.queue.put(('HALT', None)) # Forces the next iteration if there is no waiting data
-        if wait:
-            self.queue_halt.get()
+  # Forces the thread to halt immediately
+    def halt_now(self, join=True):
+        self.running = False
+        self.halt(join)
 
-    def halt(self, wait=True):
-        self.queue.put(('HALT', None)) # Asks the process to halt, but only once this request is reached
-        if wait:
-            self.queue_halt.get()
+  # Asks the process to halt, but only once this request is reached
+    def halt(self, join=True):
+        self.queue.put(('HALT', None))
+        if join:
+            try:
+                self.join()
+            except RuntimeError:
+                pass # handle the situation where halt() is called by this thread
 
     def run(self):
         self._pre()
@@ -35,7 +38,7 @@ class Thread(threading.Thread, Class):
             while self.running:
                 try:
                     message,data = self.queue.get(block=True, timeout=self.timeout)
-                except Queue.EMPTY, e:
+                except Queue.Empty, e:
                     message = self.timeout_message
                     data = self.timeout_data
                 if message == 'HALT':
@@ -48,7 +51,7 @@ class Thread(threading.Thread, Class):
             pass
         except Exception, e:
             self._log("run() Exception: %s" % str(e), 'err')
-        self.queue_halt.put('DONE')
+            #raise #XXX: Un-comment to debug threading issues
         self._post()
 
     def _pre(self):
