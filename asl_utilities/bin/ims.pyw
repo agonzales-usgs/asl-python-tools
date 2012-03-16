@@ -532,6 +532,9 @@ class IMSGUI:
 
     def callback_location_changed(self, widget, event, data=None):
         self.flush_calib(data)
+        self.callback_location_update(widget, event, data)
+
+    def callback_location_update(self, widget, event, data=None):
         if widget.get_value() < 10:
             widget.set_text("%02d" % widget.get_value())
         self.callback_generate(widget, event, data)
@@ -543,6 +546,10 @@ class IMSGUI:
     def callback_axes_changed(self, widget, event, data=None):
         self.flush_calib(data)
         self.callback_generate(widget, event, data)
+
+    def callback_refid_changed(self, widget, event, data=None):
+        self.verify_entry_populated(widget)
+        self.generate()
 
     def callback_command(self, widget, event, data=None):
         self.update_interface()
@@ -692,14 +699,29 @@ class IMSGUI:
         keys_only = map(lambda p: p[1], ordered)
         return keys_only
 
+    def entry_populated(self, widget):
+        value = widget.get_text()
+        if value == "":
+            raise ValueError()
+        if value == widget._hint_text:
+            raise ValueError()
+        return value
+
+    def verify_entry_populated(self, widget):
+        self.verify_entry(widget, self.entry_populated, widget)
+
     def verify_entry_float(self, widget):
+        self.verify_entry(widget, float, widget.get_text())
+
+    def verify_entry(self, widget, method, *args):
         try:
-            float(widget.get_text())
-            widget.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(15000, 55000, 15000)) #Green
+            method(*args)
+            widget.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(45000, 65000, 45000)) #Green
             widget._valid = True
         except:
-            widget.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(55000, 15000, 15000)) #Red
+            widget.modify_base(gtk.STATE_NORMAL, gtk.gdk.Color(65000, 45000, 45000)) #Red
             widget._valid = False
+
 
     def generate(self):
         self.textbuffer_display.set_text("")
@@ -712,6 +734,8 @@ class IMSGUI:
                 return
             for key,channel in self.channel_widgets.items():
                 if not channel['entry-calib']._valid:
+                    return
+                if not channel['entry-refid']._valid:
                     return
 
       # === Prepare channel list
@@ -827,14 +851,15 @@ class IMSGUI:
 
         refid_identifier = str(channel_key)+":entry-refid"
         channel['entry-refid']._hint_text = "REF_ID"
-        channel['entry-refid'].connect("changed", self.callback_generate, None, refid_identifier)
+        channel['entry-refid'].connect("changed", self.callback_refid_changed, None, refid_identifier)
         channel['entry-refid'].connect("focus-in-event", self.callback_calarg_focus_in, None)
         channel['entry-refid'].connect("focus-out-event", self.callback_calarg_focus_out, None)
         self.hint_text_show(channel['entry-refid'])
+        self.verify_entry_populated(channel['entry-refid'])
 
         channel['checkbutton-channel'].connect('toggled', self.callback_channel_toggle, None, channel_key)
         channel['spinbutton'].connect('value-changed', self.callback_location_changed, None, channel_key)
-        channel['spinbutton'].connect("focus-out-event", self.callback_location_changed, None, channel_key)
+        channel['spinbutton'].connect('changed', self.callback_location_update, None)
         channel['combobox-class'].connect('changed', self.callback_class_changed, None, channel_key)
         channel['combobox-axes'].connect('changed', self.callback_axes_changed, None, channel_key)
         channel['button-remove'].connect('clicked', self.callback_delete_channel, None, channel_key)
@@ -855,22 +880,22 @@ class IMSGUI:
 
     def flush_calib(self, channel_key):
         if self.combobox_command.get_active_text() != "CALIBRATION_RESULT":
-            self.channel_widgets[channel_key]['entry-calib'].set_text("")
+            if self.channel_widgets.has_key(channel_key):
+                self.channel_widgets[channel_key]['entry-calib'].set_text("")
 
     def flush_calibs(self):
         for key in self.channel_widgets.keys():
             self.flush_calib(key)
 
     def update_interface(self):
-        for key in self.box_keys['ALL']:
-            for widget in self.boxes[key]:
-                widget.hide_all()
-
         command_key = self.combobox_command.get_active_text()
         for key in self.box_keys['ALL'].keys():
             if self.box_keys[command_key].has_key(key):
                 for widget in self.boxes[key]:
                     widget.show_all()
+            else:
+                for widget in self.boxes[key]:
+                    widget.hide_all()
 
         for key,channel in self.channel_widgets.items():
             if command_key == 'CALIBRATE_RESULT':
@@ -879,8 +904,6 @@ class IMSGUI:
                 channel['entry-calib'].hide()
 
         self.update_buttons()
-        #w,h = self.window.size_request()
-        #self.window.resize(w,h)
         self.window.resize_children()
 
     def update_buttons(self):
