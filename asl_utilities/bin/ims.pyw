@@ -752,6 +752,10 @@ class IMSGUI:
                     location_text = "%02d-" % int(channel['spinbutton'].get_value())
                 class_text = channel['combobox-class'].get_active_text()
                 axis_text = channel['combobox-axes'].get_active_text()
+                if axis_text == '1':
+                    axis_text = 'N'
+                elif axis_text == '2':
+                    axis_text = 'E'
                 channel_string = "%s%s%s" % (location_text, class_text, axis_text)
                 calib_string = channel['entry-calib'].get_text()
                 refid_string = channel['entry-refid'].get_text()
@@ -882,9 +886,8 @@ class IMSGUI:
         self.update_interface()
 
     def flush_calib(self, channel_key):
-        if self.combobox_command.get_active_text() != "CALIBRATE_RESULT":
-            if self.channel_widgets.has_key(channel_key):
-                self.channel_widgets[channel_key]['entry-calib'].set_text("")
+        if self.channel_widgets.has_key(channel_key):
+            self.channel_widgets[channel_key]['entry-calib'].set_text("")
 
     def flush_calibs(self):
         for key in self.channel_widgets.keys():
