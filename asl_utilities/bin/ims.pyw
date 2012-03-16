@@ -729,10 +729,10 @@ class IMSGUI:
     def generate(self):
         self.textbuffer_display.set_text("")
 
-        message_type = self.combobox_command.get_active_text()
-        box = self.box_keys[message_type]
+        command = self.combobox_command.get_active_text()
+        box = self.box_keys[command]
 
-        if message_type == 'CALIBRATE_RESULT':
+        if command == 'CALIBRATE_RESULT':
             if not self.entry_calper._valid:
                 return
             for key,channel in self.channel_widgets.items():
@@ -762,7 +762,7 @@ class IMSGUI:
                 message += "BEGIN IMS2.0\n"
                 message += "MSG_TYPE %s\n" % box['message-type']
                 station = self.combobox_stations.get_active_text().split('_')[1]
-                message += "MSG_ID %s\n" % (station+ "_" +message_type+ "_" +channel_string+ "_" +time.strftime("%Y/%m/%d_%H:%M:%S", time.gmtime()),)
+                message += "MSG_ID %s\n" % (station+ "_" +command+ "_" +channel_string+ "_" +time.strftime("%Y/%m/%d_%H:%M:%S", time.gmtime()),)
                 if box.has_key("REF_ID"):
                     message += "REF_ID %s\n" % refid_string
 
@@ -770,13 +770,13 @@ class IMSGUI:
                     message += "EMAIL %s\n" % self.entry_email.get_text()
                 if box.has_key("TIME_STAMP"):
                     message += "TIME_STAMP %s\n" % time.strftime("%Y/%m/%d %H:%M:%S", time.gmtime())
-                if box.has_key("START_TIME") and (message_type == 'CALIBRATE_START'):
+                if box.has_key("START_TIME") and (command == 'CALIBRATE_START'):
                     message += "START_TIME %s\n" % self.entry_start_time.get_text()
                 if box.has_key("STA_LIST"):
                     message += "STA_LIST %s\n" % station
                 if box.has_key("CHAN_LIST"):
                     message += "CHAN_LIST %s\n" % channel_string
-                if box.has_key("START_TIME") and (message_type == 'CALIBRATE_CONFIRM'):
+                if box.has_key("START_TIME") and (command == 'CALIBRATE_CONFIRM'):
                     message += "START_TIME %s\n" % self.entry_start_time.get_text()
                 if box.has_key("SENSOR"):
                     if self.checkbutton_sensor.get_active():
@@ -788,7 +788,7 @@ class IMSGUI:
                 if box.has_key("CALIB_PARAM"):
                     duration = float(self.spinbutton_duration.get_value())
                     message += "CALIB_PARAM %.1f\n" % duration
-                message += "%s\n" % message_type
+                message += "%s\n" % command
                 if box.has_key("IN_SPEC"):
                     if self.checkbutton_spec.get_active():
                         message += "IN_SPEC YES\n"
@@ -882,7 +882,7 @@ class IMSGUI:
         self.update_interface()
 
     def flush_calib(self, channel_key):
-        if self.combobox_command.get_active_text() != "CALIBRATION_RESULT":
+        if self.combobox_command.get_active_text() != "CALIBRATE_RESULT":
             if self.channel_widgets.has_key(channel_key):
                 self.channel_widgets[channel_key]['entry-calib'].set_text("")
 
@@ -930,14 +930,14 @@ class IMSGUI:
         from urllib import quote
         import webbrowser
         import string
-        message_type = self.combobox_command.get_active_text()
-        ims_cmd = self.box_keys[message_type]['message-type']
+        command = self.combobox_command.get_active_text()
+        ims_cmd = self.box_keys[command]['message-type']
         station = self.combobox_stations.get_active_text().split('_')[1]
         recipients = ['calibration@ctbto.org']
         field_map = {
             'replyto' : 'gsnmaint@usgs.gov',
             'cc' : 'gsn-%s@usgs.gov' % station,
-            'subject' : quote('%s_%s' % (ims_cmd, station)),
+            'subject' : quote('%s_%s' % (command, station)),
             'body' : quote(self.get_text_for_mail()),
         }
         recipient_str = map(string.strip, recipients)
