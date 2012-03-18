@@ -17,7 +17,7 @@ class Calib:
       # B053F04 (mid-band gain of the instrument)
         mbs_gain = float(self.resp_map[53][4]['value'])
 
-      # B058F04 (digitizer_gain = 2**24 Counts / 40 Volts)
+      # B058F04 (digitizer_gain = 2**26 Counts / 40 Volts)
         digitizer_gain = float(self.resp_map[58][4]['value'])
 
       # B053F07 (A0 normalization factor)

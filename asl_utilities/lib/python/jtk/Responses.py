@@ -93,8 +93,12 @@ class Responses(Thread):
         except urllib2.URLError, e:
             raise GetRespException("Error downloading response file")
 
+        for line in map(string.strip, self.resp_data):
+            print line
+
         self.resp_data_ready = True
         self.check_halted()
+
 
     def parse_resp(self):
         if self.resp_map_ready:
