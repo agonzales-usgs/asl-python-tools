@@ -538,9 +538,12 @@ class IMSGUI:
         self.callback_location_update(widget, event, data)
 
     def callback_location_update(self, widget, event, data=None):
-        if widget.get_value() < 10:
-            widget.set_text("%02d" % widget.get_value())
-        self.callback_generate(widget, event, data)
+        # We have to prevent the embedded set_text() call from resulting in infinite recursion
+        if widget._lock.acquire(0):
+            if widget.get_value() < 10:
+                widget.set_text("%02d" % widget.get_value())
+            self.callback_generate(widget, event, data)
+            widget._lock.release()
 
     def callback_class_changed(self, widget, event, data=None):
         self.flush_calib(data)
@@ -629,7 +632,9 @@ class IMSGUI:
                           chan['combobox-axes'].get_active_text()
                 key = "%s-%s-%s-%s" % (network,station,location,channel)
                 if self._responses.has_key(key):
-                    calib = Calib(self._responses[key])
+                    station_key = "%s_%s" % (network,station)
+                    channel_key = "%s-%s" % (location,channel)
+                    calib = Calib(self._responses[key], station=station_key, channel=channel_key)
                     calib.calculate_calib(calper, self._correct)
                     chan['entry-calib'].set_text(str(calib.calib))
 
@@ -814,6 +819,7 @@ class IMSGUI:
         channel['checkbutton-channel'] = gtk.CheckButton()
         channel['adjustment'] = gtk.Adjustment(value=0, lower=0, upper=99, step_incr=10, page_incr=1)
         channel['spinbutton'] = gtk.SpinButton(channel['adjustment'])
+        channel['spinbutton']._lock = threading.Lock()
         channel['combobox-class'] = gtk.combo_box_new_text()
         for c in self.channels:
             channel['combobox-class'].append_text(c)
