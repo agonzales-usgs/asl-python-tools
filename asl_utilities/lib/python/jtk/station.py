@@ -489,7 +489,7 @@ class Proxy(Station):
         # the parent thread (which is dependent on this
         # proxy) from checking too soon. Once this thread
         # has started, the lock is released, and the parent
-        # is free to receive the connetion confirmation.
+        # is free to receive the connection confirmation.
         self.proxy_connect_lock = thread.allocate_lock()
         self.proxy_connect_lock.acquire(0)
 
