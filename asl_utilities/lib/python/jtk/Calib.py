@@ -1,13 +1,13 @@
 import math
-from jtk import Pretty
+import pprint
 
 class Calib:
-    def __init__(self, responses, station=None, channel=None):
-        self.responses = responses
+    def __init__(self, dataless, station=None, channel=None):
+        self.dataless = dataless
         if station:
-            st_info = responses.dataless.map['stations'][station]
+            st_info = self.dataless.map['stations'][station]
         else:
-            st_info = sorted(responses.dataless.map['stations'].items())[0][1]
+            st_info = sorted(self.dataless.map['stations'].items())[0][1]
 
         if channel:
             ch_info = st_info['channels'][channel]

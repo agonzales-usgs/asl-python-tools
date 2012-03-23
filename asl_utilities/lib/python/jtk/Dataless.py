@@ -176,7 +176,7 @@ class Blockette:
         return tuple(results)
 
 class Dataless: 
-    def __init__(self, raw_dataless, progress_callback=None, cancel_callback=None):
+    def __init__(self, raw_dataless, progress_callback=None, cancel_callback=None, quiet=False):
         self.raw_dataless = raw_dataless
         self.blockettes = None
         self.map = {
@@ -185,6 +185,8 @@ class Dataless:
         }
 
         self.progress_callback = self._print_progress
+        if quiet:
+            self.progress_callback = self._progress_stub
         if callable(progress_callback):
             self.progress_callback = progress_callback
 
@@ -199,6 +201,9 @@ class Dataless:
         self.last_percent = 0.0
         self.line = ""
 
+    def _progress_stub(self, *args):
+        pass
+
     def _cancel_stub(self):
         pass
 
@@ -209,28 +214,7 @@ class Dataless:
         self._parse_dataless()
         self._assemble_data()
 
-        #print "Parsed out %d blockettes" % len(self.blockettes)
-        #self.counts = {}
-        #for blockette in self.blockettes:
-        #    num = blockette.number
-        #    if not self.counts.has_key(num):
-        #        self.counts[num] = 0
-        #    self.counts[num] += 1
-        #    summary = ""
-        #    if num == 10:
-        #        summary = " ----- %s: %s - %s" % blockette.get_values(9,5,6)
-        #    elif num == 11:
-        #        summary = " ----- %s" % blockette.get_values(4)
-        #    elif num == 50:
-        #        summary = " ----- %s_%s: %s - %s" % blockette.get_values(16,3,13,14)
-        #    elif num == 52:
-        #        summary = " ----- %s-%s: %s - %s" % blockette.get_values(3,4,22,23)
-        #    print "B%03d [%d fields]%s" % (blockette.number, len(blockette.fields), summary)
-        #
-        #for num in sorted(self.counts.keys()):
-        #   print "% 3d: %d" % (num, self.counts[num])
-
-        #Pretty.print_map(self.map)
+        #Pretty.pretty(self.map)
 
     def _parse_dataless(self):
         if self.raw_dataless is None:

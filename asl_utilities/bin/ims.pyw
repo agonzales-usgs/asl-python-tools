@@ -634,7 +634,7 @@ class IMSGUI:
                 if self._responses.has_key(key):
                     station_key = "%s_%s" % (network,station)
                     channel_key = "%s-%s" % (location,channel)
-                    calib = Calib(self._responses[key], station=station_key, channel=channel_key)
+                    calib = Calib(self._responses[key].dataless, station=station_key, channel=channel_key)
                     calib.calculate_calib(calper, self._correct)
                     chan['entry-calib'].set_text(str(calib.calib))
 
