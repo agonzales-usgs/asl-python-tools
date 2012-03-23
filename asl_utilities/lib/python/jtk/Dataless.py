@@ -118,7 +118,7 @@ class Blockette:
             if len(data_items) > (len(ids)):
                 data_items = data_items[1:]
             for i in range(0, len(ids)):
-                if not self.fields.has_key(id):
+                if not self.fields.has_key(ids[i]):
                     self.fields[ids[i]] = {
                         'description' : '',
                         'values' : [],
@@ -132,13 +132,12 @@ class Blockette:
                 description,data = parts
             else:
                 data = parts[0]
-            if self.fields.has_key(id):
-                self.fields[id]['values'].append(data)
-            else:
+            if not self.fields.has_key(id):
                 self.fields[id] = {
                     'description' : description,
-                    'values' : [data],
+                    'values' : [],
                 }
+            self.fields[id]['values'].append(data)
         return True
 
     def get_values_complex(self, *args):

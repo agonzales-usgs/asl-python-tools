@@ -42,12 +42,15 @@ class Calib:
       # B053F09 (num zeros)
         num_zeros = float(stage_map['stages'][1][53].get_values(9)[0][0])
         zero_parts = stage_map['stages'][1][53].get_values(10,11)
+        #print "zero_parts", stage_map['stages'][1][53].fields
         zeros = zip(*zero_parts)
 
       # B053F14 (num poles)
         num_poles = float(stage_map['stages'][1][53].get_values(14)[0][0])
         pole_parts = stage_map['stages'][1][53].get_values(15,16)
         poles = zip(*pole_parts)
+
+        #print "a0:", a0
 
         amplitude = 1.0
         if correct_calib:
