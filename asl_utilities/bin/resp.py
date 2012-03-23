@@ -20,7 +20,9 @@ resp_dir = "/qcwork/RESPS"
 
 args = sys.argv[1:]
 
-if 2 > len(args) > 3:
+if len(args) < 2:
+    usage()
+if len(args) > 3:
     usage()
 
 #reg_st = re.compile("")
