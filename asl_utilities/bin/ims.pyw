@@ -147,7 +147,7 @@ class IMSGUI:
         pref_file = os.path.abspath("%s/.ims-gui-prefs.db" % home_dir)
         self._prefs = StatefulClass(pref_file)
 
-        self._minimum_width  = 640
+        self._minimum_width  = 720
         self._minimum_height = 640
         self._default_width = self._prefs.recall_value('window-width', self._minimum_width)
         self._default_height = self._prefs.recall_value('window-height', self._minimum_height)
@@ -857,7 +857,7 @@ class IMSGUI:
         channel['combobox-axes'].set_active(0)
 
         calib_identifier = str(channel_key)+":entry-calib"
-        channel['entry-calib'].set_width_chars(15)
+        channel['entry-calib'].set_width_chars(20)
         channel['entry-calib'].set_editable(False)
         channel['entry-calib'].connect("changed", self.callback_calib_changed, None, calib_identifier)
         self.verify_entry_float(channel['entry-calib'])
