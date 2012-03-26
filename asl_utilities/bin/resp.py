@@ -108,7 +108,7 @@ for resp,calib in sorted(results.items()):
     cor_str = ""
     if correct:
         cor_str = " (corrected)"
-    print "[%s]>  CALPER=%f  CALIB=%f%s" % (resp, calib.calper, calib.calib, cor_str)
+    print "[%s]>  CALPER=%f  CALIB=%f%s" % (resp.ljust(19), calib.calper, calib.calib, cor_str)
 
 t_timer.stop()
 
