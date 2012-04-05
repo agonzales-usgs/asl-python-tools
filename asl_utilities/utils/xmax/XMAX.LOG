@@ -9780,3 +9780,13 @@
 2012-01-26 12:17:51,385 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
 2012-01-26 12:18:13,059  WARN Unknown file format: netindex.idx
 2012-01-26 12:18:13,063  WARN Unknown file format: indexidx.idx
+2012-03-05 13:16:09,806 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2012-03-09 07:45:44,356 ERROR Can't load picks: com.isti.xmax.XMAXException: Pick directory shouldn't be file
+2012-03-09 07:45:46,737  WARN File ptcn-00-lhz.seed: Skipping block 333238 due to absence of data
+2012-03-09 07:45:46,738  WARN File ptcn-00-lhz.seed: Skipping block 340223 due to absence of data
+2012-03-09 07:45:46,738  WARN File ptcn-00-lhz.seed: Skipping block 359082 due to absence of data
+2012-03-09 07:45:46,738  WARN File ptcn-00-lhz.seed: Skipping block 359082 due to absence of data
+2012-03-09 07:45:46,988  WARN File ptcn-00-lhz.seed: Skipping block 380548 due to absence of data
+2012-03-09 07:45:46,988  WARN File ptcn-00-lhz.seed: Skipping block 413263 due to absence of data
+2012-03-09 07:45:46,988  WARN File ptcn-00-lhz.seed: Skipping block 425564 due to absence of data
+2012-03-09 07:45:46,988  WARN File ptcn-00-lhz.seed: Skipping block 425564 due to absence of data

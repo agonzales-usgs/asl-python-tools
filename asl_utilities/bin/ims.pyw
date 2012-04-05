@@ -21,122 +21,17 @@ import gtk
 import gobject
 gtk.gdk.threads_init()
 
-from jtk.gtk.utils import LEFT,RIGHT
-from jtk.gtk.Calendar import Calendar
-from jtk.gtk.Dialog import Dialog
-from jtk.StatefulClass import StatefulClass
+from jtk.Calib import Calib
 from jtk.Counter import Counter
 from jtk.Responses import Responses
 from jtk.Responses import ResponsesThread
-from jtk.Calib import Calib
+from jtk.StatefulClass import StatefulClass
 from jtk.Thread import Thread
 
+from jtk.gtk.DateTimeWindow import DateTimeWindow
+from jtk.gtk.Progress import ProgressDialog, ProgressThread
+from jtk.gtk.utils import LEFT, RIGHT
 
-# === Progress Tools /*{{{*/
-class ProgressThread(Thread):
-    def __init__(self, dialog, pulse_interval=0.25):
-        Thread.__init__(self, 1024, timeout=pulse_interval, timeout_message='PULSE')
-        self.dialog = dialog
-
-    def _run(self, status, data):
-        count = -1
-        total = -1
-        done = False
-        if data is not None:
-            count,total,done = data
-        self.dialog.update_progress(status, count, total)
-
-    def _post(self):
-        self.dialog.work_done()
-
-class ProgressDialog(Dialog):
-    def __init__(self, parent, callback, callback_data=None):
-        Dialog.__init__(self, "Acquiring Reponse Data", modal=True, exit_callback=self.callback_exit, exit_data=callback_data)
-        self.queue = Queue.Queue(1024)
-        self.mode = "PULSE"
-        self.status_counter = Counter()
-        self._callback = callback
-
-        self.progress_bar = gtk.ProgressBar()
-
-        self.hbox_buttons.pack_start(self.progress_bar, True, True, 2)
-        self.add_button_right("Cancel", self.callback_cancel)
-        
-        self.add_button_hidden("update", self.callback_update_progress, hide=False)
-        self.add_button_hidden("done", self.callback_done)
-
-        self.status_bar = gtk.Statusbar()
-        self.vbox_main.pack_end(self.status_bar, False, True, 2)
-
-        self.result = "UNKNOWN"
-
-    def work_done(self):
-        gobject.idle_add(gobject.GObject.emit, self._hidden_buttons['done'], 'clicked')
-
-    def update_progress(self, message, count, total):
-        self.queue.put_nowait((message, count, total))
-        gobject.idle_add(gobject.GObject.emit, self._hidden_buttons['update'], 'clicked')
-
-    def callback(self):
-        self._callback(self)
-
-    def callback_exit(self, widget, event, data=None):
-        self.result = "EXITED"
-        self.callback()
-
-    def callback_update_progress(self, widget, event, data=None):
-        self.update_progress_bar()
-
-    def callback_cancel(self, widget, event, data=None):
-        if self.result == "CANCELLED":
-            return
-        self.result = "CANCELLED"
-        self.callback()
-
-    def callback_done(self, widget, event, data=None):
-        self.result = "COMPLETED"
-        self.callback()
-
-    def update_progress_bar(self):
-        while not self.queue.empty():
-            status,count,total = self.queue.get_nowait()
-            if status == "DONE":
-                self.hide_calibs_progress()
-                self._calibs_thread_active = False
-                break
-            elif status == "PULSE":
-                if self.mode == "PULSE":
-                    self.progress_bar.pulse()
-            else:
-                self.mode = "PULSE"
-                fraction = 0.0
-                percent = 0.0
-                show_percent = False
-
-                progress = ""
-                if count > -1:
-                    if (total > 0) and (count <= total):
-                        fraction = float(count) / float(total)
-                        percent = fraction * 100.0
-                        progress = "%d/%d (%0.1f%%)" % (count, total, percent)
-                        show_percent = True
-                    else:
-                        progress = "%d" % count
-                else:
-                    progress = ""
-
-                self.status_bar.pop(self.status_counter.value())
-                self.status_bar.push(self.status_counter.inc(), status)
-                self.progress_bar.set_text(progress)
-                if show_percent:
-                    self.progress_bar.set_fraction(fraction)
-                    self.mode = "FRACTION"
-                else:
-                    self.progress_bar.set_pulse_step(0.5)
-                    self.mode = "PULSE"
-#/*}}}*/
-
-# === IMSGUI Class /*{{{*/
 class IMSGUI:
     def __init__(self):
         home_dir = '.'
@@ -147,7 +42,7 @@ class IMSGUI:
         pref_file = os.path.abspath("%s/.ims-gui-prefs.db" % home_dir)
         self._prefs = StatefulClass(pref_file)
 
-        self._minimum_width  = 640
+        self._minimum_width  = 720
         self._minimum_height = 640
         self._default_width = self._prefs.recall_value('window-width', self._minimum_width)
         self._default_height = self._prefs.recall_value('window-height', self._minimum_height)
@@ -229,7 +124,7 @@ class IMSGUI:
 # ===== Widget Creation ============================================
       # Layout Control Widgets
         self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
-        self.window.set_title("Calibrations")
+        self.window.set_title("IMS 2.0 - CTBTO Calibrations")
         self.window.set_geometry_hints(min_width=self._default_width, min_height=self._default_height)
         self.window.connect( "configure-event", self.callback_window_configured, None )
         self.window.connect( "screen-changed", self.callback_window_configured, None )
@@ -433,7 +328,7 @@ class IMSGUI:
 
 # ===== Hidden Objects =============================================
         self.clipboard = gtk.Clipboard()
-        self.time_window = Calendar()
+        self.time_window = DateTimeWindow()
         self.time_window.set_granularity("second")
         self.time_window.set_callback_complete(self.callback_time_window_complete)
         self.time_window.set_callback_cancel(self.callback_time_window_cancel)
@@ -538,9 +433,12 @@ class IMSGUI:
         self.callback_location_update(widget, event, data)
 
     def callback_location_update(self, widget, event, data=None):
-        if widget.get_value() < 10:
-            widget.set_text("%02d" % widget.get_value())
-        self.callback_generate(widget, event, data)
+        # We have to prevent the embedded set_text() call from resulting in infinite recursion
+        if widget._lock.acquire(0):
+            if widget.get_value() < 10:
+                widget.set_text("%02d" % widget.get_value())
+            self.callback_generate(widget, event, data)
+            widget._lock.release()
 
     def callback_class_changed(self, widget, event, data=None):
         self.flush_calib(data)
@@ -600,7 +498,7 @@ class IMSGUI:
                 resp_list.append(self._responses[key])
                 station_map[key] = None
         
-        dialog = ProgressDialog(self.window, self.callback_responses_complete, station_map.keys())
+        dialog = ProgressDialog("Acquiring Reponse Data", self.window, self.callback_responses_complete, station_map.keys())
         self.progress_thread = ProgressThread(dialog)
         self.responses_thread = ResponsesThread(self.progress_thread.queue, resp_list)
 
@@ -629,7 +527,9 @@ class IMSGUI:
                           chan['combobox-axes'].get_active_text()
                 key = "%s-%s-%s-%s" % (network,station,location,channel)
                 if self._responses.has_key(key):
-                    calib = Calib(self._responses[key])
+                    station_key = "%s_%s" % (network,station)
+                    channel_key = "%s-%s" % (location,channel)
+                    calib = Calib(self._responses[key].dataless, station=station_key, channel=channel_key)
                     calib.calculate_calib(calper, self._correct)
                     chan['entry-calib'].set_text(str(calib.calib))
 
@@ -818,6 +718,7 @@ class IMSGUI:
         channel['checkbutton-channel'] = gtk.CheckButton()
         channel['adjustment'] = gtk.Adjustment(value=0, lower=0, upper=99, step_incr=10, page_incr=1)
         channel['spinbutton'] = gtk.SpinButton(channel['adjustment'])
+        channel['spinbutton']._lock = threading.Lock()
         channel['combobox-class'] = gtk.combo_box_new_text()
         for c in self.channels:
             channel['combobox-class'].append_text(c)
@@ -851,7 +752,7 @@ class IMSGUI:
         channel['combobox-axes'].set_active(0)
 
         calib_identifier = str(channel_key)+":entry-calib"
-        channel['entry-calib'].set_width_chars(15)
+        channel['entry-calib'].set_width_chars(20)
         channel['entry-calib'].set_editable(False)
         channel['entry-calib'].connect("changed", self.callback_calib_changed, None, calib_identifier)
         self.verify_entry_float(channel['entry-calib'])
@@ -955,7 +856,6 @@ class IMSGUI:
         gtk.main_quit()
         self._prefs.save_state()
         return False
-#/*}}}*/
 
 if __name__ == "__main__":
     reader = IMSGUI()

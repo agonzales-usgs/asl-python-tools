@@ -3,6 +3,7 @@ import threading
 import urllib2
 
 from jtk.Thread import Thread
+from jtk.Dataless import Dataless,Blockette
 
 MAX_QUEUED_VALUES = 8192
 
@@ -42,8 +43,8 @@ class Responses(Thread):
         self.resp_url  = "%s/pub/responses/%s" % (self.resp_server, self.resp_file)
         self.resp_data = None
         self.resp_data_ready = False
-        self.resp_map  = {}
-        self.resp_map_ready = False
+        self.dataless  = None
+        self.dataless_ready = False
 
         self.set_status_queue(status_queue)
 
@@ -93,18 +94,22 @@ class Responses(Thread):
         except urllib2.URLError, e:
             raise GetRespException("Error downloading response file")
 
-        for line in map(string.strip, self.resp_data):
-            print line
+        #for line in map(string.strip, self.resp_data):
+        #    print line
 
         self.resp_data_ready = True
         self.check_halted()
 
 
     def parse_resp(self):
-        if self.resp_map_ready:
+        if self.dataless_ready:
             return
 
         if self.resp_data_ready and self.resp_data is not None:
+            self.dataless = Dataless(self.resp_data, self.update_status, self.check_halted)
+            self.dataless.process()
+
+        if False:           
             line_count = len(self.resp_data)
             processed_lines = 0
             last_percent = 0
@@ -155,5 +160,5 @@ class Responses(Thread):
                         'value'       : value,
                     }
 
-        self.resp_map_ready = True
+        self.dataless_ready = True
         self.check_halted()
