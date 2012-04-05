@@ -100,9 +100,12 @@ class Manager(threading.Thread):
         self.excluded_networks = None
         self.group_selection = None
 
+        self.commands_only = False
         self.continuity_only = False
         self.list_only = False
         self.versions_only = False
+
+        self.commands = []
 
         self.station_file = ""
         self.station_file_encrypted = False
@@ -126,6 +129,9 @@ class Manager(threading.Thread):
         self.station_file = name
         self.station_file_encrypted = encrypted
 
+    def set_commands_only(self, only=True):
+        self.commands_only = only
+
     def set_continuity_only(self, only=True):
         self.continuity_only = only
 
@@ -134,6 +140,18 @@ class Manager(threading.Thread):
 
     def set_versions_only(self, only=True):
         self.versions_only = only
+
+    def clear_commands(self):
+        self.commands = []
+
+    def set_commands(self, commands):
+        self.commands = commands
+
+    def add_command(self, command):
+        self.commands.append(command)
+
+    def add_commands(self, commands):
+        self.commands.extend(commands)
 
     def set_selected_stations(self, list):
         self.selected_stations = list
@@ -219,6 +237,8 @@ class Manager(threading.Thread):
                     loop = ThreadLoop(self, group, self.action, sorted(station_groups[group]), max_threads, self.version_queue)
                     loop.set_version_files(self.version_files)
                     loop.set_versions_only(self.versions_only)
+                    loop.set_commands_only(self.commands_only)
+                    loop.set_commands(self.commands)
                     loop.set_continuity_only(self.continuity_only)
                     loop.set_list_only(self.list_only)
                     loop.set_output_directory(self.output_directory)
@@ -430,6 +450,8 @@ class ThreadLoop(threading.Thread):
         self.group = group
         self.action = action
 
+        self.commands = []
+        self.commands_only = False
         self.continuity_only = False
         self.list_only = False
         self.versions_only = False
@@ -462,14 +484,20 @@ class ThreadLoop(threading.Thread):
     def set_output_directory(self, dir):
         self.output_directory = dir
 
-    def set_version_files(self, files):
-        self.version_files = files
+    def set_commands(self, commands):
+        self.commands = commands
+
+    def set_commands_only(self, only=True):
+        self.commands_only = only
 
     def set_continuity_only(self, only=True):
         self.continuity_only = only
 
     def set_list_only(self, only=True):
         self.list_only = only
+
+    def set_version_files(self, files):
+        self.version_files = files
 
     def set_versions_only(self, only=True):
         self.versions_only = only
@@ -736,7 +764,7 @@ class ThreadLoop(threading.Thread):
                             raise Exception("Software update, Slate required")
                         station = Station330(station_info['name'], self.action, self.queue, station_info['cfg'])
                     elif station_info['type'] == 'Slate':
-                        station = StationSlate(station_info['name'], self.action, self.queue, continuity_only=self.continuity_only, versions_only=self.versions_only)
+                        station = StationSlate(station_info['name'], self.action, self.queue, continuity_only=self.continuity_only, versions_only=self.versions_only, commands=self.commands, commands_only=self.commands_only)
                         station.set_version_queue(self.version_queue)
                         station.set_version_files(self.version_files)
                     else:
@@ -774,6 +802,8 @@ class ThreadLoop(threading.Thread):
                         file = dir + '/checks.log'
                     elif self.action == 'update':
                         file = dir + '/update.log'
+                    elif self.action == 'run':
+                        file = dir + '/run.log'
 
                     self.logger.log("log file: %s" % file)
                     station.log_file_name(file)
@@ -860,8 +890,10 @@ class Main:
         self.parser.set_usage("""Usage: %s [options] <stations_file> <action>
 
 action: 
-  update - update station software 
-  check  - check station health""" % (sys.argv[0].split('/')[-1],))
+  check  - check station health
+  list   - list out the stations found in the config file
+  run    - run command on Slates (forces --type=Slate)
+  update - update station software""" % (sys.argv[0].split('/')[-1],))
 
     def usage(self, message=''):
         if message != '':
@@ -880,16 +912,21 @@ action:
         arg_type        = options.type
         arg_versions    = options.svo
 
-        if len(args) != 2:
+        if len(args) < 2:
             self.usage()
 
         arg_file = args[0]
         arg_action = args[1]
-        if arg_action not in ('check', 'list', 'update'):
+        if arg_action not in ('check', 'list', 'run', 'update'):
             self.usage("Un-recognized action '%s'" % arg_action)
 
         networks_set = False
         stations_set = False
+        commands = []
+        if len(args) > 2:
+            if arg_action != "run":
+                self.usage("Too many arguments for selected mode")
+            commands = args[2:]
 
         try:
           # Perform Action
@@ -912,20 +949,25 @@ action:
             if (options.excluded_networks):
                 manager.set_excluded_networks(map(lambda o: o.upper(), options.excluded_networks.split(',')))
                 if networks_set:
-                    self.usage("Cannot use both -n and -N flags.")
+                    self.usage("Cannot specify options -n and -N simultaneously.")
             if (arg_group_selection):
                 manager.set_group_selection(arg_group_selection.split(','))
             if (arg_type):
                 manager.set_types(arg_type.split(','))
             if arg_continuity and arg_versions:
-                print "Cannot select options -d and -v simultaneously"
-                self.parser.print_help()
-                sys.exit(1)
+                self.usage("Cannot specify options -d and -v simultaneously.")
             if arg_action == 'list':
                 manager.set_list_only(True)
             elif arg_action == 'check':
                 manager.set_continuity_only(arg_continuity)
                 manager.set_versions_only(arg_versions)
+            elif arg_action == 'run':
+                manager.set_types('Slate')
+                if len(commands) < 1:
+                    self.usage("No command(s) specified for 'run' mode")
+                manager.set_commands_only(True)
+                manager.set_commands(commands)
+                
             manager.start()
             stop_queue.get()
             print "Manager thread is done."

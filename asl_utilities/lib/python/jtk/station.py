@@ -216,6 +216,8 @@ class Station(threading.Thread):
                 self._log("Proxy connection established.")
             if self.action == 'check':
                 self.run_check()
+            elif self.action == 'run':
+                self.run_commands()
             elif self.action == 'update':
                 self.run_update()
             elif self.action == 'proxy':
@@ -250,6 +252,12 @@ class Station(threading.Thread):
         self.running = False
         if self.loop_queue is not None:
             self.loop_queue.put(('DONE', self))
+
+    def run_commands(self):
+        self.ready()
+        self.connect()
+        self.process_commands(self.commands)
+        self.disconnect()
 
     def run_check(self):
         self.ready()
@@ -1172,7 +1180,7 @@ Evaluate health of a Q330 based station
     the caller can log the issue.
 -"""
 class StationSlate(Station):
-    def __init__(self, name, action, loop_queue, continuity_only=False, versions_only=False):
+    def __init__(self, name, action, loop_queue, continuity_only=False, versions_only=False, commands=[], commands_only=False):
         Station.__init__(self, name, action, loop_queue)
 
         self.prompt_pass = ""
@@ -1183,9 +1191,11 @@ class StationSlate(Station):
         self.log_messages = ""  # purpose TBD
         self.summary = ""
 
+        self.commands_only = commands_only
         self.continuity_only = continuity_only
         self.versions_only = versions_only
 
+        self.commands = commands
         self.version_files = {}
         self.version_queue = None
         self.need_update = {}
@@ -1218,6 +1228,20 @@ class StationSlate(Station):
             'falcon.py',
             'upipe.py',
         ]
+
+    def process_commands(self, commands):
+        for command in commands:
+            self.process_command(command)
+
+    def process_command(self, command):
+        self.reader.sendline(command)
+        try:
+            if not self.reader.prompt( timeout=self.comm_timeout ):
+                raise ExTimeout("timeout on command '%s'" % command)
+        except Exception, e:
+            self._log( "exception details: %s" % str(e) )
+            raise ExIncomplete, "command failed"
+        self._log(self.reader.before)
 
     def needs_update(self, file):
         if not os.path.exists(file):
@@ -1402,13 +1426,16 @@ class StationSlate(Station):
             self._log(self.reader.before)
 
     def check(self):
-        if not self.versions_only:
+        if (not self.versions_only) and (not self.commands_only):
             self.check_diskloop_continuity()
 
-        if not self.continuity_only:
+        if (not self.continuity_only) and (not self.commands_only):
             self.check_software_versions()
 
         if (not self.continuity_only) and (not self.versions_only):
+            self.process_commands(self.commands)
+
+        if (not self.continuity_only) and (not self.versions_only) and (not self.commands_only):
             check_script = 'checks.py'
             script_path  = '/opt/util/scripts/checks.py'
 
