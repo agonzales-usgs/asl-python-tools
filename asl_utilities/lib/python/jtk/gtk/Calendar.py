@@ -360,9 +360,9 @@ class Calendar(object):
     def set_callback_cancel(self, callback, data=None):
         self.cancel_callback = callback
         self.cancel_data = data
-    
+
     def set_callback(self, callback, data=None):
-        self.set_completion_callback(callback, data)
+        self.set_callback_complete(callback, data)
 
     def push_time(self):
         if not self.calendar:
