@@ -324,7 +324,7 @@ class Manager(threading.Thread):
                 if len(parts) > 1:
                     hash = parts[0]
                     file = parts[1]
-                    key = os.path.basename(file)
+                    key = file
                     self.version_files[key] = (file, hash)
 
 # ===== Parse the configuration file =====

@@ -1487,7 +1487,7 @@ class StationSlate(Station):
             attempt = 0
             while attempt < tries:
                 summary = ''
-                if (len(file) > 4) and (file[-4:] == '.md5'):
+                if (file.endswith('.md5')):
                     self.reader.sendline("cat %s" % file)
                     try:
                         if not self.reader.prompt(timeout=self.comm_timeout):
