@@ -124,5 +124,10 @@ else:
 if not os.path.exists(aescrypt_bin):
     aescrypt_bin = ''
 
+xmax_path = os.path.abspath(path + '/utils/xmax')
+if not os.path.exists(xmax_path):
+    xmax_path = ''
+
+
 sys.path.insert(0, python_path)
 

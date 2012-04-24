@@ -84,6 +84,8 @@ class ConfigNotAFileException(ConfigException):
     pass
 class ConfigNotFoundException(ConfigException):
     pass
+class ConfigReadError(ConfigException):
+    pass
 class InvalidConfigException(ConfigException):
     pass
 
@@ -151,6 +153,7 @@ def parse_config(config_file):
         lines = open(config_file, 'r').readlines()
         line_index = 0
         for line in map(lambda l: l.strip(), lines):
+            line_index += 1
             if len(line) == 0:
                 continue
             if line[0] == '#':
@@ -166,7 +169,6 @@ def parse_config(config_file):
                     raise InvalidConfigException("duplicate entry on line %d" % line_index)
                 config[key] = value
 
-            line_index += 1
         if len(pipes):
             config['pipes'] = pipes
     except:
