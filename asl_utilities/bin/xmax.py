@@ -1,17 +1,15 @@
-#!/usr/bin/evn python
+#!/usr/bin/env python
 import asl
 
 import glob     # for matching file patterns
 import optparse # argument parsing
 import os
-import signal
 import sys
 
 from jtk import Config # generic key=value config file support
 
 class Main:
     def __init__(self):
-        signal.signal(signal.SIGTERM, self.halt_now)
         option_list = []
         option_list.append(optparse.make_option(
             "-c", "--config-file", 
@@ -23,6 +21,16 @@ class Main:
             dest="include_directories", 
             action="store_true", 
             help="Symlinks should be created to matched directories"))
+        option_list.append(optparse.make_option(
+            "-t", "--use-temp-data", 
+            dest="use_temp_data", 
+            action="store_true", 
+            help="include previously dumped temporary data with that in the selected path"))
+        option_list.append(optparse.make_option(
+            "-T", "--dump-temp-data", 
+            dest="dump_temp_data", 
+            action="store_true", 
+            help="just dump temporary data, don't launch the display"))
         option_list.append(optparse.make_option(
             "-s", "--include-symlinks", 
             dest="include_symlinks", 
@@ -42,6 +50,59 @@ action:
 
 
     def start(self):
+        xmax_switches = {
+        #   name           flag     arg?
+            'config'        : ('-g',    True),
+            'description'   : ('-i',    True),
+            'earthquake'    : ('-k',    True),
+            'picks'         : ('-p',    True),
+            'quality'       : ('-q',    True),
+
+            'display'       : ('-f',    True),
+            'format'        : ('-F',    True),
+            'unit'          : ('-u',    True),
+            'order'         : ('-o',    True),
+
+            'data'          : ('-d',    True),
+            'block'         : ('-L',    True),
+            'merge'         : ('-m',    False),
+            'temp'          : ('-t',    False),
+            'dump'          : ('-T',    False),
+
+            'network'       : ('-n',    True),
+            'station'       : ('-s',    True),
+            'location'      : ('-l',    True),
+            'channel'       : ('-c',    True),
+        }
+
+        xmax_options = {
+        #   name          value (or False to exclude this option by default)
+            'config'        : False,
+            'description'   : False,
+            'earthquake'    : False,
+            'picks'         : False,
+            'quality'       : False,
+
+            'display'       : '4',
+            'format'        : False,
+            'order'         : False,
+            'unit'          : '4',
+
+            'data'          : False,
+            'block'         : False,
+            'merge'         : False,
+            'temp'          : False,
+            'dump'          : False,
+
+            'network'       : False,
+            'station'       : False,
+            'location'      : False,
+            'channel'       : False,
+
+            'begin'         : False,
+            'end'           : False,
+        }
+
         options, args = self.parser.parse_args()
 
         config_file = os.path.abspath(os.environ['HOME'] + "/.xmax.config")
@@ -55,11 +116,13 @@ action:
             print "xmax launch script config file '%s' not found"
             sys.exit(1)
 
-        try:
-            config = Config.parse(config_file)
-        except ConfigException, ex:
-            print "error parsing config file:", str(ex)
-            sys.exit(1)
+        config = {}
+        if config_file != "":
+            try:
+                config = Config.parse(config_file)
+            except Config.ConfigException, ex:
+                print "error parsing config file:", str(ex)
+                sys.exit(1)
 
         xmax_dir = asl.xmax_path
         if config.has_key("xmax-dir"):
@@ -75,12 +138,26 @@ action:
             print "xmax data directory '%s' could not be located" % xmax_data
             sys.exit(1)
 
+        jvm_mem_start = "512M"
+        if config.has_key("jvm-mem-start"):
+            jvm_mem_start = config["jvm-mem-start"]
+
+        jvm_mem_max = "2048M"
+        if config.has_key("jvm-mem-max"):
+            jvm_mem_max = config["jvm-mem-max"]
+
+        if options.dump_temp_data:
+            xmax_options["dump"] = True
+
+        if options.use_temp_data:
+            xmax_options["temp"] = True
+
         if len(args) < 1:
             self.usage("No files specified")
 
         all_files = {}
         for arg in args:
-            files = glob.glob(args)
+            files = glob.glob(arg)
             for file in files:
                 if os.path.isdir(file): 
                     if not options.include_directories:
@@ -88,7 +165,7 @@ action:
                 elif os.path.islink(file):
                     if not options.include_symlinks:
                         continue
-                elif not os.path.isfile(file)
+                elif not os.path.isfile(file):
                     continue
                 full_path = os.path.abspath(file)
                 all_files[full_path] = full_path
@@ -112,7 +189,9 @@ action:
             sys.exit(1)
 
         for file in os.listdir(xmax_data):
-            data_link = os.path.abspath(xmax_data + "/" + file
+            if file == '.keep':
+                continue
+            data_link = os.path.abspath(xmax_data + "/" + file)
             if not os.path.islink(data_link):
                 print "non-symlink found int xmax data directory: '%s'" % data_link
             os.remove(data_link)
@@ -121,20 +200,30 @@ action:
             link_name = "_".join(file_path.split("/"))
             link_path = os.path.abspath(xmax_data + "/" + link_name)
             try:
-                os.link(file_path, link_path)
+                os.symlink(file_path, link_path)
+                print "Adding file", file_path
             except Exception, ex:
                 print "symlink creation failed:"
                 print "  %s -> %s" % (link_path, file_path)
                 print "  exception: %s" % str(ex)
 
-        #executable = '/usr/bin/xterm'
-        #arguments  = ['xterm', '-T', '\"XMAX\"', '-sl', '10240', '-e', "\". ~/.bash_profile; . ~/.bashrc; cd %s; java -version; java -Xms1024M -Xmx1024M -jar xmax.jar %s && read -n 1 -p 'Press any key to continue...'\"" % (self.xmax_directory, ' '.join(option_list))]
-        #print "Command:", ' '.join(arguments)
-        #os.popen(' '.join(arguments))
-        #return None
+        option_list = []
+        for opt,val in xmax_options.items():
+            if val == False:
+                continue
+            switch = xmax_switches[opt]
 
-        #process = subprocess.Popen(arguments)
-        #return process
+            if switch[1] == True:
+                option_list.append("%s %s" % (switch[0], val))
+            else:
+                option_list.append("%s" % switch[0])
+
+        # We don't give a non-gui option since an X server must be running
+        # in order to see the XMAX window
+        executable = '/usr/bin/xterm'
+        arguments  = [executable, '-T', '\"XMAX\"', '-sl', '20480', '-e', "\". ~/.bash_profile; . ~/.bashrc; cd %s; java -version; java -Xms%s -Xmx%s -jar xmax.jar %s && read -n 1 -p 'Press any key to continue...'\"" % (xmax_dir, jvm_mem_start, jvm_mem_max, ' '.join(option_list))]
+        print "Command:", ' '.join(arguments)
+        os.popen(' '.join(arguments))
 
 if __name__ == '__main__':
     Main().start()
