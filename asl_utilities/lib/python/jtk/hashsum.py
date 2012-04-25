@@ -22,8 +22,8 @@ def sum(filename, key):
     engine = __get_engine(key)
     digest = ''
     if engine is not None:
-        with open(filename,'rb') as f:
-            for chunk in iter(lambda: f.read(engine.block_size), ''):
+        fh = open(filename, 'rb'):
+            for chunk in iter(lambda: fh.read(engine.block_size), ''):
                 engine.update(chunk)
         digest = engine.hexdigest()
     return digest
