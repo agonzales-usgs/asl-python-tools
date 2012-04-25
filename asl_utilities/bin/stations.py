@@ -423,13 +423,13 @@ class Manager(threading.Thread):
             except:
                 raise Exception, "CheckLoop::init_dir() could not create storage directory: %s" % self.output_directory
 
-        self.output_directory += "/gsn"
-        if not os.path.exists(self.output_directory):
-            try:
-                os.makedirs(self.output_directory)
-                Permissions("EEEEEEEIE", 1).process([self.output_directory])
-            except:
-                raise Exception, "CheckLoop::init_dir() could not create storage directory: %s" % self.output_directory
+        #self.output_directory += "/gsn"
+        #if not os.path.exists(self.output_directory):
+        #    try:
+        #        os.makedirs(self.output_directory)
+        #        Permissions("EEEEEEEIE", 1).process([self.output_directory])
+        #    except:
+        #        raise Exception, "CheckLoop::init_dir() could not create storage directory: %s" % self.output_directory
 
         self.version_directory = self.output_directory + "/versions"
         if not os.path.exists(self.version_directory):
