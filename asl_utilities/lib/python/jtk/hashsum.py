@@ -22,9 +22,10 @@ def sum(filename, key):
     engine = __get_engine(key)
     digest = ''
     if engine is not None:
-        fh = open(filename, 'rb'):
-            for chunk in iter(lambda: fh.read(engine.block_size), ''):
-                engine.update(chunk)
+        fh = open(filename, 'rb')
+        for chunk in iter(lambda: fh.read(engine.block_size), ''):
+            engine.update(chunk)
+        fh.close()
         digest = engine.hexdigest()
     return digest
 
