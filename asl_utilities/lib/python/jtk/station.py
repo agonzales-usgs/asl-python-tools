@@ -1213,6 +1213,16 @@ class StationSlate(Station):
                     'upipe.py',
                 ]
             ),
+            #( # Path
+            #    '/opt/util/scripts',
+            #    [
+            #        'baler.py',
+            #        'checks.py',
+            #        'dlc.py',
+            #        'falcon.py',
+            #        'upipe.py',
+            #    ]
+            #),
         ]
 
         self.install_list = [
@@ -1244,18 +1254,19 @@ class StationSlate(Station):
         self._log(self.reader.before)
 
     def needs_update(self, file):
-        if not os.path.exists(file):
+        local_file = os.path.basename(file)
+        if not os.path.exists(local_file):
             return False
         if not len(self.version_files.keys()):
             return True
         if not len(self.need_update.keys()):
             return False
         key = file
-        if (len(file) > 8) and (file[-8:] == '.tar.bz2'):
+        if file.endswith(".tar.bz2"):
             key = file[:-8] + '.md5'
         if not self.version_files.has_key(key):
             return False
-        if hashsum.sum(file, 'MD5') != self.version_files[key][1]:
+        if hashsum.sum(local_file, 'MD5') != self.version_files[key][1]:
             self._log("Update file '%s' does not match MD5 in versions file!" % file)
             return False
         if self.need_update.has_key(key):
@@ -1263,10 +1274,21 @@ class StationSlate(Station):
         return False
 
     def transfer(self):
+        self._log("Version Files: " + ", ".join(sorted(self.version_files.keys())))
         self._log("Need Update: " + ", ".join(sorted(self.need_update.keys())))
         for (dst, srcs) in self.transfer_list:
-            source_files = filter(lambda i: self.needs_update(i), srcs)
+            self._log("sources: " + ", ".join(sorted(srcs)))
+            source_files = []
+            for src in srcs:
+                if src in self.script_list:
+                    target = "%s/scripts/%s" % (dst, src)
+                else:
+                    target = "%s/%s" % (dst, src)
+
+                if self.needs_update(target):
+                    source_files.append(src)
             if not len(source_files):
+                self._log("Nothing to update!")
                 continue
             port_str = ""
             auth_str = ""
@@ -1316,10 +1338,11 @@ class StationSlate(Station):
             md5_response = ''
             if not os.path.exists(file_name):
                 continue
-            if not self.needs_update(file_name):
+            file = self.install_path + '/' + file_name
+
+            if not self.needs_update(file):
                 continue
             self._log(str((id, file_name)))
-            file = self.install_path + '/' + file_name
 
             self.reader.sendline("(which md5sum &> /dev/null && md5sum %s) || (which md5 &> /dev/null && md5 %s)" % (file_name, file_name))
             try:
@@ -1525,7 +1548,7 @@ class StationSlate(Station):
             if ref_md5 != md5_hash:
                 self.version_queue.put("%s:%s" % (self.name, summary))
                 log_category = 'warning'
-                self.need_update[os.path.basename(file)] = True
+                self.need_update[file] = True
             self._log(summary, category=log_category)
 
 
