@@ -45,7 +45,7 @@ class Main:
         self.db_file = "stations.db"
         self.summary_path = ""
         if os.environ.has_key('HOME'):
-            self.summary_path = os.path.abspath(os.environ['HOME'] + "/stations/gsn")
+            self.summary_path = os.path.abspath(os.environ['HOME'] + "/stations")
         if not os.path.isdir(self.summary_path):
             self.summary_path = os.path.abspath(".")
 
@@ -82,7 +82,7 @@ class Main:
         station_groups = []
         station_groups.append(('IMS',  self.db.get_stations_by_subset('CTBTO', False)))
         station_groups.append(('OTHER', self.db.get_stations_by_subset('CTBTO', True)))
-        report_file = time.strftime("gsn-stations-%Y%m%d-%H%M%S.report")
+        report_file = time.strftime("stations-%Y%m%d-%H%M%S.report")
         oh = open(report_file, 'w+')
 
         max_days = 4
