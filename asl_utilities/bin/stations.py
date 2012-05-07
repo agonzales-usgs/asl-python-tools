@@ -153,26 +153,26 @@ class Manager(threading.Thread):
     def add_commands(self, commands):
         self.commands.extend(commands)
 
-    def set_selected_stations(self, list):
-        self.selected_stations = list
+    def set_selected_stations(self, stations):
+        self.selected_stations = stations
 
-    def set_excluded_stations(self, list):
-        self.excluded_stations = list
+    def set_excluded_stations(self, stations):
+        self.excluded_stations = stations
 
-    def set_selected_networks(self, list):
-        self.selected_networks = list
+    def set_selected_networks(self, networks):
+        self.selected_networks = networks
 
-    def set_excluded_networks(self, list):
-        self.excluded_networks = list
+    def set_excluded_networks(self, networks):
+        self.excluded_networks = networks
 
-    def set_exclusion(self, list):
-        self.exclusion = list
+    def set_exclusion(self, exclusion):
+        self.exclusion = exclusion
 
-    def set_types(self, list):
-        self.types = list
+    def set_types(self, types):
+        self.types = types
 
-    def set_group_selection(self, list):
-        self.group_selection = list
+    def set_group_selection(self, groups):
+        self.group_selection = groups
 
 
 # ===== Entry Point =====
@@ -193,9 +193,15 @@ class Manager(threading.Thread):
                         group = info['group']
                     groups[group][info['name']] = info
                     max_name_len = max(max_name_len, len(station))
-                for group in sorted(groups.keys()):
+                group_names = self.groups.keys()
+                if self.group_selection is not None:
+                    group_names = self.group_selection
+                for group in sorted(group_names):
                     if group == 'NONE':
                         print "No Group (%d stations):" % len(groups[group].keys())
+                    elif not groups.has_key(group):
+                        print "Group '%s' does not exist" % group
+                        continue
                     else:
                         print "Group '%s' (%d stations):" % (group, len(groups[group].keys()))
                     for station in sorted(groups[group].keys()):
