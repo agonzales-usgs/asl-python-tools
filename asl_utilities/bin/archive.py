@@ -440,7 +440,10 @@ class WriteThread(Thread):
             record = data[7]
             rec_len = len(record)
             st_dir = "%s_%s" % (network,station)
-            ch_file = "%s_%s.%d.seed" % (location,channel,rec_len)
+            loc_str = ""
+            if len(location) > 0:
+                loc_str = "%s_" % location
+            ch_file = "%s%s.%d.seed" % (loc_str,channel,rec_len)
             date = time.strftime("%Y/%j", time.gmtime(data[5] / 10000))
             date_path = date
             if self.year_in_day_path:

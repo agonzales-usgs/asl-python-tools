@@ -22,6 +22,16 @@ class Main:
             action="store_true", 
             help="Symlinks should be created to matched directories"))
         option_list.append(optparse.make_option(
+            "-j", "--join", 
+            dest="join", 
+            action="store_true", 
+            help="Show all stations on the same page"))
+        option_list.append(optparse.make_option(
+            "-s", "--include-symlinks", 
+            dest="include_symlinks", 
+            action="store_true", 
+            help="Symlinks should be created to matched symlinks"))
+        option_list.append(optparse.make_option(
             "-t", "--use-temp-data", 
             dest="use_temp_data", 
             action="store_true", 
@@ -31,11 +41,27 @@ class Main:
             dest="dump_temp_data", 
             action="store_true", 
             help="just dump temporary data, don't launch the display"))
+
         option_list.append(optparse.make_option(
-            "-s", "--include-symlinks", 
-            dest="include_symlinks", 
-            action="store_true", 
-            help="Symlinks should be created to matched symlinks"))
+            "-N", "--network", 
+            dest="network", 
+            action="store", 
+            help="swmicolon-separated wildcard filter by network"))
+        option_list.append(optparse.make_option(
+            "-S", "--station", 
+            dest="station", 
+            action="store", 
+            help="swmicolon-separated wildcard filter by station"))
+        option_list.append(optparse.make_option(
+            "-L", "--location", 
+            dest="location", 
+            action="store", 
+            help="swmicolon-separated wildcard filter by location"))
+        option_list.append(optparse.make_option(
+            "-C", "--channel", 
+            dest="channel", 
+            action="store", 
+            help="swmicolon-separated wildcard filter by channel"))
         self.parser = optparse.OptionParser(option_list=option_list)
         self.parser.set_usage("""Usage: %s [options] file_expr [file_expr ...] 
 
@@ -83,10 +109,10 @@ action:
             'picks'         : False,
             'quality'       : False,
 
-            'display'       : '4',
+            'display'       : '1',
             'format'        : False,
             'order'         : False,
-            'unit'          : '4',
+            'unit'          : '1',
 
             'data'          : False,
             'block'         : False,
@@ -152,6 +178,19 @@ action:
         if options.use_temp_data:
             xmax_options["temp"] = True
 
+        if options.join:
+            xmax_options["display"] = '4'
+            xmax_options["unit"] = '4'
+
+        if options.network:
+            xmax_options["network"] = options.network
+        if options.station:
+            xmax_options["station"] = options.station
+        if options.location:
+            xmax_options["location"] = options.location
+        if options.channel:
+            xmax_options["channel"] = options.channel
+
         if len(args) < 1:
             self.usage("No files specified")
 
@@ -193,7 +232,8 @@ action:
                 continue
             data_link = os.path.abspath(xmax_data + "/" + file)
             if not os.path.islink(data_link):
-                print "non-symlink found int xmax data directory: '%s'" % data_link
+                print "non-symlink '%s' found in xmax data directory will not be removed" % data_link
+                sys.exit(1)
             os.remove(data_link)
 
         for file_path in all_files.keys():
@@ -206,6 +246,7 @@ action:
                 print "symlink creation failed:"
                 print "  %s -> %s" % (link_path, file_path)
                 print "  exception: %s" % str(ex)
+                sys.exit(1)
 
         option_list = []
         for opt,val in xmax_options.items():
