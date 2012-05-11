@@ -261,8 +261,8 @@ action:
 
         # We don't give a non-gui option since an X server must be running
         # in order to see the XMAX window
-        executable = '/usr/bin/xterm'
-        arguments  = [executable, '-T', '\"XMAX\"', '-sl', '20480', '-e', "\". ~/.bash_profile; . ~/.bashrc; cd %s; java -version; java -Xms%s -Xmx%s -jar xmax.jar %s && read -n 1 -p 'Press any key to continue...'\"" % (xmax_dir, jvm_mem_start, jvm_mem_max, ' '.join(option_list))]
+        executable = '/bin/bash'
+        arguments  = [executable, '-c', "\". ~/.bash_profile; . ~/.bashrc; cd %s; java -version; java -Xms%s -Xmx%s -jar xmax.jar %s\"" % (xmax_dir, jvm_mem_start, jvm_mem_max, ' '.join(option_list))]
         print "Command:", ' '.join(arguments)
         os.popen(' '.join(arguments))
 
