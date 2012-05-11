@@ -191,9 +191,10 @@ action:
         if options.channel:
             xmax_options["channel"] = options.channel
 
-        if len(args) < 1:
+        if (len(args) < 1) and (not options.use_temp_data):
             self.usage("No files specified")
 
+        # Expand the file list
         all_files = {}
         for arg in args:
             files = glob.glob(arg)
@@ -209,6 +210,7 @@ action:
                 full_path = os.path.abspath(file)
                 all_files[full_path] = full_path
 
+        # If many files were specified, verify the uses wishes to continue
         if len(all_files) > 128:
             confirm = 'M'
             first = True
@@ -223,10 +225,12 @@ action:
                 print "Exiting at your request."
                 sys.exit(1);
 
-        if len(all_files) < 1:
+        # If no sources, bail
+        if (len(all_files) < 1) and (not options.use_temp_data):
             print "No files match your request."
             sys.exit(1)
 
+        # Remove symlinks from the previous session
         for file in os.listdir(xmax_data):
             if file == '.keep':
                 continue
@@ -236,6 +240,7 @@ action:
                 sys.exit(1)
             os.remove(data_link)
 
+        # Add new symlinks (if any)
         for file_path in all_files.keys():
             link_name = "_".join(file_path.split("/"))
             link_path = os.path.abspath(xmax_data + "/" + link_name)
@@ -248,6 +253,11 @@ action:
                 print "  exception: %s" % str(ex)
                 sys.exit(1)
 
+        # Fix for temporary data dump
+        if options.dump_temp_data:
+            xmax_options["data"] = xmax_data
+
+        # Generate the XMAX options
         option_list = []
         for opt,val in xmax_options.items():
             if val == False:
