@@ -534,9 +534,6 @@ class Main(Class):
             self.context['write'] = WriteThread(log_queue=self.context['log'].queue)
             self.context['read']  = ReadThread(self.context['write'].queue, log_queue=self.context['log'].queue)
             self.context['liss']  = LissThread(self.context['read'].queue, log_queue=self.context['log'].queue)
-            self._log("===============")
-            self._log("=== ARCHIVE ===")
-            self._log("===============")
 
             archive_path = ''
             config_file  = ''
@@ -655,6 +652,11 @@ class Main(Class):
             if running:
                 self._log("archive.py process [%s] is already running" % tpid)
                 raise KeyboardInterrupt
+
+            self._log("===============")
+            self._log("=== ARCHIVE ===")
+            self._log("===============")
+
             pid = os.getpid()
             self._log("starting new archive.py process [%d]" % pid)
             fh = open(pid_file, 'w+')
