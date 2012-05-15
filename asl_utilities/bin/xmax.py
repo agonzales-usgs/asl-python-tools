@@ -160,9 +160,16 @@ action:
         xmax_data = os.path.abspath(xmax_dir + "/DATA")
         if config.has_key("xmax-data"):
             xmax_data = os.path.abspath(config["xmax-data"])
-        if not os.path.isdir(xmax_dir):
+        if not os.path.isdir(xmax_data):
             print "xmax data directory '%s' could not be located" % xmax_data
             sys.exit(1)
+
+        if config.has_key("xmax-config"):
+	    xmax_config = os.path.abspath(config["xmax-config"])
+            if not os.path.isfile(xmax_config):
+                print "xmax directory '%s' could not be located" % xmax_config
+                sys.exit(1)
+            xmax_options["config"] = xmax_config
 
         jvm_mem_start = "512M"
         if config.has_key("jvm-mem-start"):
