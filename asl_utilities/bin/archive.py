@@ -521,6 +521,7 @@ class Main(Class):
         self.context['log'] = LogThread(prefix='archive_', note='ARCHIVE', pid=True)
         self.context['log'].start()
         self.log_queue = self.context['log'].queue
+        self.already_running = False
         # INFO: Can use the self._log() method after this point only  
 
     def start(self):
@@ -651,6 +652,7 @@ class Main(Class):
                             self._log("Invalid type for restart file %s" % restart_path)
             if running:
                 self._log("archive.py process [%s] is already running" % tpid)
+                self.already_running = True
                 raise KeyboardInterrupt
 
             self._log("===============")
@@ -737,7 +739,8 @@ class Main(Class):
         check_alive = lambda c,k: c.has_key(k) and c[k] and c[k].isAlive()
         thread_list = ['liss', 'read', 'write', 'log']
         for key in thread_list:
-            self._log("halting %s..." % self.context[key].name)
+            if not self.already_running:
+                self._log("halting %s..." % self.context[key].name)
             if check_alive(self.context, key):
                 if now:
                     self.context[key].halt_now()
