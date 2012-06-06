@@ -57,8 +57,7 @@ class Main:
 
     def start(self):
         self.options, self.args = self.parser.parse_args()
-        if self.options.path:
-            self.summary_path = os.path.abspath(self.options.path)
+        if self.options.path: self.summary_path = os.path.abspath(self.options.path)
         if not os.path.isdir(self.summary_path):
             print "Could not locate summary directory '%s'" % self.summary_path
             sys.exit(1)
@@ -79,6 +78,8 @@ class Main:
         if self.options.stations:
             arg_stations = map(lambda s: s.upper(), self.options.stations.split(','))
 
+        report_stations = map(lambda s: s[0].upper(), self.db.get_stations_by_subset('REPORT', False))
+
         station_groups = []
         station_groups.append(('IMS',  self.db.get_stations_by_subset('CTBTO', False)))
         station_groups.append(('OTHER', self.db.get_stations_by_subset('CTBTO', True)))
@@ -92,6 +93,9 @@ class Main:
                 if arg_stations and (station.upper() not in arg_stations):
                     continue
                 if arg_networks and (network.upper() not in arg_networks):
+                    continue
+                netst = network + station
+                if report_stations and (netst.upper() not in report_stations):
                     continue
 
                 now = time.gmtime()
