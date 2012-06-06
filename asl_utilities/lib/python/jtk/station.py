@@ -1194,6 +1194,7 @@ class StationSlate(Station):
         self.commands_only = commands_only
         self.continuity_only = continuity_only
         self.versions_only = versions_only
+        self.skip_continuity = False
 
         self.commands = commands
         self.version_files = {}
@@ -1238,6 +1239,9 @@ class StationSlate(Station):
             'falcon.py',
             'upipe.py',
         ]
+
+    def skip_continuity_check(self, skip):
+        self.skip_continuity = skip
 
     def process_commands(self, commands):
         for command in commands:
@@ -1449,7 +1453,7 @@ class StationSlate(Station):
             self._log(self.reader.before)
 
     def check(self):
-        if (not self.versions_only) and (not self.commands_only):
+        if (not self.versions_only) and (not self.commands_only) and (not self.skip_continuity):
             self.check_diskloop_continuity()
 
         if (not self.continuity_only) and (not self.commands_only):

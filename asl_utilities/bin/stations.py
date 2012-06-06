@@ -534,6 +534,8 @@ class ThreadLoop(threading.Thread):
             station.set_password(info['password'])
         if info.has_key('prompt'):
             station.prompt_shell = info['prompt']
+        if info.has_key('skip-continuity'):
+            station.skip_continuity_check(info['skip-continuity'].upper() == 'TRUE')
         if info.has_key('netserv'):
             list = info['netserv'].split(',')
             for item in list:
@@ -947,7 +949,7 @@ action:
                 stations_set = True
             if (options.excluded_stations):
                 if stations_set:
-                    self.usage("Cannot use both -s and -S flags.")
+                    self.usage("Cannot specify options -s and -S simultaneously.")
                 manager.set_excluded_stations(map(lambda o: o.upper(), options.excluded_stations.split(',')))
             if (options.selected_networks):
                 manager.set_selected_networks(map(lambda o: o.upper(), options.selected_networks.split(',')))
