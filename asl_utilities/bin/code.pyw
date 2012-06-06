@@ -37,6 +37,7 @@ class Q330_Code:
         self.radiobutton_3   = gtk.RadioButton(group=self.radiobutton_C, label="3")
         self.radiobutton_4   = gtk.RadioButton(group=self.radiobutton_C, label="4")
         self.radiobutton_G   = gtk.RadioButton(group=self.radiobutton_C, label="G")
+        self.radiobutton_N   = gtk.RadioButton(group=self.radiobutton_C, label="N")
 
         self.label_auth_code = gtk.Label("Auth. Code:")
         self.entry_auth_code = gtk.Entry(max=16)
@@ -91,6 +92,7 @@ class Q330_Code:
         self.hbox_type.pack_start(self.radiobutton_3, False, False, 5)
         self.hbox_type.pack_start(self.radiobutton_4, False, False, 5)
         self.hbox_type.pack_start(self.radiobutton_G, False, False, 5)
+        self.hbox_type.pack_start(self.radiobutton_N, False, False, 5)
 
         self.hbox_auth_code.pack_start(self.label_auth_code, False, False, 0)
         self.hbox_auth_code.pack_end(self.entry_auth_code, False, False, 0)
@@ -134,6 +136,7 @@ class Q330_Code:
         self.radiobutton_3.connect("toggled", self.callback_radio, None, "D3")
         self.radiobutton_4.connect("toggled", self.callback_radio, None, "D4")
         self.radiobutton_G.connect("toggled", self.callback_radio, None, "071920") # "GST" (guest)
+        self.radiobutton_N.connect("toggled", self.callback_radio, None, "") # "GST" (guest)
 
         self.entry_auth_code.connect("focus", self.callback_entry_auth_code_focused, None)
 
@@ -165,6 +168,8 @@ class Q330_Code:
                 self.radiobutton_4.set_active(True)
             elif event.keyval == ord('5'):
                 self.radiobutton_G.set_active(True)
+            elif event.keyval == ord('6'):
+                self.radiobutton_N.set_active(True)
             elif event.keyval == ord('e'):
                 self.entry_station.grab_focus()
             elif event.keyval == ord('c'):
