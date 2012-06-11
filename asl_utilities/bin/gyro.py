@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 try:
-    import traceback
-    import optparse
-    import signal
-    import sys
-    import threading
-    import struct
     from CnC import pyserial
     import Queue
+    import datetime
+    import math
+    import optparse
     import re
+    import signal
     import string
+    import struct
+    import sys
+    import threading
     import threading
     import time
-    import datetime
+    import traceback
 except Exception, ex:
     print "[Exception]> %s" % str(ex)
     (ex_f, ex_s, trace) = sys.exc_info()
@@ -42,6 +43,8 @@ class Gyro:
                 timestamp_offset = 99
                 timestamp = None
                 last_point = None
+                sync_sum = 0.0
+                sync_count = 0
 
                 # get first sync value
                 data = self.serial.read(6)
@@ -51,7 +54,9 @@ class Gyro:
                 sync_old = (bytes[0] & 0xc0) >> 6
 
             data = self.serial.read(6)
-            current_point = time.clock()
+            #if platform.system() == "Windows":
+            #    current_point = time.clock()
+            current_point = time.time()
             timestamp_offset += 1
             if timestamp_offset > 99:
                 last_stamp = timestamp
@@ -129,9 +134,15 @@ class Gyro:
                 point_diff_str = "(%f sec)" % (current_point - last_point,)
             last_point = current_point
 
-            print "f1=%f f2=%f %s" % (f1, f2, point_diff_str)
-            #print "c1=0x%08x c2=0x%08x" % (c1, c2)
+            theta = math.atan2((-1.0 * f1),f2) * (180.0 / math.pi) 
 
+            sync_sum += theta
+            sync_count += 1
+
+            #print "c1=%+d c2=%+d" % (c1, c2)
+            if sync_count > 0:
+                avg_str = "AVERAGE=%f" % (sync_sum / sync_count,)
+            print "f1=%+f f2=%+f %s > %s THETA=%+0.6f" % (f1, f2, point_diff_str, avg_str, theta)
 
     def sync(self):
         self.syncs += 1
