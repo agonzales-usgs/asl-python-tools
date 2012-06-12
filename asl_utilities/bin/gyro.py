@@ -11,7 +11,6 @@ try:
     import struct
     import sys
     import threading
-    import threading
     import time
     import traceback
 except Exception, ex:
@@ -35,7 +34,11 @@ class Gyro:
         timestamp_offset = 99
         timestamp = None
         last_point = None
-        point_sum = 0.0
+        point_sum = 0.0 
+        avg_sum = 0.0
+        avg_count = 0
+        move1 = 0
+        move2 = 0
         while 1:
             if sync_old < 0:
                 self.sync()
@@ -43,8 +46,10 @@ class Gyro:
                 timestamp_offset = 99
                 timestamp = None
                 last_point = None
-                sync_sum = 0.0
-                sync_count = 0
+                avg_sum = 0.0
+                avg_count = 0
+                move1 = 0
+                move2 = 0
 
                 # get first sync value
                 data = self.serial.read(6)
@@ -52,6 +57,12 @@ class Gyro:
 
                 bytes = struct.unpack(">6B", data)
                 sync_old = (bytes[0] & 0xc0) >> 6
+
+            if (math.fabs(move1) > 100) and (math.fabs(move2) > 100):
+                avg_sum = 0.0
+                avg_count = 0
+                move1 = 0
+                move2 = 0
 
             data = self.serial.read(6)
             #if platform.system() == "Windows":
@@ -124,6 +135,24 @@ class Gyro:
 
             c1, c2 = struct.unpack(">ii", struct.pack(">II", c1, c2))
 
+            if c1 > 0:
+                if move1 < 0:
+                    move1 = 0
+                move1 += 1
+            elif c1 < 0:
+                if move1 > 0:
+                    move1 = 0
+                move1 -= 1
+
+            if c2 > 0:
+                if move2 < 0:
+                    move2 = 0
+                move2 += 1
+            elif c2 < 0:
+                if move2 > 0:
+                    move2 = 0
+                move2 -= 1
+
             # Convert into degrees/second
             f1 = 0.0004768 * c1
             f2 = 0.0004768 * c2
@@ -136,12 +165,12 @@ class Gyro:
 
             theta = math.atan2((-1.0 * f1),f2) * (180.0 / math.pi) 
 
-            sync_sum += theta
-            sync_count += 1
+            avg_sum += theta
+            avg_count += 1
 
             #print "c1=%+d c2=%+d" % (c1, c2)
-            if sync_count > 0:
-                avg_str = "AVERAGE=%f" % (sync_sum / sync_count,)
+            if avg_count > 0:
+                avg_str = "AVERAGE=%f (%d points)" % (avg_sum / avg_count, avg_count)
             print "f1=%+f f2=%+f %s > %s THETA=%+0.6f" % (f1, f2, point_diff_str, avg_str, theta)
 
     def sync(self):
@@ -208,7 +237,7 @@ if __name__ == "__main__":
         (ex_f, ex_s, trace) = sys.exc_info()
         traceback.print_tb(trace)
 
-    print "Read %d bytes (%d since last sync)" % (gyro.bytes, gyro.sync_bytes)
+    print "Read %d bytes (%d samples since last sync)" % (gyro.bytes, gyro.sync_bytes / 6)
     print "Invalids (c1=%d c2=%d)" % (gyro.c1_invalids, gyro.c2_invalids)
     print "Synchronized %d times" % gyro.syncs
     raw_input("Press Enter...")
