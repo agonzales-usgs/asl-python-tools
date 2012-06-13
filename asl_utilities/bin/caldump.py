@@ -804,13 +804,16 @@ def main():
         option_list.append(optparse.make_option("-v", action="count", dest="verbosity", help="specify multiple time to increase verbosity"))
         parser = optparse.OptionParser(option_list=option_list)
         options, args = parser.parse_args()
-        if options.gui or (len(sys.argv) < 2):
+        if options.gui:
             if not HAS_GUI:
                 print "System does not support the GUI component."
                 parser.print_help()
                 sys.exit(1)
             reader = CalsUI()
             gtk.main()
+	elif len(args) < 1:
+            parser.print_help()
+            sys.exit(1)
         else:
             reader = SEEDReader()
             reader.succinct          = options.succinct
