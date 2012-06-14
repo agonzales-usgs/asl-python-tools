@@ -39,6 +39,11 @@ class Gyro:
         avg_count = 0
         move1 = 0
         move2 = 0
+
+        f_count = 0
+        f1_sum = 0.0
+        f2_sum = 0.0
+
         while 1:
             if sync_old < 0:
                 self.sync()
@@ -50,6 +55,10 @@ class Gyro:
                 avg_count = 0
                 move1 = 0
                 move2 = 0
+
+                f_count = 0
+                f1_sum = 0.0
+                f2_sum = 0.0
 
                 # get first sync value
                 data = self.serial.read(6)
@@ -157,21 +166,32 @@ class Gyro:
             f1 = 0.0004768 * c1
             f2 = 0.0004768 * c2
 
-            point_diff_str = ""
-            if last_point != None:
-                point_sum += current_point - last_point
-                point_diff_str = "(%f sec)" % (current_point - last_point,)
-            last_point = current_point
+            f1_sum += f1
+            f2_sum += f2
+            f_count += 1
 
-            theta = math.atan2((-1.0 * f1),f2) * (180.0 / math.pi) 
+            print_theta = False
+            if not print_theta:
+                if f_count > 0:
+                    f1_avg = f1_sum / f_count
+                    f2_avg = f2_sum / f_count
+                    print "f1=%+0.6f (avg=%+0.6f) -- f2=%+0.6f (avg=%+0.6f)   [%d points]" % (f1, f1_avg, f2, f2_avg, f_count)
+            else:
+                point_diff_str = ""
+                if last_point != None:
+                    point_sum += current_point - last_point
+                    point_diff_str = "(%f sec)" % (current_point - last_point,)
+                last_point = current_point
 
-            avg_sum += theta
-            avg_count += 1
+                theta = math.atan2((-1.0 * f1),f2) * (180.0 / math.pi) 
 
-            #print "c1=%+d c2=%+d" % (c1, c2)
-            if avg_count > 0:
-                avg_str = "AVERAGE=%f (%d points)" % (avg_sum / avg_count, avg_count)
-            print "f1=%+f f2=%+f %s > %s THETA=%+0.6f" % (f1, f2, point_diff_str, avg_str, theta)
+                avg_sum += theta
+                avg_count += 1
+
+                #print "c1=%+d c2=%+d" % (c1, c2)
+                if avg_count > 0:
+                    avg_str = "AVERAGE=%f (%d points)" % (avg_sum / avg_count, avg_count)
+                print "f1=%+f f2=%+f %s > %s THETA=%+0.6f" % (f1, f2, point_diff_str, avg_str, theta)
 
     def sync(self):
         self.syncs += 1
