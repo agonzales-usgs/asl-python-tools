@@ -19,6 +19,12 @@ class Main:
             action="store",
             help="Database file to use for station and channel information"))
         option_list.append(optparse.make_option(
+            "-m",
+            dest="max_days",
+            action="store",
+            type="int",
+            help="Max number of days to search for check results"))
+        option_list.append(optparse.make_option(
             "-n", "--networks",
             dest="networks",
             action="store",
@@ -70,6 +76,10 @@ class Main:
             print "Could not open database '%s'" % self.db_file
             sys.exit(1)
 
+        max_days = 4
+        if self.options.max_days:
+            max_days = self.options.max_days
+
         arg_networks = None
         if self.options.networks:
             arg_networks = map(lambda n: n.upper(), self.options.stations.split(','))
@@ -86,7 +96,6 @@ class Main:
         report_file = time.strftime("stations-%Y%m%d-%H%M%S.report")
         oh = open(report_file, 'w+')
 
-        max_days = 4
         for subset,stations in station_groups:
             oh.write("%s INTERNET STATIONS (%s)\n.\n" % (subset, time.strftime("%Y/%m/%d")))
             for (_,network,station) in stations:
