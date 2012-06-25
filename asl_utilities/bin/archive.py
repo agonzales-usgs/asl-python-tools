@@ -56,6 +56,7 @@ class Status(asyncore.dispatcher, Class):
         self._write_address = None
         self._master = master
         self._regex_status = re.compile('^\[(.*)\]<(.*)>$')
+        self._restart = False
 
     def handle_read(self):
         try:
@@ -66,17 +67,21 @@ class Status(asyncore.dispatcher, Class):
             return 0
         match = self._regex_status.search(packet)
         if match:
-            id,message = match.groups()
+            msg_id,message = match.groups()
         else:
-            id = '0'
+            msg_id = '0'
             message = packet
 
-        if message == 'STATUS':
-            self._buffers.append(('[%s]<ACTIVE>' % id, address))
+        if message == 'RESTART':
+            self._restart = True
+            self._buffers.append(('[%s]<%d>' % (msg_id,os.getpid()), address))
+            signal.alarm(1)
+        elif message == 'STATUS':
+            self._buffers.append(('[%s]<ACTIVE>' % msg_id, address))
         elif message == 'LAST-PACKET':
-            self._buffers.append(('[%s]<%d>' % (id,self._master._last_packet_received), address))
+            self._buffers.append(('[%s]<%d>' % (msg_id,self._master._last_packet_received), address))
         elif message == 'PID':
-            self._buffers.append(('[%s]<%d>' % (id,getpid()), address))
+            self._buffers.append(('[%s]<%d>' % (msg_id,os.getpid()), address))
         else:
             self._buffers.append(('[-1]<UNRECOGNIZED>', address))
         return len(packet)
@@ -150,6 +155,9 @@ class LissThread(Thread):
         self.address_changed = False
         self.status = Status(self,status_port)
         self._last_packet_received = 0
+
+    def restart_requested(self):
+        return self.status._restart
 
     def get_status_port(self):
         return self.status.getsockname()[1]
@@ -724,6 +732,9 @@ class Main(Class):
                     self._log("caught a signal")
                 except:
                     time.sleep(1.0)
+
+                if self.context['liss'].restart_requested():
+                    self.halt_now()
         except KeyboardInterrupt:
             pass
 

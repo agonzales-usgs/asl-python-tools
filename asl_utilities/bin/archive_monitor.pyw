@@ -60,6 +60,7 @@ class Status(asyncore.dispatcher):
         asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.bind(('0.0.0.0', 0))
+        self._pid = None
         self._buffers = []
         self._write_buffer = ''
         self._write_address = None
@@ -70,7 +71,16 @@ class Status(asyncore.dispatcher):
 
     def check_status(self):
         #print "%s::check_status()" % self.__class__.__name__
+        if self._pid is None:
+            self.get_pid()
         self._buffers.append(('[TIMESTAMP]<LAST-PACKET>', self._address))
+
+    def get_pid(self):
+        self._buffers.append(('[PID]<PID>', self._address))
+
+    def restart_archive(self):
+        #print "Sending restart request..."
+        self._buffers.append(('[RESTART]<RESTART>', self._address))
 
     def set_address(self, address):
         tmp_address = self._address
@@ -92,14 +102,19 @@ class Status(asyncore.dispatcher):
             return 0
         match = self._regex_status.search(packet)
         if match:
-            id,message = match.groups()
+            msg_id,message = match.groups()
         else:
-            id = '0'
+            msg_id = '0'
             message = packet
 
         try:
-            if id == 'TIMESTAMP':
+            if msg_id == 'TIMESTAMP':
                 self._last_activity = int(message)
+            elif msg_id == 'RESTART':
+                self._pid = None
+                self._last_activity = 0
+            elif msg_id == 'PID':
+                self._pid = int(message)
                 #print "Last packet received", int(message)
         except:
             pass
@@ -161,6 +176,12 @@ class CommThread(Thread):
     def get_last_activity(self):
         return self._status._last_activity
 
+    def get_archive_pid(self):
+        return self._status._pid
+
+    def restart_archive(self):
+        self._status.restart_archive()
+
     def run(self):
         try:
             #print "%s::run()" % self.__class__.__name__
@@ -204,7 +225,7 @@ class StatusThread(Thread):
                 self._master.update_time()
                 try:
                     #print "%s::run() Sleeping" % self.__class__.__name__
-                    self.queue.get(True,self._master.check_interval)
+                    request = self.queue.get(True,self._master.check_interval)
                 except Queue.Empty:
                     pass
         except Exception, e:
@@ -225,13 +246,13 @@ class RestartThread(Thread):
         if message == 'RESTART':
             try:
                 pid_file = os.path.abspath(self._master.archive_path + '/archive.pid')
-                print "PID file is", pid_file
+                #print "PID file is", pid_file
                 tpid = '' 
                 if os.path.exists(pid_file):
                     tpid = open(pid_file).read(32).strip()
                 elif os.path.exists('/tmp/archive.pid'):
                     tpid = open('/tmp/archive.pid', 'r').read(32).strip()
-                print "PID is", tpid
+                #print "PID is", tpid
                 if tpid and self._find_proc(tpid):
                     #print "archive.py process [%s] found" % tpid
                     restart_file = os.path.abspath("%s/restart.%s" % (self._master.archive_path, tpid))
@@ -330,26 +351,26 @@ class ArchiveIcon:
         self.menu.set_title("Archive Monitor")
         self.menu.connect("selection-done", self.callback_selection_done, None)
 
-        self.menuitem_delay = gtk.MenuItem("Delay: Unknown")
+        self.menuitem_delay = gtk.MenuItem("[--] Delay: Unknown")
         self.menu.append(self.menuitem_delay)
 
         self.image_restart = gtk.Image()
         self.image_restart.set_from_pixbuf(asl.new_icon('restart').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.menuitem_restart = gtk.ImageMenuItem("Restart", "Restart")
+        self.menuitem_restart = gtk.ImageMenuItem("Restart Telemetry", "Restart Telemetry")
         self.menuitem_restart.set_image(self.image_restart)
         self.menuitem_restart.connect("activate", self.callback_restart, None)
         self.menu.append(self.menuitem_restart)
 
         self.image_update = gtk.Image()
         self.image_update.set_from_pixbuf(asl.new_icon('usb').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.menuitem_update = gtk.ImageMenuItem("Update", "Update")
+        self.menuitem_update = gtk.ImageMenuItem("Update Metadata", "Update Metadata")
         self.menuitem_update.set_image(self.image_update)
         self.menuitem_update.connect("activate", self.callback_update, None)
         self.menu.append(self.menuitem_update)
 
         self.image_server = gtk.Image()
         self.image_server.set_from_pixbuf(asl.new_icon('network').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
-        self.menuitem_server = gtk.ImageMenuItem("Server", "Server")
+        self.menuitem_server = gtk.ImageMenuItem("Server Settings", "Server Settings")
         self.menuitem_server.set_image(self.image_server)
         self.menuitem_server.connect("activate", self.callback_server, None)
         self.menu.append(self.menuitem_server)
@@ -389,6 +410,8 @@ class ArchiveIcon:
         self.close_application()
 
     def callback_restart(self, widget, event, data=None):
+        # We now attempt to restart
+        self.comm_thread.restart_archive()
         self.restart_thread.queue.put(('RESTART', None))
 
     def callback_update(self, widget, event, data=None):
@@ -468,9 +491,14 @@ class ArchiveIcon:
     def callback_update_time(self, widget, event, data=None):
         #print "%s::callback_update_time()" % self.__class__.__name__
         delay = calendar.timegm(time.gmtime()) - self.comm_thread.get_last_activity()
+        archive_pid = self.comm_thread.get_archive_pid()
+        #print "Archive PID is", archive_pid
         #print "delay is %d seconds" % delay
         try:
-            self.menuitem_delay.set_label("Delay: %d seconds" % delay)
+            pid_str = '--'
+            if archive_pid is not None:
+                pid_str = str(archive_pid)
+            self.menuitem_delay.set_label("[%s] Delay: %d seconds" % (pid_str,delay))
         except Exception, e:
             #print "%s: Could not update delay> %s" % (e.__class__.__str__, str(e))
             pass
