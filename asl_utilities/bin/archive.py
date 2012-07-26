@@ -18,6 +18,7 @@ import traceback
 from jtk.Class import Class
 from jtk.Thread import Thread
 from jtk.Logger import LogThread
+from jtk import hexdump
 
 # === Notifier Class /*{{{*/
 class Notifier(asyncore.dispatcher):
@@ -75,7 +76,7 @@ class Status(asyncore.dispatcher, Class):
         if message == 'RESTART':
             self._restart = True
             self._buffers.append(('[%s]<%d>' % (msg_id,os.getpid()), address))
-            signal.alarm(1)
+            os.kill(os.getpid(), signal.SIGTERM)
         elif message == 'STATUS':
             self._buffers.append(('[%s]<ACTIVE>' % msg_id, address))
         elif message == 'LAST-PACKET':
@@ -319,7 +320,7 @@ class ReadThread(Thread):
                 # 1000. If it is not, we skip to the next 64 byte group. 
                 if blockette_type != 1000:
                     self._log("Invalid record. First blockette of a SEED record should always be type 1000.\n", 'err')
-                    print hex_dump(self.buffer[:64])
+                    print hexdump.hexdump(self.buffer[:64], width=8)
                     self.buffer = self.buffer[64:]
                     continue
                 # Check the length of the record so we know how much data to
@@ -659,7 +660,7 @@ class Main(Class):
                         else:
                             self._log("Invalid type for restart file %s" % restart_path)
             if running:
-                self._log("archive.py process [%s] is already running" % tpid)
+                self._log("archive.py process [%s] is already running" % tpid, 'dbg')
                 self.already_running = True
                 raise KeyboardInterrupt
 
@@ -794,32 +795,6 @@ def find_proc(tpid):
             if re.search('archive[.]py', exe):
                 return True
     return False
-
-def hex_dump(bytes):
-    total  = 0
-    count  = 0
-    string = ''
-    result = "%08x " % total
-    for b in map(int, struct.unpack(">%dB" % len(bytes), bytes)):
-        result += " %02x" % b
-        if 31 < b < 127:
-            string += chr(b)
-        else:
-            string += '.'
-        count += 1
-        total += 1
-        if count == 8: result += " "
-        if count == 16:
-            result += "  " + string + "\n"
-            result += "%08x " % total
-            count = 0
-            string = ''
-    if len(string):
-        while count < 16:
-            count  += 1
-            result +=  "   "
-        result += "  " + string + "\n"
-    return result
 #/*}}}*/
 
 def T(s,t,f):

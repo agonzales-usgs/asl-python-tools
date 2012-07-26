@@ -1,0 +1,2 @@
+ARCHD = /home/jdedwards/bin/archd /etc/q330/DLG1/diskloop.config
+FBA1 = /home/jdedwards/bin/q330serv /etc/q330/FBA1

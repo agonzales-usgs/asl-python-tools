@@ -27,7 +27,8 @@ class Thread(threading.Thread, Class):
         if join:
             try:
                 self.join()
-            except RuntimeError:
+            except RuntimeError, err:
+                self._log("halt() RuntimeError: %s" % str(err), 'err')
                 pass # handle the situation where halt() is called by this thread
 
     def run(self):
@@ -49,8 +50,8 @@ class Thread(threading.Thread, Class):
                     self._run(message, data)
         except KeyboardInterrupt:
             pass
-        except Exception, e:
-            self._log("run() Exception: %s" % str(e), 'err')
+        except Exception, ex:
+            self._log("run() Exception: %s" % str(ex), 'err')
             #raise #XXX: Un-comment to debug threading issues
         self._post()
 
