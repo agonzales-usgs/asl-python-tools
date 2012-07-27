@@ -14,8 +14,9 @@ import traceback
 
 from jtk import Config
 from jtk.Class import Class
-from jtk.Thread import Thread
 from jtk.Logger import LogThread
+from jtk.StatefulClass import StatefulClass
+from jtk.Thread import Thread
 from jtk import hexdump
 
 # === Functions/*{{{*/
@@ -52,6 +53,24 @@ def find_process(arg_list):
         break
 
     return pid
+
+def kill_process(name, arg_list, log=print_func, tries=15, delay=1.0, interrupt=None):
+    pid = find_process(arg_list)
+    if pid is not None:
+        log("sending SIGTERM to '%s' process [%s]" % (name,pid))
+        os.kill(int(pid), 15)
+        while 1 and ((interrupt is None) or (interrupt['stop'] == False)):
+            tpid = not find_process(arg_list)
+            if tpid != pid:
+                log("'%s' process [%s] has died" % (name,pid))
+                break
+            tries -= 1
+            if tries <= 0:
+                log("sending SIGKILL to '%s' process [%s]" % (name,pid))
+                os.kill(int(pid), 9)
+                break
+            time.sleep(delay)
+
 
 def find_proc(tpid):
     tpid = str(tpid)
@@ -228,13 +247,16 @@ class CommThread(Thread):
 
 # === ControlThread Class /*{{{*/
 class ControlThread(Thread):
-    def __init__(self, master, comm, log_queue=None, name=None, queue=None):
-        Thread.__init__(self, log_queue=log_queue, name=name)
+    def __init__(self, master, comm, config, log_queue=None, name=None, queue=None):
+        Thread.__init__(self, log_queue=log_queue, name=name, queue=queue)
         self._halt = False
         self._master = master
         self._comm = comm
-        if queue is not None:
-            self.queue = queue
+        self._config = config
+        self._processes = {}
+
+    def add_process(self, id, args):
+        self._processes[id] = ProcessThread(self, self._config, id, args)
 
     def _run(self, key, request):
         try:
@@ -248,7 +270,25 @@ class ControlThread(Thread):
                 self._halt = True
             else:
                 cmd,proc = request.split('.')
+                if not self._processes.has_key(proc):
+                    reply = "Process '%s' not found"
+                else:
+                    process = self._processes[proc]
+                    if cmd == "STATUS":
+                        reply = process._state
+                    elif cmd == "RESTART":
+                        reply = process.queue.put((cmd, None))
+                        reply = "Restarting '%s'" % proc
+                    elif cmd == "ENABLE":
+                        reply = process.queue.put((cmd, None))
+                        reply = "Enabling '%s'" % proc
+                    elif cmd == "DISABLE":
+                        reply = process.queue.put((cmd, None))
+                        reply = "Disabling '%s'" % proc
+                    else:
+                        reply = "Invalid Command" % cmd
 
+            self._log(reply, 'dbg')
             self._comm.reply(key, reply)
 
         except KeyboardInterrupt:
@@ -260,35 +300,81 @@ class ControlThread(Thread):
         if self._halt:
             self._log("halt requested")
             os.kill(os.getpid(), signal.SIGTERM)
+
+    def _post(self):
+        for id in self._processes.keys():
+            process = self._processes[id]
+            del self._procsses[id]
+            process.halt(join=True)
 
     def halt_requested(self):
         return self._halt
 #/*}}}*/
 
-# === ProcessThread Class /*{{{*/
-class ProcessThread(Thread):
-    def __init__(self, master, comm, log_queue=None, name=None, queue=None):
+# === ConfigThread Class /*{{{*/
+class ConfigThread(Thread, StatefulClass):
+    def __init__(self, master, db, log_queue=None, name=None):
         Thread.__init__(self, log_queue=log_queue, name=name)
-        self._halt = False
+        StatefulClass.__init__(self, db)
         self._master = master
-        self._comm = comm
-        if queue is not None:
-            self.queue = queue
+        self.halt_now = self.halt # Must finish processing requests, or other threads will hang
 
     def _run(self, key, request):
         try:
-            reply = ""
+            if key == "GET":
+                k,_,q = request
+                q.put(self.recall_value(k))
+            elif key == "SET":
+                k,v,q = request
+                q.put(self.save_value(k,v))
+        except KeyboardInterrupt:
+            pass
+        except Exception, e:
+            exc_type,exc_value,exc_traceback = sys.exc_info()
+            self._log(traceback.format_exc(), 'err')
 
-            reply = "Got request [%s]. Thanks!" % str(request)
-            self._log(reply)
+    def get(self, key):
+        queue = Queue.Queue()
+        self.queue.put('GET', (key, None, queue))
+        return queue.get()
 
-            if request == "HALT":
-                reply = "HALTING"
-                self._halt = True
-            else:
-                cmd,proc = request.split('.')
+    def set(self, key, value):
+        queue = Queue.Queue()
+        self.queue.put_nowait('SET', (key, value, queue))
+        return queue.get()
+#/*}}}*/
 
-            self._comm.reply(key, reply)
+# === ProcessThread Class /*{{{*/
+class ProcessThread(Thread):
+    def __init__(self, master, config, id, args, log_queue=None, name=None):
+        # wakeup every minute to ensure process is in the expected state
+        Thread.__init__(self, log_queue=log_queue, name=name, timeout=60.0)
+        self._master = master
+        self._config = config
+        self._id = id
+        self._args = args
+        self._state = "DISABLED"
+        self._interrupt = {"stop": False}
+
+    def _pre(self):
+        self._state = self._config.get(self._id+"-STATE")
+
+    def _run(self, cmd, data):
+        try:
+            if cmd == "DISABLE":
+                self._state = "DISABLED"
+                self._config.set(self._id+"-STATE", self._state)
+            elif cmd == "ENABLE":
+                self._state = "ENABLED"
+                self._config.set(self._id+"-STATE", self._state)
+
+            if cmd == "RESTART":
+                if self._state == "ENABLED":
+                    self._restart_process()
+            elif self._state == "ENABLED": 
+                self._start_process()
+            elif self._state == "DISABLED": 
+                self._kill_process()
 
         except KeyboardInterrupt:
             pass
@@ -296,23 +382,57 @@ class ProcessThread(Thread):
             exc_type,exc_value,exc_traceback = sys.exc_info()
             self._log(traceback.format_exc(), 'err')
 
-        if self._halt:
-            self._log("halt requested")
-            os.kill(os.getpid(), signal.SIGTERM)
+    def _start_process(self):
+        pid = find_process(self._args)
+        if pid is not None:
+            self._log("Process '%s' already running [%s] `%s`" % (self._id, pid, ' '.join(self._args)))
+        else:
+            os.spawnv(os.P_NOWAIT, self._args[0], self._args)
 
-    def halt_requested(self):
-        return self._halt
+            check_interval = 0.25
+            remaining_checks = 20
+            while remaining_checks > 0:
+                pid = find_process(self._args)
+                if pid is not None:
+                    remaining_checks = 0
+                else:
+                    remaining_checks -= 1
+                    sys.stdout.write(".")
+                    sys.stdout.flush()
+                    time.sleep(check_interval)
+            sys.stdout.write("\n")
+
+            if pid is not None:
+                self._log("Spawned process '%s' [%s] `%s`" % (self._id, pid, ' '.join(self._args)))
+            else:
+                self._log("Process '%s' did not start" % self._id, 'warn')
+
+    def halt_now(self, join=True):
+        self._interrupt["stop"] = True
+        Thread.halt_now(self, join)
+
+    def _restart_process(self):
+        self._kill_process()
+        self._start_process()
+
+    def _kill_process(self):
+        kill_process(self._id, self._args, self._log, tries=30, delay=1.0, interrupt=self._interrupt)
 #/*}}}*/
 
 # === Main Class /*{{{*/
 class Main(Class):
     def __init__(self):
         Class.__init__(self)
-        self.context = {'running' : False}
         signal.signal(signal.SIGTERM, self.halt_now)
-        self.context['log'] = LogThread(prefix='processes_', note='PROCESSES', pid=True)
-        self.context['log'].start()
-        self.log_queue = self.context['log'].queue
+
+        self.running = False
+        self.threads = {}
+        self.thread_order = []
+
+        self.add_thread('log', LogThread(prefix='processes_', note='PROCESSES', pid=True))
+        self.t('log').start()
+        self.log_queue = self.t('log').queue
+
         self.already_running = False
         # INFO: Can use the self._log() method after this point only  
 
@@ -326,25 +446,39 @@ class Main(Class):
         print "E:", message
         sys.exit(1)
 
+    def add_thread(self, id, thread):
+        self.threads[id] = thread
+        self.thread_order.append(id)
+
+    def t(self, id):
+        return self.threads[id]
+
     def start(self):
         try:
             use_message = """usage: %prog [options]"""
             option_list = []
-            option_list.append(optparse.make_option("-c", "--config-file", dest="config_file", action="store", help="config file for the process manager (usually processes.config)"))
-            option_list.append(optparse.make_option("-p", "--process-file", dest="process_file", action="store", help="list of processes to manage (usually processes.list)"))
+            option_list.append(optparse.make_option("-c", "--config-file", dest="config_file", action="store", help="config file for the process manager"))
+            option_list.append(optparse.make_option("-p", "--process-file", dest="process_file", action="store", help="list of processes to manage"))
+            option_list.append(optparse.make_option("-s", "--state-database", dest="state_database", action="store", help="process state configurations"))
             parser = optparse.OptionParser(option_list=option_list, usage=use_message)
             options, args = parser.parse_args()
 
             config_file = "processes.config"
             process_file = "processes.list"
+            state_db = ".processes.sqlite"
+            if os.environ.has_key("HOME"):
+                state_db = "%s/%s" % (os.environ["HOME"], state_db)
 
             if options.config_file:
                 config_file = options.config_file
             if options.process_file:
                 process_file = options.process_file
+            if options.state_database:
+                state_db = options.state_database
 
             print "Config file: %s" % config_file
             print "Process file: %s" % config_file
+            print "State database: %s" % state_db
 
             config = Config.parse(config_file)
             processes = Config.parse(process_file)
@@ -359,37 +493,37 @@ class Main(Class):
             if not os.path.exists(log_path):
                 log_path = '.'
 
-            self.context['log'].logger.set_log_path(log_path)
+            self.t('log').logger.set_log_path(log_path)
 
             #self._log("Config file is '%s'" % (config_file,))
             #self._log("Config contents: %s" % (str(config),))
 
             try: # Check for screen logging
                 if config['log-to-screen'].lower() == 'true':
-                    self.context['log'].logger.set_log_to_screen(True)
+                    self.t('log').logger.set_log_to_screen(True)
                     str_screen_logging = "Enabled"
                 else:
-                    self.context['log'].logger.set_log_to_screen(False)
+                    self.t('log').logger.set_log_to_screen(False)
                     str_screen_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-to-screen]:> %s" % (str(e),))
 
             try: # Check for file logging
                 if config['log-to-file'].lower() == 'true':
-                    self.context['log'].logger.set_log_to_file(True)
+                    self.t('log').logger.set_log_to_file(True)
                     str_file_logging = "Enabled"
                 else:
-                    self.context['log'].logger.set_log_to_file(False)
+                    self.t('log').logger.set_log_to_file(False)
                     str_file_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-to-file]:> %s" % (str(e),))
 
             try: # Check for debug logging
                 if config['log-debug'].lower() == 'true':
-                    self.context['log'].logger.set_log_debug(True)
+                    self.t('log').logger.set_log_debug(True)
                     str_debug_logging = "Enabled"
                 else:
-                    self.context['log'].logger.set_log_debug(False)
+                    self.t('log').logger.set_log_debug(False)
                     str_debug_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-debug]:> %s" % (str(e),))
@@ -449,41 +583,41 @@ class Main(Class):
 
             print bind_ip, bind_port
 
-            self.context['comm']    = CommThread(self, bind_port, bind_ip, log_queue=self.context['log'].queue)
-            self.context['control'] = ControlThread(self, self.context['comm'].handler, log_queue=self.context['log'].queue, queue=self.context['comm'].handler._request_queue)
+            self.add_thread('config', ConfigThread(self, state_db))
+            comm_thread = CommThread(self, bind_port, bind_ip, log_queue=self.t('log').queue)
+            self.add_thread('control', ControlThread(self, comm_thread.handler, self.t('config'), log_queue=self.t('log').queue, queue=comm_thread.handler._request_queue))
+            self.add_thread('comm', comm_thread)
 
-
-            #self._log("Listening on %s:%d" % self.context['comm'].handler.get_address())
-            self._log("       Config file : %s" % (config_file,))
+            #self._log("Listening on %s:%d" % self.t('comm').handler.get_address())
+            self._log("       Config file : %s" % config_file)
+            self._log("    State Database : %s" % state_db)
             self._log("     Log Directory : %s" % log_path)
             self._log("    Screen Logging : %s" % str_screen_logging)
             self._log("      File Logging : %s" % str_file_logging)
             self._log("     Debug Logging : %s" % str_debug_logging)
 
-            self.context['control'].start()
-            self.context['comm'].start()
+            for thread_id in self.thread_order:
+                thread = self.t(thread_id)
+                if not thread.isAlive():
+                    thread.start()
 
-            self.context['running'] = True
+            self.running = True
 
             self._log("----------------")
-            self._log("--- Contexts ---")
-            contexts = ['log','control','comm','running']
-            max_key = max(map(len, contexts))
-            for key in contexts:
-                context = self.context[key]
-                if type(context) == bool:
-                    self._log("  %s : %s" % (key.rjust(max_key), str(context)))
-                else:
-                    self._log("  %s : %s (%s)" % (key.rjust(max_key), context.name, T(context.is_alive(),"Running","Halted")))
+            self._log("--- Threads ---")
+            max_id = max(map(len, self.thread_order))
+            for thread_id in self.thread_order:
+                thread = self.t(thread_id)
+                self._log("  %s : %s (%s)" % (thread_id.rjust(max_id), thread.name, T(thread.isAlive(),"Running","Halted")))
 
-            while self.context['running']:
+            while self.running:
                 try: 
                     signal.pause()
                     self._log("caught a signal")
                 except:
                     time.sleep(1.0)
 
-                if self.context['control'].halt_requested():
+                if self.thread['control'].halt_requested():
                     self._log("halt requested")
                     self.halt()
         except KeyboardInterrupt:
@@ -498,18 +632,16 @@ class Main(Class):
                 pass
 
     def halt(self, now=False):
-        check_alive = lambda c,k: c.has_key(k) and c[k] and c[k].isAlive()
-        thread_list = ['comm', 'control', 'log']
-        for key in thread_list:
+        for thread_id in self.thread_order[::-1]:
             if not self.already_running:
-                self._log("halting %s..." % self.context[key].name)
-            if check_alive(self.context, key):
+                self._log("halting %s..." % self.t(thread_id).name)
+            if thread_id and self.t(thread_id).isAlive():
                 if now:
-                    self.context[key].halt_now()
+                    self.t(thread_id).halt_now()
                 else:
-                    self.context[key].halt()
-                self.context[key].join()
-        self.context['running'] = False
+                    self.t(thread_id).halt()
+                self.t(thread_id).join()
+        self.running = False
 
     def halt_now(self, signal=None, frame=None):
         self.halt(True)

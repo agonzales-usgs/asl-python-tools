@@ -4,7 +4,7 @@ import threading
 from Class import Class
 
 class Thread(threading.Thread, Class):
-    def __init__(self, queue_max=-1, log_queue=None, name=None, timeout=None, timeout_message="", timeout_data=None):
+    def __init__(self, queue_max=-1, log_queue=None, name=None, timeout=None, timeout_message="", timeout_data=None, queue=None):
         if name is None:
             name = self.__class__.__name__
         threading.Thread.__init__(self, name=name)
@@ -14,7 +14,10 @@ class Thread(threading.Thread, Class):
         self.timeout = timeout
         self.timeout_message = timeout_message
         self.timeout_data = timeout_data
-        self.queue = Queue.Queue(queue_max)
+        if queue is None:
+            self.queue = Queue.Queue(queue_max)
+        else:
+            self.queue = queue
 
   # Forces the thread to halt immediately
     def halt_now(self, join=True):
