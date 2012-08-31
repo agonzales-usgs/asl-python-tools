@@ -9,10 +9,10 @@ import time
 from jtk import hexdump
 
 
-#host = "localhost"
-#port = 7777
-#s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#s.connect((host, port))
+host = "localhost"
+port = 7777
+socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+socket.connect((host, port))
 
 
 end = open("/dev/zero", "r").read(512 - 48)
@@ -28,7 +28,7 @@ station = "TOP  "
 location = "99"
 channel = "TST"
 
-total = 16 * 1024 * 1024
+total = 3 #16 * 1024 * 1024
 count = 0
 while count < total:
     count += 1
@@ -69,8 +69,11 @@ while count < total:
 
     print time.strftime("%Y-%m-%d (%j) %H:%M:%S.%%04d", t) % 0
     print hexdump.hexdump(record[:64])
-    #s.sendall(record)
-    #data = s.recv(512)
+    print "sending..."
+    socket.sendall(record)
+    print "receiving..."
+    data = socket.recv(512)
+    print "confirmed."
 
-#s.close()
+socket.close()
 
