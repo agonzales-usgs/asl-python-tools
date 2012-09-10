@@ -196,15 +196,16 @@ class Main:
             utc_timestamp = timestamp_matches.groups()[0]
 
             for _,_,l,c,_ in channels:
+                if reg_loc.match(l) and reg_chan.match(c):
+                    print "Skipping event channel %s-%s" % (l,c)
+                    continue
+
                 key = c
                 if l and len(l):
                     key = l + "-" + c
                 if not check_channels.has_key(key):
                     missing_channels.append("%s" % key)
                 else:
-                    if reg_loc.match(l) and reg_chan.match(c):
-                        print "Skipping event channel %s-%s" % (l,c)
-                        continue
                     s,c,t = check_channels[key]
                     time_utc = calendar.timegm(time.strptime(utc_timestamp, "%Y-%m-%d %H:%M:%S"))
                     time_channel = calendar.timegm(time.strptime(t, "%Y/%m/%d %H:%M:%S"))
@@ -247,15 +248,16 @@ class Main:
             slate_timestamp = timestamp_matches.groups()[0]
 
             for _,_,l,c,_ in channels:
+                if reg_loc.match(l) and reg_chan.match(c):
+                    print "Skipping event channel %s-%s" % (l,c)
+                    continue
+
                 key = c
                 if l and len(l):
                     key = l + "_" + c
                 if not check_channels.has_key(key):
                     missing_channels.append("%s" % key)
                 else:
-                    if reg_loc.match(l) and reg_chan.match(c):
-                        print "Skipping event channel %s-%s" % (l,c)
-                        continue
                     m,d,t = check_channels[key]
                     time_parts = t.split(':')
                     if len(time_parts) == 1:
