@@ -69,7 +69,7 @@ class Main:
             sys.exit(1)
 
         if self.options.database:
-            self.db_file = os.path.abspath(self.option.database)
+            self.db_file = os.path.abspath(self.options.database)
         try:
             self.db.select_database(self.db_file)
         except:

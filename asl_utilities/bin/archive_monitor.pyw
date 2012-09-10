@@ -584,6 +584,8 @@ def main():
                     configuration[k] = v
                 if configuration.has_key('status-port'):
                     port = int(configuration['status-port'])
+                if configuration.has_key('status-host'):
+                    host = int(configuration['status-host'])
                 if configuration.has_key('archive-path'):
                     pid_path = configuration['archive-path']
             except:
