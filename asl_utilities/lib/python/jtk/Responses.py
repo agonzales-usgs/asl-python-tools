@@ -18,6 +18,7 @@ class ResponsesThread(Thread):
         Thread.__init__(self, MAX_QUEUED_VALUES)
         self.status_queue = status_queue
         self.resp_list = resp_list
+        self.failed = False
 
     def run(self):
         try:
@@ -28,6 +29,8 @@ class ResponsesThread(Thread):
                 responses.run()
         except GetRespException, e:
             self.status_queue.put(("ERROR: %s" % str(e), (-1, -1, False)))
+            self.failed = True
+            self.resp_list = []
         self.status_queue.put(("DONE", (-1, -1, True)))
 
 class Responses(Thread): 

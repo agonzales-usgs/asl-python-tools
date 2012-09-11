@@ -30,7 +30,10 @@ from jtk.Thread import Thread
 
 from jtk.gtk.DateTimeWindow import DateTimeWindow
 from jtk.gtk.Progress import ProgressDialog, ProgressThread
+from jtk.gtk.Dialog import Dialog
 from jtk.gtk.utils import LEFT, RIGHT
+
+from jtk import Pretty
 
 class IMSGUI:
     def __init__(self):
@@ -497,6 +500,8 @@ class IMSGUI:
             if not station_map.has_key(key):
                 resp_list.append(self._responses[key])
                 station_map[key] = None
+
+        Pretty.pretty(self._responses)
         
         dialog = ProgressDialog("Acquiring Reponse Data", self.window, self.callback_responses_complete, station_map.keys())
         self.progress_thread = ProgressThread(dialog)
@@ -518,22 +523,34 @@ class IMSGUI:
         if result in ("CANCELLED", "EXITED"):
             self.responses_thread.halt_now(join=True)
             self.progress_thread.halt_now(join=True)
-        if result == "COMPLETED":
-            calper = float(self.entry_calper.get_text())
-            network,station = self.combobox_stations.get_active_text().split('_', 1)
-            for key,chan in self.channel_widgets.items():
-                location = "%02d" % int(chan['spinbutton'].get_value())
-                channel = chan['combobox-class'].get_active_text() + \
-                          chan['combobox-axes'].get_active_text()
-                key = "%s-%s-%s-%s" % (network,station,location,channel)
-                if self._responses.has_key(key):
-                    station_key = "%s_%s" % (network,station)
-                    channel_key = "%s-%s" % (location,channel)
-                    calib = Calib(self._responses[key].dataless, station=station_key, channel=channel_key)
-                    calib.calculate_calib(calper, self._correct)
-                    chan['entry-calib'].set_text(str(calib.calib))
 
-        self.generate()
+        if self.responses_thread.failed:
+            dialog = gtk.MessageDialog( parent=None,
+                                        flags=gtk.DIALOG_DESTROY_WITH_PARENT,
+                                        type=gtk.MESSAGE_ERROR,
+                                        buttons=gtk.BUTTONS_OK,
+                                        message_format="Failed to retrieve one or more responses.")
+            dialog.set_title("Responses Not Found")
+            dialog.connect("response", lambda dialog, response: dialog.destroy())
+            dialog.show()
+        else:
+            if result == "COMPLETED":
+                calper = float(self.entry_calper.get_text())
+                network,station = self.combobox_stations.get_active_text().split('_', 1)
+                for key,chan in self.channel_widgets.items():
+                    location = "%02d" % int(chan['spinbutton'].get_value())
+                    channel = chan['combobox-class'].get_active_text() + \
+                              chan['combobox-axes'].get_active_text()
+                    key = "%s-%s-%s-%s" % (network,station,location,channel)
+                    if self._responses.has_key(key):
+                        station_key = "%s_%s" % (network,station)
+                        channel_key = "%s-%s" % (location,channel)
+                        calib = Calib(self._responses[key].dataless, station=station_key, channel=channel_key)
+                        calib.calculate_calib(calper, self._correct)
+                        chan['entry-calib'].set_text(str(calib.calib))
+
+            self.generate()
+
         self.button_add_channel.set_sensitive(1)
 
 

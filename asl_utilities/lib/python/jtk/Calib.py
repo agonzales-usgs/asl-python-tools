@@ -1,9 +1,11 @@
 import math
-import pprint
+
+from jtk.Pretty import pretty
 
 class Calib:
     def __init__(self, dataless, station=None, channel=None):
         self.dataless = dataless
+        
         if station:
             st_info = self.dataless.map['stations'][station]
         else:
