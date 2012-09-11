@@ -81,20 +81,23 @@ stages = {
 }
 
 def parse_epoch(epoch):
-    hour,minute,second = 0,0,0
+    hour,minute,second,tmsec = 0,0,0,0
     parts = epoch.split(',')
     year,day = map(int, parts[0:2])
     if len(parts) > 2:
-        parts = map(int, parts[2].split(':'))
-        hour = parts[0]
+        parts = parts[2].split(':')
+        hour = int(parts[0])
         if len(parts) > 1:
-            minute = parts[1]
+            minute = int(parts[1])
         if len(parts) > 2:
-            second = parts[2]
-    return year,day,hour,minute,second
+            s_parts = parts[2].split('.')
+            if len(s_parts) > 1:
+                tmsec = int(s_parts[1])
+            second = int(s_parts[0])
+    return year,day,hour,minute,second,tmsec
 
 def epoch_string(epoch):
-    return "%04d,%03d,%02d:%02d:%02d" % epoch
+    return "%04d,%03d,%02d:%02d:%02d.%04d" % epoch
 
 
 class Blockette:

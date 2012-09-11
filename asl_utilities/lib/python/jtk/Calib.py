@@ -1,6 +1,6 @@
 import math
 
-from jtk.Pretty import pretty
+from jtk import Pretty
 
 class Calib:
     def __init__(self, dataless, station=None, channel=None):

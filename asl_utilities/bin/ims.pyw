@@ -501,7 +501,7 @@ class IMSGUI:
                 resp_list.append(self._responses[key])
                 station_map[key] = None
 
-        Pretty.pretty(self._responses)
+        #Pretty.pretty(self._responses)
         
         dialog = ProgressDialog("Acquiring Reponse Data", self.window, self.callback_responses_complete, station_map.keys())
         self.progress_thread = ProgressThread(dialog)

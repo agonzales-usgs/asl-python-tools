@@ -42,14 +42,22 @@ class Responses(Thread):
         self.channel = channel
 
         self.resp_server = "ftp://aslftp.cr.usgs.gov"
+        self.resp_dir = "pub/responses"
         self.resp_file = "RESP.%s.%s.%s.%s" % (network, station, location, channel)
-        self.resp_url  = "%s/pub/responses/%s" % (self.resp_server, self.resp_file)
+
+        if network in ("IW", "NE", "US"):
+            self.resp_server = "ftp://hazards.cr.usgs.gov"
+            self.resp_dir = "ANSS/responses"
+
+        self.resp_url  = "%s/%s/%s" % (self.resp_server, self.resp_dir, self.resp_file)
         self.resp_data = None
         self.resp_data_ready = False
         self.dataless  = None
         self.dataless_ready = False
 
         self.set_status_queue(status_queue)
+
+        print self.resp_url
 
     def get_channel_key(self):
         return "%s-%s-%s-%s" % (self.network, self.station, self.location, self.channel)
