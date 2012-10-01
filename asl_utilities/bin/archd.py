@@ -40,10 +40,10 @@ while count < total:
     t = time.gmtime(timestamp)
 
     # pack the structure
-    record = struct.pack(">6sBB5s2s3s2sHHBBBBHHhhBBBBiHH",
+    record = struct.pack(">6s1s1s5s2s3s2sHHBBBBHHhhBBBBiHH",
     "%06d" % sequence, # sequence number
-    0, # quality
-    0, # reserved
+    "D",   # quality indicator
+    " ",   # reserved
     "TOP", # station
     "99",  # location
     "TST", # channel
