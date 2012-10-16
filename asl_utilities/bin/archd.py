@@ -33,7 +33,7 @@ def find_process(arg_list):
 
     return pid
 
-pid_file = "/tmp/jdedwards.archd.pid"
+pid_file = "/tmp/archd.pid"
 executable = "/opt/data/bin/archd"
 config_file = "/etc/q330/DLG1/diskloop.config"
 
