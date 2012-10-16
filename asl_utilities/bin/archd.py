@@ -1,79 +1,65 @@
 #!/usr/bin/env python
-import asl
-
 import os
-import socket
-import struct
+import re
+import sys
 import time
 
-from jtk import hexdump
+def find_process(arg_list):
+    #print "searching for process with arguments:", arg_list
+    pid = None
+    proc = os.popen("ps x -o pid,args")
+    lines = proc.readlines()
+    #print lines
+    for line in lines:
+        tpid,rest = line.split(None, 1)
+        args = rest.split()
+        if len(args) != len(arg_list):
+            continue
 
+        found = True
+        for a,b in zip(arg_list, args):
+            if a != b:
+                #print "  '%s' != '%s'" % (a, b)
+                found = False
+                break
+            else:
+                #print "  '%s' == '%s'" % (a, b)
+                pass
+        if not found:
+            continue
 
-host = "localhost"
-port = 7777
-socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-socket.connect((host, port))
+        pid = tpid
+        break
 
+    return pid
 
-end = open("/dev/zero", "r").read(512 - 48)
+pid_file = "/tmp/jdedwards.archd.pid"
+executable = "/opt/data/bin/archd"
+config_file = "/etc/q330/DLG1/diskloop.config"
 
-timestamp = time.time()
+arg_list = [executable, config_file]
 
-# record parameters
-sequence = -1 
-quality = 0
-reserved = 0
-network = "ZZ"
-station = "TOP  "
-location = "99"
-channel = "TST"
+pid = find_process(arg_list)
+if pid is not None:
+    print "Found [%s] `%s`" % (pid, ' '.join(arg_list))
+else:
+    os.spawnv(os.P_NOWAIT, arg_list[0], arg_list)
 
-total = 3 #16 * 1024 * 1024
-count = 0
-while count < total:
-    count += 1
-    # update the timestamp
-    sequence += 1
-    if sequence > 999999:
-        sequence = 0
-    timestamp += 1
-    t = time.gmtime(timestamp)
+    check_interval = 0.25
+    remaining_checks = 20
+    while remaining_checks > 0:
+        pid = find_process(arg_list)
+        if pid is not None:
+            remaining_checks = 0
+        else:
+            remaining_checks -= 1
+            sys.stdout.write(".")
+            sys.stdout.flush()
+            time.sleep(check_interval)
+    sys.stdout.write("\n")
 
-    # pack the structure
-    record = struct.pack(">6s1s1s5s2s3s2sHHBBBBHHhhBBBBiHH",
-    "%06d" % sequence, # sequence number
-    "D",   # quality indicator
-    " ",   # reserved
-    "TOP", # station
-    "99",  # location
-    "TST", # channel
-    "ZZ",  # network
-    t.tm_year,
-    t.tm_yday,
-    t.tm_hour,
-    t.tm_min,
-    t.tm_sec,
-    0, # reserved
-    0, # tenth milliseconds
-    1, # samples
-    1, # rate factor
-    1, # rate multiplier
-    0, # activity flags,
-    0, # io and clock flags
-    0, # data quality flags
-    1, # number of blockettes
-    0, # time correction
-    48, # start of data
-    48, # first blockette offset
-    ) + end
-
-    print time.strftime("%Y-%m-%d (%j) %H:%M:%S.%%04d", t) % 0
-    print hexdump.hexdump(record[:64])
-    print "sending..."
-    socket.sendall(record)
-    print "receiving..."
-    data = socket.recv(512)
-    print "confirmed."
-
-socket.close()
+    if pid is not None:
+        print "Spawned [%s] `%s`" % (pid, ' '.join(arg_list))
+    else:
+        print "Process did not appear to spawn"
 
