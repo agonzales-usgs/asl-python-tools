@@ -18,7 +18,9 @@ import traceback
 from jtk.Class import Class
 from jtk.Thread import Thread
 from jtk.Logger import LogThread
+from jtk import Config
 from jtk import hexdump
+from jtk import Pretty
 
 # === Notifier Class /*{{{*/
 class Notifier(asyncore.dispatcher):
@@ -113,9 +115,11 @@ class Status(asyncore.dispatcher, Class):
 
 # === LissReader Class /*{{{*/
 class LissReader(asyncore.dispatcher, Class):
-    def __init__(self, master, log_queue=None):
+    def __init__(self, master, key, log_queue=None):
         asyncore.dispatcher.__init__(self)
         Class.__init__(self, log_queue=log_queue)
+        self._error = False
+        self._key = key
         self._master = master
         self._connected = False
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -131,11 +135,14 @@ class LissReader(asyncore.dispatcher, Class):
         except socket.error, e:
             self.log("Socket Error: %s" % str(e))
             return 0
-        self._master.queue_packet(packet)
+        self._master.queue_packet(self._key, packet)
         self._master._last_packet_received = calendar.timegm(time.gmtime())
         if not packet:
             return 0
         return len(packet)
+
+    def handler_error(self):
+        self._error = True
 
     def handle_close(self):
         self._connected = False
@@ -150,9 +157,11 @@ class LissThread(Thread):
         Thread.__init__(self, queue_max=1024, log_queue=log_queue, name=name)
         self.daemon = True
         self.read_queue = read_queue
-        self.socket = None
-        self.address = ('127.0.0.1', 4000)
-        self.buffer = None
+        self.servers = {}
+        self.names = {}
+        self.buffers = {}
+        #self.socket = None
+        #self.address = ('127.0.0.1', 4000)
         self.address_changed = False
         self.status = Status(self,status_port)
         self._last_packet_received = 0
@@ -165,27 +174,29 @@ class LissThread(Thread):
 
     def set_status_port(self, port):
         if self.get_status_port() != port:
-            self.status = Status(self,port)
-
-    def get_address(self):
-        return self.address
-
-    def set_address(self, address):
-        if self.address != address:
-            self.address = address
-            self.address_changed = True
+            self.status = Status(self, port)
             if self.running:
                 self.notifier.notify()
 
-    def set_port(self, new_port):
-        host,port = self.address
-        if port != new_port:
-            self.set_address((host,new_port))
+    def add_server(self, address, name):
+        self.servers[address] = None
+        self.names[address] = name
+        if self.running:
+            self.notifier.notify()
 
-    def set_host(self, new_host):
-        host,port = self.address
-        if host != new_host:
-            self.set_address((new_host,port))
+    def remove_server(self, address):
+        if self.servers.has_key(address):
+            del self.servers[address]
+        if self.names.has_key(address):
+            del self.names[address]
+        if self.running:
+            self.notifier.notify()
+
+    def get_servers(self):
+        return self.servers.keys()
+
+    def get_names(self):
+        return self.names.values()
 
     def halt_now(self):
         self.halt()
@@ -194,80 +205,91 @@ class LissThread(Thread):
         self.running = False
         self.notifier.notify()
 
-    def queue_packet(self, packet):
+    def queue_packet(self, address, packet):
         if packet is None:
             return
-        if self.buffer == None:
-            self.buffer = packet
+
+        # check for data associated with this server address
+        buffer = None
+        if self.buffers.has_key(address):
+            buffer = self.buffers[address]
+            del self.buffers[address]
+
+        if buffer is not None:
+            # append to the buffer if prior data exists
+            buffer += packet
         else:
-            self.buffer += packet
-        while self.buffer and (len(self.buffer) >= 64):
-            self.read_queue.put(('READ', self.buffer[0:64]))
-            if len(self.buffer) == 64:
-                self.buffer = None
-            else:
-                self.buffer = self.buffer[64:]
+            # otherwise we just work with the new packet
+            buffer = packet
+
+        # send as much data as possible to the read thread
+        while buffer and (len(buffer) >= 64):
+            #self.read_queue.put(('READ', buffer[0:64]))
+            self.read_queue.put(('READ', ("%s:%d" % address, buffer[0:64])))
+            buffer = buffer[64:]
+        
+        if len(buffer) > 0:
+            # if any data remains, buffer it
+            self.buffers[address] = buffer
 
     def run(self):
         self.notifier = Notifier()
 
         self.running = True
         last_print = 0
-        print_frequency = 10 # every 10 seconds
+        print_frequency = 60 # how often we print connect errors (in seconds)
         counts = {}
         while self.running:
             # If the LISS connection socket does not exist, create a new one.
-            if self.socket == None:
-                now = time.time()
-                key = "%s:%d" % self.address
-                if not counts.has_key(key):
-                    counts[key] = 0
-                counts[key] += 1
-                if (now - last_print) >= print_frequency:
-                    for addr_str,fail_count in counts.items():
-                        self._log("%d failed attempt(s) to establish connection to %s" % (fail_count,addr_str), 'err')
-                    last_print = now
-                    counts = {}
-                self.socket = LissReader(self, log_queue=self.log_queue)
-                try:
-                    self.socket.connect(self.address)
-                except socket.error:
-                    self._log("Could not establish LISS connection.", 'dbg')
-                    del self.socket
-                    self.socket = None
-                    time.sleep(0.1)
-                    continue
+            for address,reader in self.servers.items():
+                if reader == None:
+                    now = time.time()
+                    if not counts.has_key(address):
+                        counts[address] = 0
+                    counts[address] += 1
+                    if (now - last_print) >= print_frequency:
+                        for addr,fail_count in counts.items():
+                            self._log("%d failed attempts(s) to establish connection to %s" % (fail_count,self.names[addr]), 'err')
+                        last_print = now
+                        counts = {}
+                    self.servers[address] = LissReader(self, address, log_queue=self.log_queue)
+                    try:
+                        self.servers[address].connect(address)
+                        self._log("New connection established to %s." % self.names[address])
+                    except socket.error:
+                        self._log("Could not establish connection to %s:%d." % self.names[address], 'dbg')
+                        self.servers[address] = None
+
+            # The old approach was to delay the loop until a connection is established,
+            # but this results in the notifier and status sockets not responding unless
+            # the connection is established. The new approach ensures we timeout frequently
+            # and check for new connections.
 
             map = {
                 self.notifier.socket : self.notifier,
-                self.socket.socket   : self.socket,
                 self.status.socket   : self.status,
             }
+            for address,reader in self.servers.items():
+                if reader is not None:
+                    map[reader.socket] = reader
+
             try:
-                asyncore.loop(timeout=5.0, use_poll=False, map=map, count=1)
+                asyncore.loop(timeout=1.0, use_poll=False, map=map, count=1)
             except socket.error, e:
                 self._log("asyncore.loop() socket.error: %s" % str(e), 'err')
-                # If there is an issue with this socket, we need to create
-                # a new socket. Set it to disconnected, and it will be replaced.
-                self.socket._connected = False
-                time.sleep(0.1)
+                # If there is an issue with a socket, we need to identify which one,
+                # and replace it. So how do we determine which threw the exception?
 
-            if self.address_changed:
-                try:
-                    self.socket.close()
-                except:
-                    pass
-                self.address_changed = False
-                time.sleep(0.1)
-            # If the socket has been disconnected, prepare it for replacement.
-            if not self.socket._connected:
-                try:
-                    self.socket.close()
-                except:
-                    pass
-                del self.socket
-                self.socket = None
-                time.sleep(0.1)
+            # Check our connections for errors after all events have been handled
+            for address,reader in self.servers.items():
+                # If the socket has encountered an error, prepare it for replacement.
+                if reader._error:
+                    self._log("connection error to server '%s'" % str(self.names[address]), 'err')
+                    try:
+                        reader.close()
+                    except:
+                        pass
+                    self.servers[address] = None
 
         self.read_queue.put(('DONE', None))
 # /*}}}*/
@@ -277,9 +299,11 @@ class ReadThread(Thread):
     def __init__(self, write_queue, log_queue=None, name=None):
         Thread.__init__(self, log_queue=log_queue, name=name)
         self.write_queue = write_queue
-        self.buffer = None
+        #self.buffer = None
+        self.buffers = {}
 
     def _run(self, message, data):
+        buffer = None
         try:
             if message != 'READ':
                 self._log("Invalid message '%s'" % message, 'warn')
@@ -298,48 +322,53 @@ class ReadThread(Thread):
                 self._log("_run() data is 'None'")
                 return
 
-            try:
-                self.buffer += data
-            except:
-                self.buffer = data
+            key,raw = data
 
-            if self.buffer is None:
-                self._log("_run() buffer is 'None'", 'debug')
+            if self.buffers.has_key(key):
+                buffer = self.buffers[key]
+                del self.buffers[key]
+            if buffer is not None:
+                buffer += raw
+            else:
+                buffer = raw
+
+            if buffer is None:
+                self._log("_run() buffer for '%s' is None" % str(key), 'debug')
                 return
 
             # We should have a minimum of 64 bytes of data in order to continue
             # This provides us with room for a header and extensions
-            while (self.buffer is not None) and (len(self.buffer) >= 64):
-                index = struct.unpack('>H', self.buffer[46:48])[0]
+            while (buffer is not None) and (len(buffer) >= 64):
+                index = struct.unpack('>H', buffer[46:48])[0]
                 # If the index of the first blockette is beyond the end of our
                 # buffer, we need to wait for more data to arrive
-                if index >= (len(self.buffer) - 48):
+                if index >= (len(buffer) - 48):
                     break
-                blockette_type = struct.unpack('>H', self.buffer[index:index+2])[0]
+                blockette_type = struct.unpack('>H', buffer[index:index+2])[0]
                 # The first blockette for a SEED record should always be of type
                 # 1000. If it is not, we skip to the next 64 byte group. 
                 if blockette_type != 1000:
                     self._log("Invalid record. First blockette of a SEED record should always be type 1000.\n", 'err')
-                    print hexdump.hexdump(self.buffer[:64], width=8)
-                    self.buffer = self.buffer[64:]
+                    print hexdump.hexdump(buffer[:64], width=8)
+                    buffer = buffer[64:]
                     continue
                 # Check the length of the record so we know how much data to
                 # collect before handing it off to the write thread.
-                record_length = 2 ** struct.unpack('>B', self.buffer[index+6:index+7])[0]
+                record_length = 2 ** struct.unpack('>B', buffer[index+6:index+7])[0]
                 if record_length < 64:
                     self._log("Invalid record. Record length field must be 64 (bytes) or greater.\n", 'err')
-                    self.buffer = self.buffer[64:]
+                    buffer = buffer[64:]
                     continue
                 # If the buffer contains more data than the length of a single
                 # record, pull the record off for processing, and leave the
                 # rest in the buffer
-                if record_length < len(self.buffer):
-                    record = self.buffer[0:record_length]
-                    self.buffer = self.buffer[record_length:]
+                if record_length < len(buffer):
+                    record = buffer[0:record_length]
+                    buffer = buffer[record_length:]
                 # If the buffer contains only the record, empty it
-                elif record_length == len(self.buffer):
-                    record = self.buffer
-                    self.buffer = None
+                elif record_length == len(buffer):
+                    record = buffer
+                    buffer = None
                 # If we do not have a full record's worth of data, wait until 
                 # more data arrives
                 else:
@@ -393,6 +422,10 @@ class ReadThread(Thread):
             exc_type,exc_value,exc_traceback = sys.exc_info()
             self._log(traceback.format_exc(), 'err')
 
+        # Store any remaining buffer data
+        if buffer is not None:
+            self.buffers[key] = buffer
+
 #/*}}}*/
 
 # === WriteThread Class /*{{{*/
@@ -404,12 +437,35 @@ class WriteThread(Thread):
         self.last_report = time.time()
         self.records = {}
         self.year_in_day_path = False
+        self.report_hourly = True
+
+    def set_report_hourly(self, enable):
+        self.report_hourly = enable
 
     def set_year_in_day_path(self, enable):
         self.year_in_day_path = enable
 
     def set_target_dir(self, target_dir):
         self.target_dir = target_dir
+
+    def report(self, forced=False):
+        now = time.time()
+        last_tm = time.gmtime(self.last_report)
+        now_tm = time.gmtime(now)
+        if ((not self.report_hourly) and (now_tm.tm_min > last_tm.tm_min)) or \
+           now_tm.tm_hour > last_tm.tm_hour or \
+           now_tm.tm_yday > last_tm.tm_yday or \
+           now_tm.tm_year > last_tm.tm_year:
+            self._log("Records received/written (%s - %s):" % (time.strftime("%H:%M:%S", last_tm), time.strftime("%H:%M:%S", now_tm)))
+            max_key = max(map(len, self.records.keys()))
+            for k in sorted(self.records.keys()):
+                r = self.records[k]['r']
+                w = self.records[k]['w']
+                if r > 0:
+                    self._log("  %s: %d/%d" % (k.ljust(max_key),r,w))
+            self.records = {}
+            self.last_report = now
+            
 
     def _run(self, message, data):
         try:
@@ -426,22 +482,7 @@ class WriteThread(Thread):
                 self._log("Invalid message '%s'" % message, 'warn')
                 return
 
-            now = time.time()
-            last_tm = time.gmtime(self.last_report)
-            now_tm = time.gmtime(now)
-            if now_tm.tm_hour > last_tm.tm_hour or \
-               now_tm.tm_yday > last_tm.tm_yday or \
-               now_tm.tm_year > last_tm.tm_year:
-                self._log("Records received/written (%s - %s):" % (time.strftime("%H:%M:%S", last_tm), time.strftime("%H:%M:%S", now_tm)))
-                max_key = max(map(len, self.records.keys()))
-                for k in sorted(self.records.keys()):
-                    r = self.records[k]['r']
-                    w = self.records[k]['w']
-                    if r > 0:
-                        self._log("  %s: %d/%d" % (k.ljust(max_key),r,w))
-                self.records = {}
-                self.last_report = now
-            
+            self.report()
 
             file_handle = None
 
@@ -531,7 +572,7 @@ class Main(Class):
         self.context['log'].start()
         self.log_queue = self.context['log'].queue
         self.already_running = False
-        # INFO: Can use the self._log() method after this point only  
+        # WARNING: Can use the self._log() method after this point only  
 
     def start(self):
         try:
@@ -550,6 +591,10 @@ class Main(Class):
             configuration = {}
             if options.config_file:
                 config_file = options.config_file
+            # Multiple liss-server entries are allowed in the configurationf file
+            cfg_groups = ['liss-server']
+            # These entries must be present in the configuration file
+            cfg_required = ['archive-path', 'log-path']#, 'liss-server']
             if not os.path.exists(config_file):
                 if os.environ.has_key('SEED_ARCHIVE_CONFIG'):
                     config_file = os.environ['SEED_ARCHIVE_CONFIG']
@@ -559,19 +604,13 @@ class Main(Class):
                 config_file = '/opt/etc/archive.config'
             if os.path.exists(config_file):
                 try:
-                    fh = open(config_file, 'r')
-                    lines = fh.readlines()
-                    for line in lines:
-                        if line[0] == '#':
-                            continue
-                        line = line.split('#',1)[0]
-                        parts = tuple(map(lambda p: p.strip(), line.split('=',1)))
-                        if len(parts) != 2:
-                            continue
-                        k,v = parts
-                        configuration[k] = v
-                except:
-                    pass
+                    configuration = Config.parse(config_file, groups=cfg_groups, required=cfg_required)
+                except Config.ConfigException, ex:
+                    message = "ConfigException: %s" % str(ex)
+                    self._log(message)
+                    raise KeyboardInterrupt()
+
+            Pretty.pretty(configuration)
 
             log_path = ''
             try: # Check for log directory
@@ -580,17 +619,18 @@ class Main(Class):
             except Exception, e:
                 self._log("Config [log]:> %s" % (str(e),))
 
+            if not os.path.isdir(archive_path):
+                if os.environ.has_key('SEED_ARCHIVE_DIRECTORY'):
+                    archive_path = os.environ['SEED_ARCHIVE_DIRECTORY']
+            if not os.path.isdir(archive_path):
+                archive_path = '/opt/data/archive'
+
             try: # Check for archive directory
                 archive_path = os.path.abspath(configuration['archive-path'])
                 #self._log("archive directory is '%s'" % archive_path)
             except Exception, e:
                 self._log("Config [log]:> %s" % (str(e),))
 
-            if not os.path.isdir(archive_path):
-                if os.environ.has_key('SEED_ARCHIVE_DIRECTORY'):
-                    archive_path = os.environ['SEED_ARCHIVE_DIRECTORY']
-            if not os.path.isdir(archive_path):
-                archive_path = '/opt/data/archive'
             if not os.path.exists(archive_path):
                 self._log("Archive directory '%s' does not exist. Exiting!" % archive_path)
                 raise KeyboardInterrupt()
@@ -600,6 +640,14 @@ class Main(Class):
                configuration['archive-year-in-day-path'].lower() == 'true':
                 year_in_day_path = True
             self.context['write'].set_year_in_day_path(year_in_day_path)
+
+            report_hourly = True
+            str_report_frequency = "On the Hour"
+            if configuration.has_key('report-every-minute') and \
+               configuration['report-every-minute'].lower() == 'true':
+                report_hourly = False
+                str_report_frequency = "On the Minute"
+            self.context['write'].set_report_hourly(report_hourly)
 
             if not os.path.exists(log_path):
                 log_path = archive_path
@@ -618,6 +666,7 @@ class Main(Class):
                     str_screen_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-to-screen]:> %s" % (str(e),))
+                raise KeyboardInterrupt()
 
             try: # Check for file logging
                 if configuration['log-to-file'].lower() == 'true':
@@ -628,6 +677,7 @@ class Main(Class):
                     str_file_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-to-file]:> %s" % (str(e),))
+                raise KeyboardInterrupt()
 
             try: # Check for debug logging
                 if configuration['log-debug'].lower() == 'true':
@@ -638,6 +688,7 @@ class Main(Class):
                     str_debug_logging = "Disabled"
             except Exception, e:
                 self._log("Config [log-debug]:> %s" % (str(e),))
+                raise KeyboardInterrupt()
 
             # Check for an archive process already writing to this location.
             running = False
@@ -674,21 +725,21 @@ class Main(Class):
             fh.write('%s\n' % str(pid))
             fh.close()
 
-            port = 0
-            try: # Get LISS port
-                port = int(configuration['liss-port'])
-                if 0 < port < 65536:
-                    self.context['liss'].set_port(port)
-            except Exception, e:
-                self._log("Config [liss-port]:> %s" % (str(e),))
-
-            host = ''
-            try: # Get LISS host
-                host = configuration['liss-host']
-                host = socket.gethostbyname(host)
-                self.context['liss'].set_host(host)
-            except Exception, e:
-                self._log("Config [liss-host]:> %s" % (str(e),))
+            count = 0
+            for addr_str in configuration['liss-server']:
+                count += 1
+                port = 0
+                try: # Get LISS port
+                    h,p = addr_str.rsplit(':', 1)
+                    port = int(p)
+                    if 0 > port > 65536:
+                        raise Exception("")
+                    host = socket.gethostbyname(h.rstrip(']').lstrip('['))
+                    #self._log("LISS feed # %d > %s:%d" % (count,host,port))
+                    self.context['liss'].add_server((host,port), addr_str)
+                except Exception, e:
+                    self._log("Config [liss-server]:> %s" % (str(e),))
+                    raise KeyboardInterrupt()
 
             status_port = 4000
             try: # Get Status port
@@ -700,13 +751,18 @@ class Main(Class):
 
             self.context['write'].set_target_dir(archive_path)
 
-            self._log("LISS archive process for host %s:%d" % self.context['liss'].get_address())
+            self._log("LISS archive process")
+            count = 0
+            for name in self.context['liss'].get_names():
+                count += 1
+                self._log("LISS server # %d : %s" % (count,name))
             self._log("     Configuration : %s" % (config_file,))
             self._log(" Archive Directory : %s" % (archive_path,))
             self._log("     Log Directory : %s" % log_path)
             self._log("    Screen Logging : %s" % str_screen_logging)
             self._log("      File Logging : %s" % str_file_logging)
             self._log("     Debug Logging : %s" % str_debug_logging)
+            self._log("  Report Frequency : %s" % str_report_frequency)
 
             self.context['write'].start()
             self.context['read'].start()

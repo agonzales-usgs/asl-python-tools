@@ -12,6 +12,8 @@ class ConfigReadError(ConfigException):
     pass
 class InvalidConfigException(ConfigException):
     pass
+class RequiredConfigParameterException(ConfigException):
+    pass
 
 def parse(config_file, groups=[], required=[]):
     if type(groups) not in (list,tuple):
@@ -40,7 +42,7 @@ def parse(config_file, groups=[], required=[]):
 
         # process all lines
         for line in fh:
-            # increment for every line (event empty lines)
+            # increment for every line (even empty lines)
             line_index += 1
             line = line.strip()
 
@@ -79,8 +81,8 @@ def parse(config_file, groups=[], required=[]):
                     raise RequiredConfigParameterException("required config parameter '%s' not found" % k)
                 continue
             config[k] = l
-    except:
-        raise ConfigReadError("could not read config file '%s'" % config_file)
+    except Exception, ex:
+        raise ConfigReadError("Could not read config file '%s'; Details: %s" % (config_file, str(ex)))
 
     return config
 
