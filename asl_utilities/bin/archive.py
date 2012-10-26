@@ -45,14 +45,11 @@ class Notifier(asyncore.dispatcher):
 
 # === Status Class /*{{{*/
 class Status(asyncore.dispatcher, Class):
-    def __init__(self, master, port=4000, log_queue=None):
+    def __init__(self, master, port, log_queue=None):
         asyncore.dispatcher.__init__(self)
         Class.__init__(self, log_queue=log_queue)
         self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            self.bind(('', port))
-        except:
-            self.bind(('', 0))
+        self.bind(('', port))
         self._log("%s bound to port %d" % (self.__class__.__name__,self.getsockname()[1]))
         self._buffers = []
         self._write_buffer = ''
@@ -77,8 +74,14 @@ class Status(asyncore.dispatcher, Class):
 
         if message == 'RESTART':
             self._restart = True
-            self._buffers.append(('[%s]<%d>' % (msg_id,os.getpid()), address))
+            self._buffers.append(('[%s]<RESTARTING>' % (msg_id,os.getpid()), address))
             os.kill(os.getpid(), signal.SIGTERM)
+            #signal.alarm()
+        if message == 'RELOAD':
+            self._reload = True
+            self._buffers.append(('[%s]<RELOADING>' % (msg_id,os.getpid()), address))
+            #os.kill(os.getpid(), signal.SIGUSR1)
+            signal.alarm(0.001)
         elif message == 'STATUS':
             self._buffers.append(('[%s]<ACTIVE>' % msg_id, address))
         elif message == 'LAST-PACKET':
@@ -153,7 +156,7 @@ class LissReader(asyncore.dispatcher, Class):
 
 # === LissThread Class /*{{{*/
 class LissThread(Thread):
-    def __init__(self, read_queue, status_port=4000, log_queue=None, name=None):
+    def __init__(self, read_queue, status_port=0, log_queue=None, name=None):
         Thread.__init__(self, queue_max=1024, log_queue=log_queue, name=name)
         self.daemon = True
         self.read_queue = read_queue
@@ -179,18 +182,25 @@ class LissThread(Thread):
                 self.notifier.notify()
 
     def add_server(self, address, name):
-        self.servers[address] = None
+        # Don't replace existing servers, only add new ones
+        if not self.servers.has_key(address):
+            self.servers[address] = None
+            if self.running:
+                self.notifier.notify()
+        # Always update the server name
         self.names[address] = name
-        if self.running:
-            self.notifier.notify()
 
     def remove_server(self, address):
-        if self.servers.has_key(address):
-            del self.servers[address]
         if self.names.has_key(address):
             del self.names[address]
-        if self.running:
-            self.notifier.notify()
+        if self.servers.has_key(address):
+            try:
+                self.servers[address].close()
+            except:
+                pass
+            del self.servers[address]
+            if self.running:
+                self.notifier.notify()
 
     def get_servers(self):
         return self.servers.keys()
@@ -448,6 +458,9 @@ class WriteThread(Thread):
     def set_target_dir(self, target_dir):
         self.target_dir = target_dir
 
+    def get_target_dir(self):
+        return self.target_dir
+
     def report(self, forced=False):
         now = time.time()
         last_tm = time.gmtime(self.last_report)
@@ -572,7 +585,173 @@ class Main(Class):
         self.context['log'].start()
         self.log_queue = self.context['log'].queue
         self.already_running = False
+        self.config_file = None
+        self.archive_path = None
+        self.configuration = None
+        self.pid_file = None
         # WARNING: Can use the self._log() method after this point only  
+
+    def load_config(self):
+        # These entries must be present in the configuration file
+        cfg_required = ['archive-path', 'log-path', 'log-to-screen', 'log-to-file', 'log-debug', 'status-port']
+
+        # Multiple liss-server entries are allowed in the configuration file
+        cfg_groups = ['liss-server']
+
+        try:
+            # Parse the configration file
+            configuration = Config.parse(self.config_file, groups=cfg_groups, required=cfg_required)
+        except Config.ConfigException, ex:
+            message = "ConfigException: %s" % str(ex)
+            self._log(message)
+            raise KeyboardInterrupt()
+
+        log_path = ''
+        archive_path = ''
+
+        log_to_screen = False
+        log_to_file = False
+        log_debug = False
+
+        status_port = 13000
+
+        str_screen_logging = "Disabled"
+        str_file_logging = "Disabled"
+        str_debug_logging = "Disabled"
+
+        try:
+            log_path = os.path.abspath(configuration['log-path'])
+            archive_path = os.path.abspath(configuration['archive-path'])
+            if configuration['log-to-screen'].lower() == 'true':
+                log_to_screen = True
+                str_screen_logging = "Enabled"
+            if configuration['log-to-file'].lower() == 'true':
+                log_to_file = True
+                str_file_logging = "Enabled"
+            if configuration['log-debug'].lower() == 'true':
+                log_debug = True
+                str_debug_logging = "Enabled"
+            if configuration.has_key('status-port'):
+                status_port = int(configuration['status-port'])
+                if 0 > status_port > 65536:
+                    raise Exception("Invalid port value %d" % status_port)
+        except Exception, e:
+            self._log("Config [log]:> %s" % str(e), 'err')
+            raise KeyboardInterrupt()
+
+        if not os.path.exists(archive_path):
+            self._log("Archive directory '%s' does not exist. Exiting!" % archive_path)
+            raise KeyboardInterrupt()
+        self.archive_path = archive_path
+
+        if not os.path.exists(log_path):
+            log_path = archive_path
+
+        year_in_day_path = False
+        if configuration.has_key('archive-year-in-day-path') and \
+           configuration['archive-year-in-day-path'].lower() == 'true':
+            year_in_day_path = True
+
+        report_hourly = True
+        str_report_frequency = "On the Hour"
+        if configuration.has_key('report-every-minute') and \
+           configuration['report-every-minute'].lower() == 'true':
+            report_hourly = False
+            str_report_frequency = "On the Minute"
+
+        # Perform the pid file check after each load of the configuration file
+        self.process_check()
+
+        try:
+            self.context['log'].logger.set_log_path(log_path)
+            self.context['log'].logger.set_log_to_screen(log_to_screen)
+            self.context['log'].logger.set_log_to_file(log_to_file)
+            self.context['log'].logger.set_log_debug(log_debug)
+
+            self.context['write'].set_year_in_day_path(year_in_day_path)
+            self.context['write'].set_report_hourly(report_hourly)
+            self.context['write'].set_target_dir(archive_path)
+
+            self.context['liss'].set_status_port(status_port)
+        except Exception, e:
+            self._log("Config [log]:> %s" % str(e), 'err')
+            raise KeyboardInterrupt()
+
+        count = 0
+        existing = {}
+        # Populate a list of all the servers in the LissThread
+        for address in self.context['liss'].get_servers():
+            existing[address] = None
+
+        # Add all new servers, update the existing
+        for addr_str in configuration['liss-server']:
+            count += 1
+            port = 0
+            try: # Get LISS port
+                h,p = addr_str.rsplit(':', 1)
+                port = int(p)
+                if 0 > port > 65536:
+                    raise Exception("")
+                host = socket.gethostbyname(h.rstrip(']').lstrip('['))
+                #self._log("LISS feed # %d > %s:%d" % (count,host,port))
+                address = (host,port)
+                if existing.has_key(address):
+                    del existing[address]
+                self.context['liss'].add_server((host,port), addr_str)
+            except Exception, e:
+                self._log("Config [liss-server]:> %s" % (str(e),))
+                raise KeyboardInterrupt()
+
+        # Remove all servers that are no longer included in the config
+        for address in existing:
+            self.context[liss].remove_server(address)
+
+        self.configuration = configuration
+        self.log_config_info()
+
+    def log_config_info(self):
+        self._log("Configuration file '%s'\n%s" % (self.config_file, Pretty.pretty(self.configuration)))
+
+    def process_check(self):
+        # Check for an archive process already writing to this location.
+        running = False
+        pid_file = os.path.abspath("%s/archive.pid" % self.archive_path)
+        if self.pid_file != pid_file:
+            if self.pid_file is not None:
+                os.remove(self.pid_file)
+            if os.path.isfile(pid_file):
+                tpid = open(pid_file, 'r').read(32).strip()
+                ipid = -1
+                try:
+                    ipid = int(tpid)
+                except:
+                    pass
+                if (ipid != os.getpid()) and find_proc(tpid):
+                    restart_path = os.path.abspath("%s/restart.%s" % (self.archive_path,tpid))
+                    running = True
+                    if os.path.exists(restart_path):
+                        if os.path.isfile(restart_path):
+                            os.remove(restart_path)
+                            kill_proc(tpid, log=self._log)
+                            running = False
+                        else:
+                            self._log("Invalid type for restart file %s" % restart_path)
+            if running:
+                self._log("archive.py process [%s] is already running" % tpid)
+                self.already_running = True
+                raise KeyboardInterrupt()
+
+        self.pid_file = pid_file
+        pid = os.getpid()
+        fh = open(self.pid_file, 'w+')
+        fh.write('%s\n' % str(pid))
+        fh.close()
+
+        self._log("===============")
+        self._log("=== ARCHIVE ===")
+        self._log("===============")
+        self._log("starting new archive.py process [%d]" % pid)
+        #self._log("LISS archive process")
 
     def start(self):
         try:
@@ -586,15 +765,9 @@ class Main(Class):
             self.context['read']  = ReadThread(self.context['write'].queue, log_queue=self.context['log'].queue)
             self.context['liss']  = LissThread(self.context['read'].queue, log_queue=self.context['log'].queue)
 
-            archive_path = ''
             config_file  = ''
-            configuration = {}
             if options.config_file:
                 config_file = options.config_file
-            # Multiple liss-server entries are allowed in the configurationf file
-            cfg_groups = ['liss-server']
-            # These entries must be present in the configuration file
-            cfg_required = ['archive-path', 'log-path']#, 'liss-server']
             if not os.path.exists(config_file):
                 if os.environ.has_key('SEED_ARCHIVE_CONFIG'):
                     config_file = os.environ['SEED_ARCHIVE_CONFIG']
@@ -602,175 +775,32 @@ class Main(Class):
                 config_file = 'archive.config'
             if not os.path.exists(config_file):
                 config_file = '/opt/etc/archive.config'
-            if os.path.exists(config_file):
-                try:
-                    configuration = Config.parse(config_file, groups=cfg_groups, required=cfg_required)
-                except Config.ConfigException, ex:
-                    message = "ConfigException: %s" % str(ex)
-                    self._log(message)
-                    raise KeyboardInterrupt()
-
-            Pretty.pretty(configuration)
-
-            log_path = ''
-            try: # Check for log directory
-                log_path = os.path.abspath(configuration['log-path'])
-                #self._log("log directory is '%s'" % log_path)
-            except Exception, e:
-                self._log("Config [log]:> %s" % (str(e),))
-
-            if not os.path.isdir(archive_path):
-                if os.environ.has_key('SEED_ARCHIVE_DIRECTORY'):
-                    archive_path = os.environ['SEED_ARCHIVE_DIRECTORY']
-            if not os.path.isdir(archive_path):
-                archive_path = '/opt/data/archive'
-
-            try: # Check for archive directory
-                archive_path = os.path.abspath(configuration['archive-path'])
-                #self._log("archive directory is '%s'" % archive_path)
-            except Exception, e:
-                self._log("Config [log]:> %s" % (str(e),))
-
-            if not os.path.exists(archive_path):
-                self._log("Archive directory '%s' does not exist. Exiting!" % archive_path)
+            if not os.path.exists(config_file):
+                self._log("No configuration file found")
                 raise KeyboardInterrupt()
 
-            year_in_day_path = False
-            if configuration.has_key('archive-year-in-day-path') and \
-               configuration['archive-year-in-day-path'].lower() == 'true':
-                year_in_day_path = True
-            self.context['write'].set_year_in_day_path(year_in_day_path)
-
-            report_hourly = True
-            str_report_frequency = "On the Hour"
-            if configuration.has_key('report-every-minute') and \
-               configuration['report-every-minute'].lower() == 'true':
-                report_hourly = False
-                str_report_frequency = "On the Minute"
-            self.context['write'].set_report_hourly(report_hourly)
-
-            if not os.path.exists(log_path):
-                log_path = archive_path
-
-            self.context['log'].logger.set_log_path(log_path)
-
-            #self._log("Configuration file is '%s'" % (config_file,))
-            #self._log("Configuration contents: %s" % (str(configuration),))
-
-            try: # Check for screen logging
-                if configuration['log-to-screen'].lower() == 'true':
-                    self.context['log'].logger.set_log_to_screen(True)
-                    str_screen_logging = "Enabled"
-                else:
-                    self.context['log'].logger.set_log_to_screen(False)
-                    str_screen_logging = "Disabled"
-            except Exception, e:
-                self._log("Config [log-to-screen]:> %s" % (str(e),))
-                raise KeyboardInterrupt()
-
-            try: # Check for file logging
-                if configuration['log-to-file'].lower() == 'true':
-                    self.context['log'].logger.set_log_to_file(True)
-                    str_file_logging = "Enabled"
-                else:
-                    self.context['log'].logger.set_log_to_file(False)
-                    str_file_logging = "Disabled"
-            except Exception, e:
-                self._log("Config [log-to-file]:> %s" % (str(e),))
-                raise KeyboardInterrupt()
-
-            try: # Check for debug logging
-                if configuration['log-debug'].lower() == 'true':
-                    self.context['log'].logger.set_log_debug(True)
-                    str_debug_logging = "Enabled"
-                else:
-                    self.context['log'].logger.set_log_debug(False)
-                    str_debug_logging = "Disabled"
-            except Exception, e:
-                self._log("Config [log-debug]:> %s" % (str(e),))
-                raise KeyboardInterrupt()
-
-            # Check for an archive process already writing to this location.
-            running = False
-            pid_file = os.path.abspath("%s/archive.pid" % archive_path)
-            if os.path.isfile(pid_file):
-                tpid = open(pid_file, 'r').read(32).strip()
-                ipid = -1
-                try:
-                    ipid = int(tpid)
-                except:
-                    pass
-                if (ipid != os.getpid()) and find_proc(tpid):
-                    restart_path = os.path.abspath("%s/restart.%s" % (archive_path,tpid))
-                    running = True
-                    if os.path.exists(restart_path):
-                        if os.path.isfile(restart_path):
-                            os.remove(restart_path)
-                            kill_proc(tpid, log=self._log)
-                            running = False
-                        else:
-                            self._log("Invalid type for restart file %s" % restart_path)
-            if running:
-                self._log("archive.py process [%s] is already running" % tpid, 'dbg')
-                self.already_running = True
-                raise KeyboardInterrupt
-
-            self._log("===============")
-            self._log("=== ARCHIVE ===")
-            self._log("===============")
-
-            pid = os.getpid()
-            self._log("starting new archive.py process [%d]" % pid)
-            fh = open(pid_file, 'w+')
-            fh.write('%s\n' % str(pid))
-            fh.close()
+            self.config_file = config_file
+            self.load_config()
 
             count = 0
-            for addr_str in configuration['liss-server']:
-                count += 1
-                port = 0
-                try: # Get LISS port
-                    h,p = addr_str.rsplit(':', 1)
-                    port = int(p)
-                    if 0 > port > 65536:
-                        raise Exception("")
-                    host = socket.gethostbyname(h.rstrip(']').lstrip('['))
-                    #self._log("LISS feed # %d > %s:%d" % (count,host,port))
-                    self.context['liss'].add_server((host,port), addr_str)
-                except Exception, e:
-                    self._log("Config [liss-server]:> %s" % (str(e),))
-                    raise KeyboardInterrupt()
+            #for name in self.context['liss'].get_names():
+            #    count += 1
+            #    self._log("LISS server # %d : %s" % (count,name))
+            #self._log("     Configuration : %s" % config_file)
+            #self._log(" Archive Directory : %s" % archive_path)
+            #self._log("     Log Directory : %s" % log_path)
+            #self._log("    Screen Logging : %s" % str_screen_logging)
+            #self._log("      File Logging : %s" % str_file_logging)
+            #self._log("     Debug Logging : %s" % str_debug_logging)
+            #self._log("  Report Frequency : %s" % str_report_frequency)
 
-            status_port = 4000
-            try: # Get Status port
-                status_port = int(configuration['status-port'])
-                if 0 < port < 65536:
-                    self.context['liss'].set_status_port(status_port)
-            except Exception, e:
-                self._log("Config [status-port]:> %s" % (str(e),))
-
-            self.context['write'].set_target_dir(archive_path)
-
-            self._log("LISS archive process")
-            count = 0
-            for name in self.context['liss'].get_names():
-                count += 1
-                self._log("LISS server # %d : %s" % (count,name))
-            self._log("     Configuration : %s" % (config_file,))
-            self._log(" Archive Directory : %s" % (archive_path,))
-            self._log("     Log Directory : %s" % log_path)
-            self._log("    Screen Logging : %s" % str_screen_logging)
-            self._log("      File Logging : %s" % str_file_logging)
-            self._log("     Debug Logging : %s" % str_debug_logging)
-            self._log("  Report Frequency : %s" % str_report_frequency)
+            time.sleep(0.1)
 
             self.context['write'].start()
             self.context['read'].start()
             self.context['liss'].start()
 
             self.context['running'] = True
-
-            self._log("       Status Port : %s" % str(self.context['liss'].get_status_port()))
 
             self._log("----------------")
             self._log("--- Contexts ---")
@@ -794,6 +824,8 @@ class Main(Class):
                     self.halt_now()
         except KeyboardInterrupt:
             pass
+        except socket.error, err:
+            self._log("Socket Error: %s" % str(err))
 
         halted = False
         while not halted:
