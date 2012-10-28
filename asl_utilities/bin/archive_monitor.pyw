@@ -56,22 +56,23 @@ class Notifier(asyncore.dispatcher):
 
 # === Status Class /*{{{*/
 class Status(asyncore.dispatcher):
-    def __init__(self, master, log_queue=None):
+    def __init__(self, master, address=('127.0.0.1', 13000), log_queue=None):
         asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.bind(('0.0.0.0', 0))
         self._pid = None
+        self._last_pid_update = 0.0
         self._buffers = []
         self._write_buffer = ''
         self._write_address = None
         self._last_activity = 0
         self._regex_status = re.compile('^\[(.*)\]<(.*)>$')
         self._master = master
-        self._address = ('127.0.0.1', 4000)
+        self._address = address
 
     def check_status(self):
         #print "%s::check_status()" % self.__class__.__name__
-        if self._pid is None:
+        if (self._pid is None) or (0 > (time.time() - this._last_pid_update) > 20):
             self.get_pid()
         self._buffers.append(('[TIMESTAMP]<LAST-PACKET>', self._address))
 
@@ -82,11 +83,16 @@ class Status(asyncore.dispatcher):
         #print "Sending restart request..."
         self._buffers.append(('[RESTART]<RESTART>', self._address))
 
+    def reload_config(self):
+        #print "Sending restart request..."
+        self._buffers.append(('[RELOAD]<RELOAD>', self._address))
+
     def set_address(self, address):
         tmp_address = self._address
         try:
             self._address = (socket.gethostbyname(address[0]),int(address[1]))
         except:
+            print "Failed to set address! Using old address."
             self._address = tmp_address
             return False
         return True
@@ -113,8 +119,12 @@ class Status(asyncore.dispatcher):
             elif msg_id == 'RESTART':
                 self._pid = None
                 self._last_activity = 0
+            elif msg_id == 'RELOAD':
+                self._pid = None
+                self._last_activity = 0
             elif msg_id == 'PID':
                 self._pid = int(message)
+                self._last_pid_update = time.time()
                 #print "Last packet received", int(message)
         except:
             pass
@@ -181,6 +191,9 @@ class CommThread(Thread):
 
     def restart_archive(self):
         self._status.restart_archive()
+
+    def reload_config(self):
+        self._status.reload_config()
 
     def run(self):
         try:
@@ -332,7 +345,7 @@ class UpdateThread(Thread):
 
 # === ArchiveIcon Class /*{{{*/
 class ArchiveIcon:
-    def __init__(self, address=('127.0.0.1', 4000), archive_path=''):
+    def __init__(self, address=('127.0.0.1', 13000), archive_path=''):
         signal.signal(signal.SIGTERM, self.halt_now)
 
         self._address = address
@@ -361,6 +374,13 @@ class ArchiveIcon:
         self.menuitem_restart.connect("activate", self.callback_restart, None)
         self.menu.append(self.menuitem_restart)
 
+        self.image_reload = gtk.Image()
+        self.image_reload.set_from_pixbuf(asl.new_icon('reload').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
+        self.menuitem_reload = gtk.ImageMenuItem("Reload Configuration", "Reload Configuration")
+        self.menuitem_reload.set_image(self.image_reload)
+        self.menuitem_reload.connect("activate", self.callback_reload, None)
+        self.menu.append(self.menuitem_reload)
+
         self.image_update = gtk.Image()
         self.image_update.set_from_pixbuf(asl.new_icon('usb').scale_simple(16, 16, gtk.gdk.INTERP_HYPER))
         self.menuitem_update = gtk.ImageMenuItem("Update Metadata", "Update Metadata")
@@ -385,6 +405,7 @@ class ArchiveIcon:
         self.menu.show()
         self.menuitem_delay.show()
         self.menuitem_restart.show()
+        self.menuitem_reload.show()
         self.menuitem_update.show()
         self.menuitem_server.show()
         self.menuitem_exit.show()
@@ -412,7 +433,10 @@ class ArchiveIcon:
     def callback_restart(self, widget, event, data=None):
         # We now attempt to restart
         self.comm_thread.restart_archive()
-        self.restart_thread.queue.put(('RESTART', None))
+        #self.restart_thread.queue.put(('RESTART', None))
+
+    def callback_reload(self, widget, event, data=None):
+        self.comm_thread.reload_config()
 
     def callback_update(self, widget, event, data=None):
         self.update_thread.queue.put(('UPDATE', None))

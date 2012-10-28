@@ -4,6 +4,7 @@ import asl
 import asyncore
 import calendar
 import optparse
+import multiprocessing
 import os
 import Queue
 import re
@@ -50,18 +51,21 @@ class Status(asyncore.dispatcher, Class):
         Class.__init__(self, log_queue=log_queue)
         self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.bind(('', port))
-        self._log("%s bound to port %d" % (self.__class__.__name__,self.getsockname()[1]))
+        self._log("%s bound to port %d" % (self.__class__.__name__,self.getsockname()[1]), 'dbg')
         self._buffers = []
         self._write_buffer = ''
         self._write_address = None
         self._master = master
         self._regex_status = re.compile('^\[(.*)\]<(.*)>$')
         self._restart = False
+        self._reload = False
 
     def handle_read(self):
         try:
             packet,address = self.recvfrom(4096)
-        except socket.error:
+            self._log("Status recv: packet=%s, address=%s" % (str(packet), str(address)), 'dbg')
+        except socket.error, err:
+            self._log("Status socket error: %s" % str(err))
             return
         if not packet:
             return 0
@@ -71,17 +75,18 @@ class Status(asyncore.dispatcher, Class):
         else:
             msg_id = '0'
             message = packet
+        self._log("Status parsed: msg_id=%s, message=%s" % (str(msg_id), str(message)), 'dbg')
 
         if message == 'RESTART':
+            self._log("Process restart requested", 'dbg')
             self._restart = True
-            self._buffers.append(('[%s]<RESTARTING>' % (msg_id,os.getpid()), address))
-            os.kill(os.getpid(), signal.SIGTERM)
-            #signal.alarm()
-        if message == 'RELOAD':
+            self._buffers.append(('[%s]<RESTARTING>' % (msg_id), address))
+            self._signal(signal.SIGINT)
+        elif message == 'RELOAD':
+            self._log("Configuration reload requested", 'dbg')
             self._reload = True
-            self._buffers.append(('[%s]<RELOADING>' % (msg_id,os.getpid()), address))
-            #os.kill(os.getpid(), signal.SIGUSR1)
-            signal.alarm(0.001)
+            self._buffers.append(('[%s]<RELOADING>' % (msg_id), address))
+            self._signal(signal.SIGINT)
         elif message == 'STATUS':
             self._buffers.append(('[%s]<ACTIVE>' % msg_id, address))
         elif message == 'LAST-PACKET':
@@ -91,6 +96,11 @@ class Status(asyncore.dispatcher, Class):
         else:
             self._buffers.append(('[-1]<UNRECOGNIZED>', address))
         return len(packet)
+
+    def _signal(self, sig):
+        p = multiprocessing.Process(target=signal_proc, args=(os.getpid(), signal.SIGINT))
+        p.daemon = False
+        p.start()
 
     def handle_write(self):
         bytes_written = 0
@@ -166,33 +176,37 @@ class LissThread(Thread):
         #self.socket = None
         #self.address = ('127.0.0.1', 4000)
         self.address_changed = False
-        self.status = Status(self,status_port)
+        self.status = Status(self, status_port, self.get_log_queue())
         self._last_packet_received = 0
 
     def restart_requested(self):
         return self.status._restart
+
+    def reload_requested(self):
+        return self.status._reload
+
+    def reload_complete(self):
+        self.status._reload = False
 
     def get_status_port(self):
         return self.status.getsockname()[1]
 
     def set_status_port(self, port):
         if self.get_status_port() != port:
-            self.status = Status(self, port)
+            self.status = Status(self, port, self.get_log_queue())
             if self.running:
                 self.notifier.notify()
 
     def add_server(self, address, name):
+        # Always update the server name
+        self.names[address] = name
         # Don't replace existing servers, only add new ones
         if not self.servers.has_key(address):
             self.servers[address] = None
             if self.running:
                 self.notifier.notify()
-        # Always update the server name
-        self.names[address] = name
 
     def remove_server(self, address):
-        if self.names.has_key(address):
-            del self.names[address]
         if self.servers.has_key(address):
             try:
                 self.servers[address].close()
@@ -201,6 +215,8 @@ class LissThread(Thread):
             del self.servers[address]
             if self.running:
                 self.notifier.notify()
+        if self.names.has_key(address):
+            del self.names[address]
 
     def get_servers(self):
         return self.servers.keys()
@@ -286,15 +302,17 @@ class LissThread(Thread):
             try:
                 asyncore.loop(timeout=1.0, use_poll=False, map=map, count=1)
             except socket.error, e:
-                self._log("asyncore.loop() socket.error: %s" % str(e), 'err')
                 # If there is an issue with a socket, we need to identify which one,
-                # and replace it. So how do we determine which threw the exception?
+                # and replace it. So how do we determine which raised the exception?
+                self._log("asyncore.loop() socket.error: %s | restart=%s reload=%s" % (str(e), self.status._restart, self.status._reload), 'err')
+                if self.status._restart:
+                    self.halt_now()
 
             # Check our connections for errors after all events have been handled
             for address,reader in self.servers.items():
                 # If the socket has encountered an error, prepare it for replacement.
-                if reader._error:
-                    self._log("connection error to server '%s'" % str(self.names[address]), 'err')
+                if (reader is not None) and reader._error:
+                    self._log("connection error to server '%s' <running = %s" % (str(self.names[address]), str(self.running)), 'err')
                     try:
                         reader.close()
                     except:
@@ -444,7 +462,7 @@ class WriteThread(Thread):
         Thread.__init__(self, queue_max=1024, log_queue=log_queue, name=name)
         self.stations = {}
         self.target_dir = ''
-        self.last_report = time.time()
+        self.last_report = time.gmtime()
         self.records = {}
         self.year_in_day_path = False
         self.report_hourly = True
@@ -462,9 +480,8 @@ class WriteThread(Thread):
         return self.target_dir
 
     def report(self, forced=False):
-        now = time.time()
-        last_tm = time.gmtime(self.last_report)
-        now_tm = time.gmtime(now)
+        last_tm = self.last_report
+        now_tm = time.gmtime()
         if ((not self.report_hourly) and (now_tm.tm_min > last_tm.tm_min)) or \
            now_tm.tm_hour > last_tm.tm_hour or \
            now_tm.tm_yday > last_tm.tm_yday or \
@@ -477,7 +494,7 @@ class WriteThread(Thread):
                 if r > 0:
                     self._log("  %s: %d/%d" % (k.ljust(max_key),r,w))
             self.records = {}
-            self.last_report = now
+            self.last_report = now_tm
             
 
     def _run(self, message, data):
@@ -581,6 +598,7 @@ class Main(Class):
         Class.__init__(self)
         self.context = {'running' : False}
         signal.signal(signal.SIGTERM, self.halt_now)
+        signal.signal(signal.SIGINT, self.loop)
         self.context['log'] = LogThread(prefix='archive_', note='ARCHIVE', pid=True)
         self.context['log'].start()
         self.log_queue = self.context['log'].queue
@@ -704,7 +722,7 @@ class Main(Class):
 
         # Remove all servers that are no longer included in the config
         for address in existing:
-            self.context[liss].remove_server(address)
+            self.context['liss'].remove_server(address)
 
         self.configuration = configuration
         self.log_config_info()
@@ -751,7 +769,6 @@ class Main(Class):
         self._log("=== ARCHIVE ===")
         self._log("===============")
         self._log("starting new archive.py process [%d]" % pid)
-        #self._log("LISS archive process")
 
     def start(self):
         try:
@@ -779,20 +796,10 @@ class Main(Class):
                 self._log("No configuration file found")
                 raise KeyboardInterrupt()
 
-            self.config_file = config_file
+            self.config_file = os.path.abspath(config_file)
             self.load_config()
 
             count = 0
-            #for name in self.context['liss'].get_names():
-            #    count += 1
-            #    self._log("LISS server # %d : %s" % (count,name))
-            #self._log("     Configuration : %s" % config_file)
-            #self._log(" Archive Directory : %s" % archive_path)
-            #self._log("     Log Directory : %s" % log_path)
-            #self._log("    Screen Logging : %s" % str_screen_logging)
-            #self._log("      File Logging : %s" % str_file_logging)
-            #self._log("     Debug Logging : %s" % str_debug_logging)
-            #self._log("  Report Frequency : %s" % str_report_frequency)
 
             time.sleep(0.1)
 
@@ -812,16 +819,29 @@ class Main(Class):
                     self._log("  %s : %s" % (key.rjust(max_key), str(context)))
                 else:
                     self._log("  %s : %s (%s)" % (key.rjust(max_key), context.name, T(context.is_alive(),"Running","Halted")))
+        except KeyboardInterrupt:
+            pass
+        except socket.error, err:
+            self._log("Socket Error: %s" % str(err))
 
+        self.loop()
+
+    # Moving all of the run logic into its own method  allows us to return to operation
+    # after handling a signal
+    def loop(self, signal=None, frame=None):
+        try:
             while self.context['running']:
-                try: 
-                    signal.pause()
-                    self._log("caught a signal")
-                except:
-                    time.sleep(1.0)
-
                 if self.context['liss'].restart_requested():
-                    self.halt_now()
+                    self.context['running'] = False
+                elif self.context['liss'].reload_requested():
+                    self.load_config();
+                    self.context['liss'].reload_complete()
+                else:
+                    try: 
+                        signal.pause()
+                        self._log("caught a signal")
+                    except:
+                        time.sleep(1.0)
         except KeyboardInterrupt:
             pass
         except socket.error, err:
@@ -830,10 +850,11 @@ class Main(Class):
         halted = False
         while not halted:
             try:
-                self.halt()
+                self.halt_now()
                 halted = True
             except KeyboardInterrupt:
                 pass
+            
 
     def halt(self, now=False):
         check_alive = lambda c,k: c.has_key(k) and c[k] and c[k].isAlive()
@@ -856,6 +877,10 @@ class Main(Class):
 # === Functions/*{{{*/
 def print_func(string, *args):
     print string
+
+def signal_proc(pid, sig):
+    #print "Signalling process %s with signal %s" % (str(pid), str(sig))
+    os.kill(pid, sig)
 
 def kill_proc(tpid, log=print_func):
     if find_proc(tpid):

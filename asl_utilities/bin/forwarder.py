@@ -23,6 +23,9 @@ def die(error_message=None, print_traceback=False, exit_code=1):
     sys.exit(exit_code)
 
 # === Process Management Functions === #/*{{{*/
+def print_func(string, *args):
+    print string
+
 def kill_proc(tpid, log=print_func):
     if find_proc(tpid):
         log("archive.py process [%s] found" % tpid)
@@ -92,6 +95,115 @@ def parse_config(config_file):
     return config
 #/*}}}*/
 
+# === Proxy Example Code === # /*{{{*/
+    def construct(self):
+        try:
+            self.tunnel_ready = False
+            attempts = 10 
+            attempt  = 0
+            while (not self.tunnel_ready) and ((attempts - attempt) > 0):
+                self.halt_check()
+                attempt += 1
+                random.seed()
+                if self.local_port is None:
+                    self.local_port = random.randint(10001, 65001)
+                bind_address = ""
+                if self.local_address is not None:
+                    bind_address = self.local_address + ":"
+                if self.station_port == None:
+                    self.station_port = 22
+                self._log("bind_address    = %s" % str(bind_address))
+                self._log("local_port      = %s" % str(self.local_port))
+                self._log("station_address = %s" % str(self.station_address))
+                self._log("station_port    = %s" % str(self.station_port))
+                if not self.socks_tunnel:
+                    tunnel_command = "-L%s%s:%s:%s" % (bind_address, str(self.local_port), self.station_address, str(self.station_port))
+                else:
+                    tunnel_command = "-D%s%s" % (bind_address, str(self.local_port))
+
+                self._log("Proxy forwarding attempt #%d: %s" % (attempt, tunnel_command))
+
+                self.halt_check()
+                self._log("opening SSH command line...")
+
+                self.reader.sendline()
+                escape = ""
+                for i in range(0, self.depth):
+                    escape += '~'
+                self.reader.send(escape + "C")
+                try:
+                    self.reader.expect("ssh>", timeout=10)
+                except Exception, e:
+                    self._log("Could not open SSH command interface: %s" % str(e))
+                    response = self.reader.before
+                    caught   = self.reader.after
+                    self._log("  before: %s" % str(response))
+                    self._log("  after:  %s" % str(caught))
+                    continue
+                response = self.reader.before
+                caught   = self.reader.after
+
+                self._log("before: %s" % response)
+                self._log("after:  %s" % caught)
+
+                self.halt_check()
+                self._log("sending port forward command...")
+                self.reader.sendline(tunnel_command)
+                try:
+                    self.reader.expect("Forwarding port.", timeout=10)
+                    #if not self.reader.prompt(timeout=10):
+                    #    raise ExTimeout("timeout on port forwarding operation.")
+                except Exception, e:
+                    self._log("No port forwarding feedback: %s" % str(e))
+                    self._log("before: %s" % self.reader.before)
+                    self._log("after:  %s" % self.reader.after)
+                    continue
+                response = self.reader.before
+                caught   = self.reader.after
+
+                self._log("before: %s" % response)
+                self._log("after:  %s" % caught)
+
+                self.halt_check()
+                if re.compile("channel_setup_fwd_listener: cannot listen to port: %s" % str(self.local_port)).search(response):
+                    self._log("Forwarding attempt #%d failed." % attempt)
+                    continue
+
+                self._log("Proxy forwarding tunnel established on port %s." % str(self.local_port))
+                self.tunnel_ready = True
+
+        except ExHaltRequest, e:
+            self._log("Received a halt request, halting proxy connection attempt.")
+        except Exception, e:
+            self._log("Caught unexpected exception while attempting to open proxy tunnel.\n Exception: %s" % str(e))
+
+        self.proxy_connect_lock.release()
+        if not self.tunnel_ready:
+            raise ExConnectFailed("Failed to set up proxy connection: %s" % str(e))
+    
+    def cleanup(self):
+        try:
+            self.proxy_connect_lock.release()
+        except:
+            pass
+
+    def proxy_loop(self):
+        self.running = True
+        while self.running:
+            try:
+                self.reader.sendline()
+                try:
+                    self.reader.prompt( timeout=10 )
+                except Exception, e:
+                    pass
+                response = self.reader.before
+                self.halt_check(300)
+            except ExHaltRequest, e:
+                self._log("Received a halt request, terminating proxy connection.")
+                self.running = False
+# === END Proxy Example Code === # /*}}}*/
+
+
 class Host:
     def __init__(self, host, port):
         self.host = host
@@ -142,12 +254,16 @@ class Forwarder(Class):
         self.password = "F0rw@rd3r!"
 
         self.forwards = [
-            {   "proxy"
-                "remote"
-                "local"
-            }
-            ("forward", "127.0.0.1",    22, "127.0.0.1", 22222),
-            ("reverse", "127.0.0.1", 22222, "127.0.0.1",    22),
+            {   "reverse" : False,
+                "proxy"   : ("10.0.0.222", 22),
+                "bind"    : ("127.0.0.1", 2222),
+                "target"  : ("127.0.0.1", 22),
+            },
+            {   "reverse" : True,
+                "proxy"   : ("10.0.0.222", 22),
+                "bind"    : ("127.0.0.1", 2222),
+                "target"  : ("127.0.0.1", 22),
+            },
         ]
 
     def run(self):
@@ -171,6 +287,10 @@ class Forwarder(Class):
                 self.log("Connectiong to %s:%d ..." % (self.host,self.port))
                 self.conn.login(self.host, self.username, password=self.password, port=self.port)
                 self.log("Connected.")
+
+                self.conn.sendline("ls")
+                self.conn.prompt()
+                self.log("Proof:" + self.conn.before)
 
                 self.log("Adding forwards:")
                 self.log("  Testing, so nothing yet.")
